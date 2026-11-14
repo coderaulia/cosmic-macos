@@ -19,6 +19,11 @@ ALTERNATE="macos-glass"
 MANAGED_DIRS=(
   com.system76.CosmicPanel.Dock/v1
   com.system76.CosmicPanel.Panel/v1
+  # Theme: accent colour, corner radii, frosted glass (dark and light).
+  com.system76.CosmicTheme.Dark/v2
+  com.system76.CosmicTheme.Dark.Builder/v2
+  com.system76.CosmicTheme.Light/v2
+  com.system76.CosmicTheme.Light.Builder/v2
 )
 # Individual keys. A key missing from the source is removed from the target
 # (COSMIC then falls back to its default).
@@ -193,6 +198,17 @@ cmd_restore_full() {
   notify "Restored full COSMIC backup"
 }
 
+# At login the panel can start before the notification daemon is ready and
+# then skips the clock applet (it counts as a notifications applet). Check
+# once after login and restart the panel if the clock is missing.
+cmd_login_check() {
+  sleep 15
+  if grep -q ClockCenter "$LIVE/com.system76.CosmicPanel.Panel/v1/plugins_center" 2>/dev/null &&
+    ! pgrep -f cosmic-ext-applet-clock-center >/dev/null; then
+    pkill -x cosmic-panel || true
+  fi
+}
+
 cmd_reload() {
   # cosmic-session restarts the panel automatically.
   pkill -x cosmic-panel || true
@@ -211,6 +227,7 @@ usage: cosmic-preset <command>
   delete <name>         delete a preset
   reload                restart cosmic-panel if a change did not show up
   dock-sync             start or stop the standalone dock for the active preset
+  login-check           restart the panel if the clock applet is missing after login
   restore-full --yes    restore the complete ~/.config/cosmic backup
 EOF
 }
@@ -226,6 +243,7 @@ case "${1:-}" in
   delete) cmd_delete "${2:-}" ;;
   reload) cmd_reload ;;
   dock-sync) sync_dock ;;
+  login-check) cmd_login_check ;;
   restore-full) cmd_restore_full "${2:-}" ;;
   *) usage; [ -n "${1:-}" ] && [ "$1" != "-h" ] && [ "$1" != "--help" ] && exit 1 || exit 0 ;;
 esac

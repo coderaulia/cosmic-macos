@@ -41,7 +41,7 @@ cat >"$AUTOSTART" <<EOF
 [Desktop Entry]
 Type=Application
 Name=Magnifying Dock
-Exec=$BIN_DIR/cosmic-preset dock-sync
+Exec=sh -c "$BIN_DIR/cosmic-preset dock-sync; $BIN_DIR/cosmic-preset login-check"
 NoDisplay=true
 EOF
 
