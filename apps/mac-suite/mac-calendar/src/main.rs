@@ -49,13 +49,48 @@ const EDITED_FILE: &str = "edited.txt";
 const REMINDER_CHOICES: [Option<u32>; 8] =
     [None, Some(0), Some(5), Some(15), Some(30), Some(60), Some(120), Some(1440)];
 
+/// Decode percent-escapes in a `file://` URI path into UTF-8 bytes.
+fn percent_decode(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%'
+            && i + 2 < bytes.len()
+            && let Some(hex) = std::str::from_utf8(&bytes[i + 1..i + 3])
+                .ok()
+                .and_then(|s| u8::from_str_radix(s, 16).ok())
+        {
+            out.push(hex);
+            i += 3;
+            continue;
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// Turn a CLI argument or pasted path (including `file:///...` URIs) into a `PathBuf`.
+fn parse_ics_path(raw: &str) -> PathBuf {
+    let trimmed = raw.trim();
+    if let Some(rest) = trimmed.strip_prefix("file://") {
+        let path = rest.strip_prefix("localhost").unwrap_or(rest);
+        PathBuf::from(percent_decode(path))
+    } else {
+        PathBuf::from(trimmed)
+    }
+}
+
 fn main() -> cosmic::iced::Result {
     tracing_subscriber::fmt::init();
     // Any `.ics` files named on the command line are imported at startup.
     let files: Vec<PathBuf> = std::env::args_os()
         .skip(1)
-        .filter(|arg| !arg.to_string_lossy().starts_with('-'))
-        .map(PathBuf::from)
+        .filter_map(|arg| {
+            let s = arg.to_string_lossy();
+            (!s.starts_with('-')).then(|| parse_ics_path(&s))
+        })
         .collect();
     let settings = app::Settings::default().size(cosmic::iced::Size::new(1180.0, 740.0));
     app::run::<Calendar>(settings, files)
@@ -487,6 +522,7 @@ impl Calendar {
             }
         }
         if added > 0 {
+            self.inspector = None;
             self.save_events();
             let mut changed_edited = false;
             for uid in replaced_uids {
@@ -1323,9 +1359,7 @@ impl cosmic::Application for Calendar {
             Message::ImportPath(path) => self.import_path = Some(path),
             Message::ImportFile => {
                 if let Some(path) = self.import_path.take() {
-                    let path = path.trim();
-                    let path = path.strip_prefix("file://").unwrap_or(path);
-                    self.import_files(&[PathBuf::from(path)]);
+                    self.import_files(&[parse_ics_path(&path)]);
                 }
             }
             Message::ToggleExport => {
@@ -1563,5 +1597,23 @@ impl cosmic::Application for Calendar {
             layout = layout.push(divider::vertical::default()).push(self.inspector_view(form));
         }
         layout.height(Length::Fill).into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_plain_and_file_uri_paths() {
+        assert_eq!(parse_ics_path("/tmp/my invite.ics"), PathBuf::from("/tmp/my invite.ics"));
+        assert_eq!(
+            parse_ics_path("file:///home/user/My%20Events%2B2026.ics"),
+            PathBuf::from("/home/user/My Events+2026.ics")
+        );
+        assert_eq!(
+            parse_ics_path("file://localhost/tmp/team%20sync.ics"),
+            PathBuf::from("/tmp/team sync.ics")
+        );
     }
 }
