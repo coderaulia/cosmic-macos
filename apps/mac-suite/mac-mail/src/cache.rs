@@ -521,6 +521,8 @@ impl MailCache {
                 .collect()
         };
 
+        let retained_older = replace_top && !by_uid.is_empty();
+
         for mut summary in incoming {
             if summary.preview.is_empty()
                 && let Some(prev) = by_uid.get(&summary.uid)
@@ -534,15 +536,24 @@ impl MailCache {
         let mut summaries: Vec<MessageSummary> = by_uid.into_values().collect();
         summaries.sort_by_key(|s| std::cmp::Reverse(s.uid));
 
+        let next_has_more = if retained_older {
+            existing.has_more
+        } else {
+            has_more
+        };
+        let next_lowest_seq = if retained_older && existing.lowest_seq_loaded > 0 {
+            existing.lowest_seq_loaded
+        } else if next_has_more {
+            lowest_seq_loaded.max(2)
+        } else {
+            1
+        };
+
         let next = CachedFolderHeaders {
             uid_validity: uid_validity.or(existing.uid_validity),
             total_exists,
-            lowest_seq_loaded: if existing.lowest_seq_loaded == 0 {
-                lowest_seq_loaded
-            } else {
-                lowest_seq_loaded.min(existing.lowest_seq_loaded)
-            },
-            has_more,
+            lowest_seq_loaded: next_lowest_seq,
+            has_more: next_has_more,
             summaries,
         };
         self.save_folder_headers(folder, &next)?;
@@ -1108,6 +1119,52 @@ mod tests {
         assert_eq!(cache.search_cached_headers("INBOX", "spreadsheet").len(), 1);
         assert_eq!(cache.search_cached_headers("INBOX", "bob@other").len(), 1);
         assert_eq!(cache.search_cached_headers("INBOX", "budget")[0].uid, 10);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn refresh_top_preserves_exhausted_has_more_after_pagination() {
+        let (dir, cache) = temp_cache("refresh-has-more");
+        let make_msg = |uid: u32| MessageSummary {
+            uid,
+            from: "A".to_owned(),
+            from_address: "a@example.com".to_owned(),
+            address: "a@example.com".to_owned(),
+            to: vec![],
+            cc: vec![],
+            subject: format!("Msg {uid}"),
+            date: String::new(),
+            timestamp: None,
+            unread: false,
+            has_attachments: false,
+            preview: String::new(),
+            message_id: None,
+            references: vec![],
+        };
+
+        // Initial top page (seqs 3..=4 -> UIDs 30, 40) with more older messages on server
+        let p1 = cache
+            .merge_folder_headers("INBOX", Some(1), 4, 3, true, vec![make_msg(40), make_msg(30)], true)
+            .unwrap();
+        assert!(p1.has_more);
+        assert_eq!(p1.lowest_seq_loaded, 3);
+
+        // Paginate to the end (UIDs 10, 20; has_more = false)
+        let p2 = cache
+            .merge_folder_headers("INBOX", Some(1), 4, 1, false, vec![make_msg(20), make_msg(10)], false)
+            .unwrap();
+        assert!(!p2.has_more);
+        assert_eq!(p2.lowest_seq_loaded, 1);
+        assert_eq!(p2.summaries.len(), 4);
+
+        // Refresh top page (now UID 50 arrived; sync_headers passes has_more = true for top slice)
+        let refreshed = cache
+            .merge_folder_headers("INBOX", Some(1), 5, 4, true, vec![make_msg(50), make_msg(40)], true)
+            .unwrap();
+        assert!(!refreshed.has_more);
+        assert_eq!(refreshed.lowest_seq_loaded, 1);
+        assert_eq!(refreshed.summaries.len(), 5);
 
         let _ = fs::remove_dir_all(&dir);
     }
