@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Spotlight
+Comment=Open Spotlight launcher
+Type=Application
+Exec=cosmic-ext-applet-spotlight
+Terminal=false
+Categories=COSMIC;
+Keywords=COSMIC;Applet;Search;Launcher;Spotlight;
+Icon=system-search-symbolic
+NoDisplay=true
+X-CosmicApplet=true

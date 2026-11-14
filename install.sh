@@ -13,13 +13,15 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
-ALL=(preset dock clock spotlight files notepad viewer calendar mail theme comp)
+ALL=(preset dock panel clock clipboard spotlight files notepad viewer calendar mail theme comp)
 
 describe() {
   case "$1" in
     preset)    echo "cosmic-preset: switch between your original desktop and the macOS preset" ;;
     dock)      echo "magnifying dock with previews, genie targets and drag-to-reorder" ;;
+    panel)     echo "macOS-style top menu bar applets (lord menu, app menu, spotlight, control center)" ;;
     clock)     echo "clock applet with calendar events, now playing and notifications" ;;
+    clipboard) echo "clipboard history daemon, quick-paste window (Super+V) and panel applet" ;;
     spotlight) echo "Spotlight-style launcher on the Super key" ;;
     files)     echo "Files with tree list, column view and Finder-style sidebar" ;;
     notepad)   echo "Notepad as a searchable Notes app" ;;
@@ -34,7 +36,8 @@ describe() {
 # Which upstream projects a component is built from.
 needs() {
   case "$1" in
-    dock|clock) echo applets ;;
+    dock|panel|clock) echo applets ;;
+    clipboard) echo "libcosmic applets" ;;
     spotlight) echo launcher ;;
     comp) echo comp ;;
     files) echo "libcosmic files" ;;
@@ -57,8 +60,7 @@ check() {
   done
   echo
   echo "On Arch: sudo pacman -S --needed git rustup rsync libsecret clang mold nasm pkgconf"
-  echo "Optional panel applets used by the macOS preset (AUR): cosmic-ext-applet-logomenu,"
-  echo "  cosmic-ext-applet-minimon, cosmic-ext-applet-clippy-land, WhiteSur icon theme."
+  echo "Optional icon theme for the macOS preset: WhiteSur icon theme."
   return $missing
 }
 
@@ -83,7 +85,9 @@ run() {
   case "$component" in
     preset)    install_preset ;;
     dock)      ./install-dock.sh ;;
+    panel)     ./install-panel.sh ;;
     clock)     ./install-clock-center.sh ;;
+    clipboard) ./install-clipboard.sh ;;
     spotlight) ./install-spotlight.sh ;;
     comp)      ./install-genie-comp.sh ;;
     theme)     ./install-theme.sh ;;
@@ -103,7 +107,9 @@ case "${1:-}" in
     ;;
   --uninstall)
     ./install-dock.sh --uninstall || true
+    ./install-panel.sh --uninstall || true
     ./install-clock-center.sh --uninstall || true
+    ./install-clipboard.sh --uninstall || true
     ./install-spotlight.sh --uninstall || true
     ./install-genie-comp.sh --uninstall || true
     ./install-apps.sh --uninstall || true

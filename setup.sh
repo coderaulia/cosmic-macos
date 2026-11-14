@@ -45,9 +45,17 @@ setup_applets() {
   local had=0
   [ -d upstream-applets/.git ] && had=1
   fetch upstream-applets https://github.com/pop-os/cosmic-applets cosmic-applets
-  # The dock and the clock applet are new directories inside cosmic-applets.
-  for dir in cosmic-ext-dock cosmic-ext-applet-clock-center; do
-    if [ ! -d "upstream-applets/$dir" ]; then
+  # Our applets and shared style crate live as new directories inside cosmic-applets.
+  for dir in \
+    cosmic-ext-dock \
+    cosmic-ext-mac-applet-style \
+    cosmic-ext-applet-clock-center \
+    cosmic-ext-applet-lord-menu \
+    cosmic-ext-applet-app-menu \
+    cosmic-ext-applet-clipboard \
+    cosmic-ext-applet-spotlight \
+    cosmic-ext-applet-control-center; do
+    if [ ! -d "upstream-applets/$dir" ] && [ -d "overlays/cosmic-applets/$dir" ]; then
       cp -r "overlays/cosmic-applets/$dir" "upstream-applets/$dir"
       echo "    added $dir"
     fi

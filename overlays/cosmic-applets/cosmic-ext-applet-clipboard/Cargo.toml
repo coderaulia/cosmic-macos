@@ -1,0 +1,18 @@
+[package]
+name = "cosmic-ext-applet-clipboard"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+description = "Clipboard history menu bar applet for mac-clipboard"
+
+[dependencies]
+cosmic-ext-mac-applet-style = { path = "../cosmic-ext-mac-applet-style" }
+futures-util.workspace = true
+libcosmic.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json = "1"
+tokio.workspace = true
+tracing.workspace = true
+tracing-log.workspace = true
+tracing-subscriber.workspace = true
+zbus = { workspace = true, features = ["tokio"] }

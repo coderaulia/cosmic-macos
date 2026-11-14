@@ -1,16 +1,12 @@
 Some(([
-    "dev.cappsy.CosmicExtAppletLogoMenu",
-    "com.system76.CosmicPanelLauncherButton",
-    "com.system76.CosmicPanelWorkspacesButton",
-    "com.system76.CosmicPanelAppButton",
+    "dev.asw.CosmicExtAppletLordMenu",
+    "dev.asw.CosmicExtAppletAppMenu",
 ], [
-    "io.github.cosmic_utils.minimon-applet",
-    "io.github.k33wee.clippy-land",
-    "com.system76.CosmicAppletTiling",
     "com.system76.CosmicAppletStatusArea",
+    "dev.asw.CosmicExtAppletClipboard",
     "com.system76.CosmicAppletAudio",
-    "com.system76.CosmicAppletNetwork",
-    "com.system76.CosmicAppletBluetooth",
     "com.system76.CosmicAppletBattery",
-    "com.system76.CosmicAppletPower",
+    "com.system76.CosmicAppletNetwork",
+    "dev.asw.CosmicExtAppletSpotlight",
+    "dev.asw.CosmicExtAppletControlCenter",
 ]))

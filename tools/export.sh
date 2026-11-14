@@ -27,16 +27,27 @@ patch_of() {
   echo "patches/$name.patch  ($(wc -l <"$ROOT/patches/$name.patch") lines)"
 }
 
+APPLET_OVERLAYS=(
+  cosmic-ext-dock
+  cosmic-ext-mac-applet-style
+  cosmic-ext-applet-clock-center
+  cosmic-ext-applet-lord-menu
+  cosmic-ext-applet-app-menu
+  cosmic-ext-applet-clipboard
+  cosmic-ext-applet-spotlight
+  cosmic-ext-applet-control-center
+)
+
 patch_of cosmic-files apps/cosmic-files
 patch_of cosmic-edit apps/cosmic-edit
 patch_of cosmic-viewer apps/cosmic-viewer
 patch_of cosmic-launcher apps/cosmic-launcher
 patch_of cosmic-comp cosmic-comp
-patch_of cosmic-applets upstream-applets cosmic-ext-dock cosmic-ext-applet-clock-center
+patch_of cosmic-applets upstream-applets "${APPLET_OVERLAYS[@]}"
 
-# The dock and the clock applet are new directories inside cosmic-applets.
+# Our applets and shared style crate are new directories inside cosmic-applets.
 mkdir -p overlays/cosmic-applets
-for dir in cosmic-ext-dock cosmic-ext-applet-clock-center; do
+for dir in "${APPLET_OVERLAYS[@]}"; do
   [ -d "upstream-applets/$dir" ] || continue
   rsync -a --delete --exclude target "upstream-applets/$dir/" "overlays/cosmic-applets/$dir/"
 done
