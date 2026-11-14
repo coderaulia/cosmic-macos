@@ -1,21 +1,33 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 //! Calendar with day, week and month views, laid out like macOS Calendar:
-//! a sidebar with calendars and a mini month, a toolbar with the view
-//! switcher and navigation, and the selected view filling the rest.
-//!
-//! Events are not stored yet; this is the shell the event store and CalDAV
-//! sync plug into.
+//! a sidebar with calendars and a mini month, a toolbar with search, the
+//! view switcher and navigation, the selected view filling the rest, and an
+//! inspector for viewing and editing an event.
+
+use std::{collections::HashSet, path::PathBuf, time::Duration};
 
 use cosmic::{
     Apply, Element, Task, app,
-    iced::{Alignment, Length},
+    iced::{
+        Alignment, Background, Border, Color, Event as UiEvent, Length, Subscription,
+        event as iced_event, keyboard, window,
+    },
     theme,
     widget::{self, button, column, container, divider, grid, row, scrollable, space, text},
 };
 use jiff::{ToSpan, Zoned, civil::Date};
 
 mod caldav;
+mod event;
+mod recurrence;
+mod store;
+
+use event::{
+    CalendarInfo, Event, PALETTE, calendar_id_for, due_reminders, minutes, palette_color,
+    visible_occurrences,
+};
+use recurrence::{Frequency, Occurrence, RecurrenceRule};
 
 const APP_ID: &str = "dev.asw.MacCalendar";
 const MONTH_NAMES: [&str; 12] = [
@@ -26,12 +38,27 @@ const WEEKDAY_NAMES: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat
 /// First and last hour shown in the day and week views.
 const DAY_HOURS: std::ops::Range<i8> = 0..24;
 const HOUR_HEIGHT: f32 = 48.0;
-const SIDEBAR_WIDTH: f32 = 220.0;
+const SIDEBAR_WIDTH: f32 = 230.0;
+const INSPECTOR_WIDTH: f32 = 330.0;
+const GUTTER_WIDTH: f32 = 64.0;
+/// Events shown per day in the month grid before "+N more".
+const MONTH_EVENTS: usize = 3;
+const DELETED_FILE: &str = "deleted.txt";
+const EDITED_FILE: &str = "edited.txt";
+/// Reminder choices of the inspector, in minutes before the start.
+const REMINDER_CHOICES: [Option<u32>; 8] =
+    [None, Some(0), Some(5), Some(15), Some(30), Some(60), Some(120), Some(1440)];
 
 fn main() -> cosmic::iced::Result {
     tracing_subscriber::fmt::init();
-    let settings = app::Settings::default().size(cosmic::iced::Size::new(1100.0, 720.0));
-    app::run::<Calendar>(settings, ())
+    // Any `.ics` files named on the command line are imported at startup.
+    let files: Vec<PathBuf> = std::env::args_os()
+        .skip(1)
+        .filter(|arg| !arg.to_string_lossy().starts_with('-'))
+        .map(PathBuf::from)
+        .collect();
+    let settings = app::Settings::default().size(cosmic::iced::Size::new(1180.0, 740.0));
+    app::run::<Calendar>(settings, files)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,15 +75,41 @@ enum Message {
     Next,
     Today,
     Select(Date),
-    /// Show the new-event form for the selected day.
+    Search(String),
+    /// Reminder check and clock update.
+    Tick,
+    // Calendars.
+    ToggleCalendar(usize, bool),
+    ActiveCalendar(usize),
+    NewCalendarName(String),
+    AddCalendar,
+    ToggleImport,
+    ImportPath(String),
+    ImportFile,
+    ToggleExport,
+    ExportPath(String),
+    ExportFile,
+    FilesDropped(Vec<PathBuf>),
+    // Inspector.
     NewEvent,
-    FormTitle(String),
-    FormStart(String),
-    FormEnd(String),
+    NewEventAt(Date, i8),
+    OpenEvent(usize, Date),
+    InspTitle(String),
+    InspDate(String),
+    InspAllDay(bool),
+    InspStart(String),
+    InspEnd(String),
+    InspLocation(String),
+    InspNotes(String),
+    InspCalendar(usize),
+    InspRepeat(usize),
+    InspUntil(String),
+    InspCount(String),
+    InspReminder(usize),
     SaveEvent,
-    CancelEvent,
-    DeleteEvent(usize),
-    /// Sync button: set up the server first time, then sync.
+    CloseInspector,
+    DeleteEvent,
+    // Server sync.
     OpenSync,
     SyncUrl(String),
     SyncUser(String),
@@ -73,43 +126,27 @@ struct SyncForm {
     password: String,
 }
 
-/// One event. Times are "HH:MM"; an event without a start time is all-day.
-#[derive(Debug, Clone)]
-pub struct Event {
-    pub date: Date,
-    pub start: Option<(i8, i8)>,
-    pub end: Option<(i8, i8)>,
-    pub title: String,
-    /// Identifies the event on the server and here.
-    pub uid: String,
-    /// The event's URL on the server; empty until it has been uploaded.
-    pub href: String,
-}
-
-/// A fresh unique id for a new event.
-fn new_uid() -> String {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_nanos());
-    format!("{nanos:x}-{:x}@mac-calendar", std::process::id())
-}
-
-/// Events removed here that still exist on the server, as their URLs.
-fn deleted_path() -> Option<std::path::PathBuf> {
-    events_path().map(|p| p.with_file_name("deleted.txt"))
-}
-
-fn load_deleted() -> Vec<String> {
-    deleted_path()
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .map(|text| text.lines().map(str::to_owned).collect())
-        .unwrap_or_default()
-}
-
-fn save_deleted(deleted: &[String]) {
-    if let Some(path) = deleted_path() {
-        let _ = std::fs::write(path, deleted.join("\n"));
-    }
+/// The event inspector's fields; edits an existing event or makes a new one.
+struct Inspector {
+    /// Index into the event list, `None` for a new event.
+    editing: Option<usize>,
+    title: String,
+    date: String,
+    all_day: bool,
+    start: String,
+    end: String,
+    location: String,
+    notes: String,
+    /// Index into the calendar list.
+    calendar: usize,
+    /// Index into `Frequency::ALL`.
+    repeat: usize,
+    until: String,
+    count: String,
+    /// Index into the reminder choices (including a custom one, last).
+    reminder: usize,
+    custom_reminder: Option<u32>,
+    error: Option<String>,
 }
 
 fn parse_time(value: &str) -> Option<(i8, i8)> {
@@ -122,93 +159,172 @@ fn format_time((h, m): (i8, i8)) -> String {
     format!("{h:02}:{m:02}")
 }
 
-/// Events live in a tab-separated file:
-/// `date<TAB>start<TAB>end<TAB>title`, with empty times for all-day events.
-fn events_path() -> Option<std::path::PathBuf> {
-    let base = std::env::var_os("XDG_DATA_HOME")
-        .map(std::path::PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local/share")))?;
-    Some(base.join("mac-calendar/events.tsv"))
-}
-
-fn load_events() -> Vec<Event> {
-    let Some(contents) = events_path().and_then(|p| std::fs::read_to_string(p).ok()) else {
-        return Vec::new();
-    };
-    contents
-        .lines()
-        .filter_map(|line| {
-            let mut fields = line.splitn(6, '\t');
-            let date: Date = fields.next()?.parse().ok()?;
-            let start = parse_time(fields.next()?);
-            let end = parse_time(fields.next()?);
-            let title = fields.next()?.to_owned();
-            let uid = fields
-                .next()
-                .filter(|uid| !uid.is_empty())
-                .map_or_else(new_uid, str::to_owned);
-            let href = fields.next().unwrap_or_default().to_owned();
-            Some(Event { date, start, end, title, uid, href })
-        })
-        .collect()
-}
-
-fn save_events(events: &[Event]) {
-    let Some(path) = events_path() else { return };
-    let contents: String = events
-        .iter()
-        .map(|e| {
-            format!(
-                "{}\t{}\t{}\t{}\t{}\t{}\n",
-                e.date,
-                e.start.map(format_time).unwrap_or_default(),
-                e.end.map(format_time).unwrap_or_default(),
-                e.title.replace(['\t', '\n'], " "),
-                e.uid,
-                e.href
-            )
-        })
-        .collect();
-    let result = path
-        .parent()
-        .map_or(Ok(()), std::fs::create_dir_all)
-        .and_then(|()| std::fs::write(&path, contents));
-    if let Err(err) = result {
-        tracing::error!(?err, "Failed to save events");
+fn reminder_label(minutes: Option<u32>) -> String {
+    match minutes {
+        None => "None".to_owned(),
+        Some(0) => "At time of event".to_owned(),
+        Some(m) if m % 1440 == 0 => format!("{} day(s) before", m / 1440),
+        Some(m) if m % 60 == 0 => format!("{} hour(s) before", m / 60),
+        Some(m) => format!("{m} minutes before"),
     }
 }
 
-/// The new-event form's fields.
-#[derive(Default)]
-struct Form {
-    title: String,
-    start: String,
-    end: String,
-}
+impl Inspector {
+    fn new_event(date: Date, calendar: usize) -> Self {
+        Self::new_event_at(date, calendar, 9)
+    }
 
-struct Calendar {
-    core: app::Core,
-    view: View,
-    today: Date,
-    selected: Date,
-    events: Vec<Event>,
-    form: Option<Form>,
-    deleted: Vec<String>,
-    sync_form: Option<SyncForm>,
-    syncing: bool,
-    status: Option<String>,
+    fn new_event_at(date: Date, calendar: usize, hour: i8) -> Self {
+        let start_hour = hour.clamp(0, 23);
+        let end_hour = (start_hour + 1).min(23);
+        let end_min = if start_hour == 23 { 59 } else { 0 };
+        Self {
+            editing: None,
+            title: String::new(),
+            date: date.to_string(),
+            all_day: false,
+            start: format_time((start_hour, 0)),
+            end: format_time((end_hour, end_min)),
+            location: String::new(),
+            notes: String::new(),
+            calendar,
+            repeat: 0,
+            until: String::new(),
+            count: String::new(),
+            reminder: 0,
+            custom_reminder: None,
+            error: None,
+        }
+    }
+
+    fn for_event(index: usize, event: &Event, calendars: &[CalendarInfo]) -> Self {
+        let custom_reminder = event
+            .reminder_minutes
+            .filter(|m| !REMINDER_CHOICES.contains(&Some(*m)));
+        let reminder = match event.reminder_minutes {
+            None => 0,
+            Some(m) => REMINDER_CHOICES
+                .iter()
+                .position(|c| *c == Some(m))
+                .unwrap_or(REMINDER_CHOICES.len()),
+        };
+        Self {
+            editing: Some(index),
+            title: event.title.clone(),
+            date: event.date.to_string(),
+            all_day: event.start.is_none(),
+            start: event.start.map_or_else(|| "09:00".to_owned(), format_time),
+            end: event.end.map_or_else(|| "10:00".to_owned(), format_time),
+            location: event.location.clone(),
+            notes: event.notes.clone(),
+            calendar: calendars
+                .iter()
+                .position(|c| c.id == event.calendar_id)
+                .unwrap_or(0),
+            repeat: Frequency::ALL
+                .iter()
+                .position(|f| *f == event.recurrence.freq)
+                .unwrap_or(0),
+            until: event.recurrence.until.map(|d| d.to_string()).unwrap_or_default(),
+            count: event.recurrence.count.map(|c| c.to_string()).unwrap_or_default(),
+            reminder,
+            custom_reminder,
+            error: None,
+        }
+    }
+
+    fn reminder_options(&self) -> Vec<Option<u32>> {
+        let mut options = REMINDER_CHOICES.to_vec();
+        options.extend(self.custom_reminder.map(Some));
+        options
+    }
+
+    /// The edited event's fields applied to a copy of `base`, or what is wrong.
+    fn build(&self, mut base: Event, calendars: &[CalendarInfo]) -> Result<Event, String> {
+        let title = self.title.trim();
+        if title.is_empty() {
+            return Err("Enter a title.".to_owned());
+        }
+        base.title = title.to_owned();
+        base.date = self
+            .date
+            .trim()
+            .parse()
+            .map_err(|_| "The date must look like 2026-03-14.".to_owned())?;
+        if self.all_day {
+            (base.start, base.end) = (None, None);
+        } else {
+            let start = parse_time(&self.start).ok_or("The start must look like 09:30.")?;
+            base.start = Some(start);
+            base.end = match self.end.trim() {
+                "" => None,
+                end => {
+                    let end = parse_time(end).ok_or("The end must look like 10:30.")?;
+                    if minutes(end) <= minutes(start) {
+                        return Err("The event must end after it starts.".to_owned());
+                    }
+                    Some(end)
+                }
+            };
+        }
+        base.location = self.location.trim().to_owned();
+        base.notes = self.notes.trim().to_owned();
+        if let Some(calendar) = calendars.get(self.calendar) {
+            base.calendar_id.clone_from(&calendar.id);
+            base.color_idx = calendar.color_idx;
+        }
+        let freq = Frequency::ALL[self.repeat.min(Frequency::ALL.len() - 1)];
+        let until = match self.until.trim() {
+            "" => None,
+            until => Some(
+                until
+                    .parse::<Date>()
+                    .map_err(|_| "The end date must look like 2026-12-31.".to_owned())?,
+            ),
+        };
+        let count = match self.count.trim() {
+            "" => None,
+            count => Some(
+                count
+                    .parse::<u32>()
+                    .ok()
+                    .filter(|n| *n > 0)
+                    .ok_or("Repeat count must be a positive number.")?,
+            ),
+        };
+        base.recurrence = if freq == Frequency::None {
+            RecurrenceRule::default()
+        } else {
+            // Keep the interval and weekdays of a rule that stays the same kind.
+            let mut rule = if base.recurrence.freq == freq {
+                base.recurrence.clone()
+            } else {
+                RecurrenceRule::of(freq)
+            };
+            rule.until = until;
+            rule.count = count;
+            rule
+        };
+        base.reminder_minutes = self
+            .reminder_options()
+            .get(self.reminder)
+            .copied()
+            .flatten()
+            .filter(|_| !self.all_day);
+        Ok(base)
+    }
 }
 
 /// First Sunday on or before `date`.
-fn week_start(date: Date) -> Date {
+pub fn week_start(date: Date) -> Date {
     let back = date.weekday().to_sunday_zero_offset();
-    date.checked_sub((back as i64).days()).unwrap_or(date)
+    date.checked_sub(i64::from(back).days()).unwrap_or(date)
 }
 
 /// The 42 days (6 weeks) shown by a month grid containing `date`.
 fn month_grid_days(date: Date) -> impl Iterator<Item = Date> {
     let first = week_start(date.first_of_month());
-    (0..42).filter_map(move |i| first.checked_add((i as i64).days()).ok())
+    (0..42).filter_map(move |i| first.checked_add(i64::from(i).days()).ok())
 }
 
 fn hour_label(hour: i8) -> String {
@@ -220,16 +336,68 @@ fn hour_label(hour: i8) -> String {
     }
 }
 
+/// Minutes since midnight an event covers `[from, to)` on its day; an event
+/// without an end lasts an hour.
+fn span_minutes(event: &Event) -> Option<(i32, i32)> {
+    let start = minutes(event.start?);
+    let end = event
+        .end
+        .map(minutes)
+        .filter(|end| *end > start)
+        .unwrap_or(start + 60);
+    Some((start, end.min(24 * 60)))
+}
+
+/// A filled rounded rectangle, used for color dots, stripes and chips.
+fn colored(color: Color, radius: f32) -> theme::Container<'static> {
+    theme::Container::custom(move |_| widget::container::Style {
+        background: Some(Background::Color(color)),
+        border: Border { radius: radius.into(), ..Default::default() },
+        ..Default::default()
+    })
+}
+
+fn dot(color: Color, size: f32) -> Element<'static, Message> {
+    space::horizontal()
+        .width(Length::Fixed(size))
+        .height(Length::Fixed(size))
+        .apply(container)
+        .class(colored(color, size / 2.0))
+        .into()
+}
+
+struct Calendar {
+    core: app::Core,
+    view: View,
+    today: Date,
+    now: (i8, i8),
+    selected: Date,
+    events: Vec<Event>,
+    calendars: Vec<CalendarInfo>,
+    /// Calendar that new and imported events go to.
+    active_calendar: usize,
+    search: String,
+    inspector: Option<Inspector>,
+    new_calendar: String,
+    /// Path field of the "Import .ics…" button; `None` while it is closed.
+    import_path: Option<String>,
+    /// Path field of the "Export .ics…" button; `None` while it is closed.
+    export_path: Option<String>,
+    deleted: Vec<String>,
+    /// Uids of synced events edited since the last sync.
+    edited: Vec<String>,
+    /// Reminders already shown, so each shows once.
+    notified: HashSet<(String, Date)>,
+    sync_form: Option<SyncForm>,
+    syncing: bool,
+    status: Option<String>,
+}
+
 impl Calendar {
     fn title(&self) -> String {
         let month = MONTH_NAMES[self.selected.month() as usize - 1];
         match self.view {
-            View::Day => format!(
-                "{} {}, {}",
-                month,
-                self.selected.day(),
-                self.selected.year()
-            ),
+            View::Day => format!("{} {}, {}", month, self.selected.day(), self.selected.year()),
             View::Week | View::Month => format!("{} {}", month, self.selected.year()),
         }
     }
@@ -248,6 +416,105 @@ impl Calendar {
         moved.unwrap_or(self.selected)
     }
 
+    fn save_events(&self) {
+        if let Some(dir) = store::data_dir()
+            && let Err(err) = store::save_events(&dir, &self.events)
+        {
+            tracing::error!(?err, "Failed to save events");
+        }
+    }
+
+    fn save_calendars(&self) {
+        if let Some(dir) = store::data_dir()
+            && let Err(err) = store::save_calendars(&dir, &self.calendars)
+        {
+            tracing::error!(?err, "Failed to save calendars");
+        }
+    }
+
+    fn save_sync_lists(&self) {
+        if let Some(dir) = store::data_dir() {
+            store::save_list(&dir, DELETED_FILE, &self.deleted);
+            store::save_list(&dir, EDITED_FILE, &self.edited);
+        }
+    }
+
+    fn event_color(&self, event: &Event) -> Color {
+        let index = self
+            .calendars
+            .iter()
+            .find(|c| c.id == event.calendar_id)
+            .map_or(event.color_idx, |c| c.color_idx);
+        palette_color(index)
+    }
+
+    fn occurrences(&self, from: Date, to: Date) -> Vec<Occurrence> {
+        visible_occurrences(&self.events, &self.calendars, &self.search, from, to)
+    }
+
+    /// Import events from `.ics` files into the active calendar.
+    fn import_files(&mut self, files: &[PathBuf]) {
+        let Some(calendar) = self.calendars.get(self.active_calendar).cloned() else {
+            return;
+        };
+        let mut messages = Vec::new();
+        let mut added = 0;
+        let mut replaced_uids = Vec::new();
+        for path in files {
+            match store::import_ics_file(path, &calendar) {
+                Ok(events) => {
+                    let name = path.file_name().map_or_else(
+                        || path.display().to_string(),
+                        |n| n.to_string_lossy().into_owned(),
+                    );
+                    for event in &events {
+                        if let Some(existing) = self.events.iter().find(|e| e.uid == event.uid)
+                            && !existing.href.is_empty()
+                        {
+                            replaced_uids.push(existing.uid.clone());
+                        }
+                    }
+                    if let Some(first) = events.first()
+                        && files.len() == 1
+                    {
+                        self.selected = first.date;
+                    }
+                    let count = store::merge_imported(&mut self.events, events);
+                    added += count;
+                    messages.push(format!("Imported {count} event(s) from {name} into {}.", calendar.name));
+                }
+                Err(err) => messages.push(err),
+            }
+        }
+        if added > 0 {
+            self.save_events();
+            let mut changed_edited = false;
+            for uid in replaced_uids {
+                if !self.edited.contains(&uid) {
+                    self.edited.push(uid);
+                    changed_edited = true;
+                }
+            }
+            if changed_edited {
+                self.save_sync_lists();
+            }
+        }
+        self.status = Some(messages.join(" "));
+    }
+
+    /// Show a desktop notification for every reminder that has come due.
+    fn check_reminders(&mut self) {
+        let zoned = Zoned::now();
+        self.today = zoned.date();
+        self.now = (zoned.hour(), zoned.minute());
+        for occurrence in due_reminders(&self.events, zoned.datetime()) {
+            let event = &self.events[occurrence.index];
+            if self.notified.insert((event.uid.clone(), occurrence.date)) {
+                notify(event, occurrence.date);
+            }
+        }
+    }
+
     fn day_button(&self, date: Date, in_month: bool, size: f32) -> Element<'_, Message> {
         let class = if date == self.selected {
             button::ButtonClass::Suggested
@@ -260,8 +527,7 @@ impl Calendar {
         let label: Element<'_, Message> = if in_month {
             label.into()
         } else {
-            label.class(theme::Text::Color(cosmic::iced::Color::from_rgba(0.5, 0.5, 0.5, 1.0)))
-                .into()
+            label.class(theme::Text::Color(Color::from_rgba(0.5, 0.5, 0.5, 1.0))).into()
         };
         button::custom(label.apply(container).center(Length::Fill))
             .class(class)
@@ -275,11 +541,7 @@ impl Calendar {
     fn mini_month(&self) -> Element<'_, Message> {
         let mut days = grid().column_spacing(0).row_spacing(0);
         for name in WEEKDAY_NAMES {
-            days = days.push(
-                text::caption(&name[..1])
-                    .apply(container)
-                    .center_x(Length::Fixed(28.0)),
-            );
+            days = days.push(text::caption(&name[..1]).apply(container).center_x(Length::Fixed(28.0)));
         }
         days = days.insert_row();
         for (i, date) in month_grid_days(self.selected).enumerate() {
@@ -315,10 +577,11 @@ impl Calendar {
         };
         self.syncing = true;
         self.status = Some("Syncing…".to_owned());
-        let (local, deleted) = (self.events.clone(), self.deleted.clone());
+        let (local, deleted, edited) =
+            (self.events.clone(), self.deleted.clone(), self.edited.clone());
         cosmic::task::future(async move {
             let result = tokio::task::spawn_blocking(move || {
-                caldav::sync(&server, &password, local, deleted)
+                caldav::sync(&server, &password, local, deleted, &edited)
             })
             .await
             .unwrap_or_else(|err| Err(err.to_string()));
@@ -326,37 +589,126 @@ impl Calendar {
         })
     }
 
-    /// The selected day's events, each with a delete button.
+    /// The selected day's events; each opens the inspector.
     fn day_events(&self) -> Element<'_, Message> {
         let mut list = column![text::caption(format!("Events on {}", self.selected))].spacing(4);
-        let mut any = false;
-        for (index, event) in self.events.iter().enumerate().filter(|(_, e)| e.date == self.selected) {
-            any = true;
+        let found = self.occurrences(self.selected, self.selected);
+        for occurrence in &found {
+            let event = &self.events[occurrence.index];
             let when = match event.start {
                 Some(start) => format_time(start),
                 None => "All day".to_owned(),
             };
             list = list.push(
+                button::custom(
+                    row![
+                        dot(self.event_color(event), 8.0),
+                        column![text::body(event.title.as_str()), text::caption(when)]
+                            .width(Length::Fill),
+                    ]
+                    .spacing(8)
+                    .align_y(Alignment::Center),
+                )
+                .class(button::ButtonClass::Text)
+                .width(Length::Fill)
+                .on_press(Message::OpenEvent(occurrence.index, occurrence.date)),
+            );
+        }
+        if found.is_empty() {
+            list = list.push(text::caption("No events"));
+        }
+        list.into()
+    }
+
+    /// The calendar list with visibility checkboxes and color dots.
+    fn calendar_list(&self) -> Element<'_, Message> {
+        let mut list = column![text::caption("Calendars")].spacing(4);
+        for (index, calendar) in self.calendars.iter().enumerate() {
+            let name = if index == self.active_calendar {
+                text::heading(calendar.name.as_str())
+            } else {
+                text::body(calendar.name.as_str())
+            };
+            list = list.push(
                 row![
-                    column![text::body(event.title.as_str()), text::caption(when)].width(Length::Fill),
-                    button::icon(widget::icon::from_name("edit-delete-symbolic"))
-                        .on_press(Message::DeleteEvent(index)),
+                    widget::checkbox(calendar.visible)
+                        .on_toggle(move |on| Message::ToggleCalendar(index, on)),
+                    dot(palette_color(calendar.color_idx), 10.0),
+                    button::custom(name)
+                        .class(button::ButtonClass::Text)
+                        .width(Length::Fill)
+                        .padding([2, 4])
+                        .on_press(Message::ActiveCalendar(index)),
                 ]
+                .spacing(6)
                 .align_y(Alignment::Center),
             );
         }
-        if !any {
-            list = list.push(text::caption("No events"));
+        list = list.push(
+            row![
+                widget::text_input("New calendar", self.new_calendar.as_str())
+                    .on_input(Message::NewCalendarName)
+                    .on_submit(|_| Message::AddCalendar)
+                    .width(Length::Fill),
+                button::icon(widget::icon::from_name("list-add-symbolic"))
+                    .on_press_maybe((!self.new_calendar.trim().is_empty()).then_some(Message::AddCalendar)),
+            ]
+            .spacing(4)
+            .align_y(Alignment::Center),
+        );
+        list = list.push(
+            row![
+                button::standard("Import .ics…")
+                    .width(Length::Fill)
+                    .on_press(Message::ToggleImport),
+                button::standard("Export .ics…")
+                    .width(Length::Fill)
+                    .on_press(Message::ToggleExport),
+            ]
+            .spacing(6),
+        );
+        if let Some(path) = self.import_path.as_ref() {
+            list = list.push(
+                widget::text_input("Path to a .ics file", path.as_str())
+                    .on_input(Message::ImportPath)
+                    .on_submit(|_| Message::ImportFile),
+            );
+            list = list.push(
+                text::caption(format!(
+                    "Imports into {} (you can also drop a file on the window)",
+                    self.calendars.get(self.active_calendar).map_or("", |c| c.name.as_str())
+                )),
+            );
+            list = list.push(
+                button::suggested("Import")
+                    .on_press_maybe((!path.trim().is_empty()).then_some(Message::ImportFile)),
+            );
         }
-        column![space::vertical().height(Length::Fixed(16.0)), list].into()
+        if let Some(path) = self.export_path.as_ref() {
+            list = list.push(
+                widget::text_input("Export .ics path", path.as_str())
+                    .on_input(Message::ExportPath)
+                    .on_submit(|_| Message::ExportFile),
+            );
+            list = list.push(
+                text::caption(format!(
+                    "Exports {} events",
+                    self.calendars.get(self.active_calendar).map_or("", |c| c.name.as_str())
+                )),
+            );
+            list = list.push(
+                button::suggested("Export")
+                    .on_press_maybe((!path.trim().is_empty()).then_some(Message::ExportFile)),
+            );
+        }
+        list.into()
     }
 
     fn sidebar(&self) -> Element<'_, Message> {
+        let top = column![self.calendar_list(), space::vertical().height(Length::Fixed(8.0)), self.day_events()]
+            .spacing(8);
         column![
-            text::caption("On this computer"),
-            text::body("● Personal"),
-            self.day_events(),
-            space::vertical().height(Length::Fill),
+            scrollable(top).height(Length::Fill),
             self.mini_month(),
         ]
         .spacing(8)
@@ -378,13 +730,17 @@ impl Calendar {
         row![
             text::title3(self.title()),
             space::horizontal().width(Length::Fill),
+            widget::search_input("Search", self.search.as_str())
+                .on_input(Message::Search)
+                .on_clear(Message::Search(String::new()))
+                .width(Length::Fixed(200.0)),
             row![
                 view_button("Day", View::Day),
                 view_button("Week", View::Week),
                 view_button("Month", View::Month),
             ]
             .spacing(2),
-            space::horizontal().width(Length::Fixed(24.0)),
+            space::horizontal().width(Length::Fixed(8.0)),
             button::icon(widget::icon::from_name("go-previous-symbolic")).on_press(Message::Previous),
             button::text("Today").on_press(Message::Today),
             button::icon(widget::icon::from_name("go-next-symbolic")).on_press(Message::Next),
@@ -396,6 +752,21 @@ impl Calendar {
         .align_y(Alignment::Center)
         .padding([12, 16])
         .into()
+    }
+
+    /// A day number; today's is a red disc like macOS.
+    fn day_number(&self, date: Date) -> Element<'static, Message> {
+        let number = text::body(date.day().to_string());
+        if date == self.today {
+            number
+                .class(theme::Text::Color(Color::WHITE))
+                .apply(container)
+                .padding([1, 7])
+                .class(colored(palette_color(3), 11.0))
+                .into()
+        } else {
+            number.apply(container).padding([1, 7]).into()
+        }
     }
 
     fn month_view(&self) -> Element<'_, Message> {
@@ -410,44 +781,62 @@ impl Calendar {
             );
         }
 
-        let mut weeks = column![].spacing(0).height(Length::Fill);
         let days: Vec<Date> = month_grid_days(self.selected).collect();
+        let (first, last) = (days[0], days[days.len() - 1]);
+        let found = self.occurrences(first, last);
+        let mut weeks = column![].spacing(0).height(Length::Fill);
         for week in days.chunks(7) {
             let mut cells = row![].spacing(0).height(Length::Fill);
             for &date in week {
-                // Today's number is bold, like macOS.
-                let number = if date == self.today {
-                    text::heading(date.day().to_string())
-                } else {
-                    text::body(date.day().to_string())
+                let mut cell_content = column![
+                    row![space::horizontal().width(Length::Fill), self.day_number(date)]
+                ]
+                .spacing(2)
+                .height(Length::Fill);
+                let on_day: Vec<&Occurrence> = found.iter().filter(|o| o.date == date).collect();
+                for occurrence in on_day.iter().take(MONTH_EVENTS) {
+                    cell_content = cell_content.push(self.month_chip(occurrence));
                 }
-                .apply(container)
-                .padding([2, 8]);
-                let mut cell_content = column![row![space::horizontal().width(Length::Fill), number]]
-                    .spacing(2)
-                    .height(Length::Fill);
-                for event in self.events.iter().filter(|e| e.date == date).take(3) {
-                    let label = match event.start {
-                        Some(start) => format!("{} {}", format_time(start), event.title),
-                        None => event.title.clone(),
-                    };
+                if on_day.len() > MONTH_EVENTS {
                     cell_content = cell_content.push(
-                        text::caption(label)
+                        text::caption(format!("{} more…", on_day.len() - MONTH_EVENTS))
                             .apply(container)
-                            .padding([0, 6])
-                            .class(theme::Container::Primary),
+                            .padding([0, 6]),
                     );
                 }
-                let cell = button::custom(cell_content)
-                .class(if date == self.selected {
-                    button::ButtonClass::Standard
-                } else {
-                    button::ButtonClass::Text
-                })
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .on_press(Message::Select(date));
-                cells = cells.push(cell);
+                let selected = date == self.selected;
+                let in_month = date.month() == self.selected.month();
+                let cell = cell_content
+                    .apply(container)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .padding(2)
+                    .class(theme::Container::custom(move |theme| {
+                        let cosmic = theme.cosmic();
+                        let mut line: Color = cosmic.background(theme.transparent).on.into();
+                        line.a = 0.12;
+                        let background = if selected {
+                            let mut accent: Color = cosmic.accent.base.into();
+                            accent.a = 0.14;
+                            Some(Background::Color(accent))
+                        } else if !in_month {
+                            let mut dim: Color = cosmic.background(theme.transparent).on.into();
+                            dim.a = 0.04;
+                            Some(Background::Color(dim))
+                        } else {
+                            None
+                        };
+                        widget::container::Style {
+                            background,
+                            border: Border { color: line, width: 0.5, ..Default::default() },
+                            ..Default::default()
+                        }
+                    }));
+                cells = cells.push(
+                    widget::mouse_area(cell)
+                        .on_press(Message::Select(date))
+                        .on_double_click(Message::NewEvent),
+                );
             }
             weeks = weeks.push(cells);
         }
@@ -457,79 +846,355 @@ impl Calendar {
             .into()
     }
 
+    /// One event in a month cell: color dot and title.
+    fn month_chip(&self, occurrence: &Occurrence) -> Element<'_, Message> {
+        let event = &self.events[occurrence.index];
+        let label = match event.start {
+            Some(start) => format!("{} {}", format_time(start), event.title),
+            None => event.title.clone(),
+        };
+        button::custom(
+            row![dot(self.event_color(event), 7.0), text::caption(label)]
+                .spacing(4)
+                .align_y(Alignment::Center),
+        )
+        .class(button::ButtonClass::Text)
+        .padding([1, 4])
+        .width(Length::Fill)
+        .on_press(Message::OpenEvent(occurrence.index, occurrence.date))
+        .into()
+    }
+
+    /// An event inside one hour slot of the day and week views. A long event
+    /// shows its details in its first hour and a colored continuation after.
+    fn slot_chip(&self, occurrence: &Occurrence, first: bool) -> Element<'_, Message> {
+        let event = &self.events[occurrence.index];
+        let color = self.event_color(event);
+        let mut tint = color;
+        tint.a = 0.22;
+        let mut lines = column![].spacing(0);
+        if first {
+            let when = match (event.start, event.end) {
+                (Some(s), Some(e)) => format!("{}–{}", format_time(s), format_time(e)),
+                (Some(s), None) => format_time(s),
+                _ => String::new(),
+            };
+            lines = lines.push(text::caption(format!("{} {}", when, event.title)));
+            if !event.location.is_empty() {
+                lines = lines.push(text::caption(event.location.as_str()).class(theme::Text::Color(
+                    Color::from_rgba(0.5, 0.5, 0.5, 1.0),
+                )));
+            }
+        } else {
+            lines = lines.push(text::caption(event.title.as_str()));
+        }
+        let body = row![
+            space::horizontal()
+                .width(Length::Fixed(3.0))
+                .height(Length::Fill)
+                .apply(container)
+                .class(colored(color, 1.5)),
+            lines.padding([2, 6]),
+        ];
+        let tinted = body
+            .apply(container)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .class(colored(tint, 4.0));
+        button::custom(tinted)
+            .class(button::ButtonClass::Text)
+            .padding(0)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .on_press(Message::OpenEvent(occurrence.index, occurrence.date))
+            .into()
+    }
+
+    /// The red "now" row of today's column: a time badge and a line.
+    fn now_indicator(&self) -> Element<'static, Message> {
+        let red = palette_color(3);
+        row![
+            text::caption(format_time(self.now))
+                .class(theme::Text::Color(Color::WHITE))
+                .apply(container)
+                .padding([0, 5])
+                .class(colored(red, 6.0)),
+            space::horizontal()
+                .width(Length::Fill)
+                .height(Length::Fixed(2.0))
+                .apply(container)
+                .class(colored(red, 1.0)),
+        ]
+        .align_y(Alignment::Center)
+        .into()
+    }
+
     /// Hour rows for `days` side by side; used by both day and week view.
     fn time_grid(&self, days: Vec<Date>) -> Element<'_, Message> {
-        let mut header = row![space::horizontal().width(Length::Fixed(64.0))];
-        for &date in &days {
+        let found: Vec<Vec<Occurrence>> =
+            days.iter().map(|&date| self.occurrences(date, date)).collect();
+
+        let mut header = row![space::horizontal().width(Length::Fixed(GUTTER_WIDTH))];
+        let mut all_day = row![
+            text::caption("all-day")
+                .apply(container)
+                .width(Length::Fixed(GUTTER_WIDTH))
+                .align_x(Alignment::End)
+                .padding([0, 8]),
+        ];
+        let mut any_all_day = false;
+        for (&date, on_day) in days.iter().zip(&found) {
             let label = format!(
                 "{} {}",
                 WEEKDAY_NAMES[date.weekday().to_sunday_zero_offset() as usize],
                 date.day()
             );
-            let label = if date == self.today {
-                text::heading(label)
+            let label: Element<'_, Message> = if date == self.today {
+                text::heading(label).class(theme::Text::Color(palette_color(3))).into()
             } else {
-                text::body(label)
+                text::body(label).into()
             };
             header = header.push(
-                label
-                    .apply(container)
-                    .center_x(Length::Fill)
-                    .padding([6, 0]),
+                widget::mouse_area(label.apply(container).center_x(Length::Fill).padding([6, 0]))
+                    .on_press(Message::Select(date)),
             );
+            let mut chips = column![].spacing(2).width(Length::Fill);
+            for occurrence in on_day.iter().filter(|o| self.events[o.index].start.is_none()) {
+                any_all_day = true;
+                chips = chips.push(self.month_chip(occurrence));
+            }
+            all_day = all_day.push(chips);
         }
 
         let mut hours = column![].spacing(0);
         for hour in DAY_HOURS {
+            let (slot_from, slot_to) = (i32::from(hour) * 60, (i32::from(hour) + 1) * 60);
             let mut line = row![
                 text::caption(hour_label(hour))
                     .apply(container)
-                    .width(Length::Fixed(64.0))
+                    .width(Length::Fixed(GUTTER_WIDTH))
                     .align_x(Alignment::End)
                     .padding([0, 8]),
             ]
             .height(Length::Fixed(HOUR_HEIGHT));
-            for &date in &days {
+            for (&date, on_day) in days.iter().zip(&found) {
                 let mut slot = column![divider::horizontal::default()]
                     .spacing(2)
                     .width(Length::Fill)
                     .height(Length::Fill);
-                for event in self
-                    .events
-                    .iter()
-                    .filter(|e| e.date == date && e.start.is_some_and(|(h, _)| h == hour))
-                {
-                    let span = match (event.start, event.end) {
-                        (Some(s), Some(e)) => format!("{}–{} {}", format_time(s), format_time(e), event.title),
-                        (Some(s), None) => format!("{} {}", format_time(s), event.title),
-                        _ => event.title.clone(),
-                    };
-                    slot = slot.push(
-                        text::caption(span)
-                            .apply(container)
-                            .width(Length::Fill)
-                            .padding([2, 6])
-                            .class(theme::Container::Primary),
-                    );
+                if date == self.today && self.now.0 == hour {
+                    slot = slot.push(self.now_indicator());
                 }
-                line = line.push(slot);
+                let mut chips = row![].spacing(2).width(Length::Fill).height(Length::Fill);
+                let mut any = false;
+                for occurrence in on_day {
+                    let Some((from, to)) = span_minutes(&self.events[occurrence.index]) else {
+                        continue;
+                    };
+                    if from < slot_to && to > slot_from {
+                        any = true;
+                        chips = chips.push(self.slot_chip(occurrence, from >= slot_from));
+                    }
+                }
+                if any {
+                    slot = slot.push(chips);
+                }
+                line = line.push(
+                    widget::mouse_area(slot)
+                        .on_press(Message::Select(date))
+                        .on_double_click(Message::NewEventAt(date, hour)),
+                );
             }
             hours = hours.push(line);
         }
 
-        column![
-            header,
-            divider::horizontal::default(),
-            scrollable(hours).height(Length::Fill),
-        ]
-        .height(Length::Fill)
-        .into()
+        let mut grid = column![header, divider::horizontal::default()];
+        if any_all_day {
+            grid = grid.push(all_day).push(divider::horizontal::default());
+        }
+        grid.push(scrollable(hours).height(Length::Fill))
+            .height(Length::Fill)
+            .into()
     }
+
+    /// Details and editing form of one event, shown beside the calendar.
+    fn inspector_view<'a>(&'a self, form: &'a Inspector) -> Element<'a, Message> {
+        let heading = if form.editing.is_some() { "Event" } else { "New Event" };
+        let mut fields = column![
+            text::title4(heading),
+            widget::text_input("Title", form.title.as_str())
+                .on_input(Message::InspTitle)
+                .on_submit(|_| Message::SaveEvent),
+            widget::text_input("Location", form.location.as_str()).on_input(Message::InspLocation),
+            widget::text_input("Date (YYYY-MM-DD)", form.date.as_str()).on_input(Message::InspDate),
+            widget::toggler(form.all_day)
+                .label("All-day".to_owned())
+                .on_toggle(Message::InspAllDay),
+        ]
+        .spacing(10);
+        if !form.all_day {
+            fields = fields.push(
+                row![
+                    widget::text_input("Start", form.start.as_str())
+                        .on_input(Message::InspStart)
+                        .width(Length::Fill),
+                    text::body("to"),
+                    widget::text_input("End", form.end.as_str())
+                        .on_input(Message::InspEnd)
+                        .width(Length::Fill),
+                ]
+                .spacing(8)
+                .align_y(Alignment::Center),
+            );
+        }
+        let names: Vec<String> = self.calendars.iter().map(|c| c.name.clone()).collect();
+        let repeats: Vec<String> = Frequency::ALL.iter().map(|f| f.label().to_owned()).collect();
+        let reminders: Vec<String> = form
+            .reminder_options()
+            .into_iter()
+            .map(reminder_label)
+            .collect();
+        fields = fields
+            .push(
+                row![
+                    text::body("Calendar").width(Length::Fixed(80.0)),
+                    widget::dropdown(names, Some(form.calendar), Message::InspCalendar),
+                ]
+                .spacing(8)
+                .align_y(Alignment::Center),
+            )
+            .push(
+                row![
+                    text::body("Repeat").width(Length::Fixed(80.0)),
+                    widget::dropdown(repeats, Some(form.repeat), Message::InspRepeat),
+                ]
+                .spacing(8)
+                .align_y(Alignment::Center),
+            );
+        if form.repeat != 0 {
+            fields = fields
+                .push(
+                    widget::text_input("Repeat until (YYYY-MM-DD, optional)", form.until.as_str())
+                        .on_input(Message::InspUntil),
+                )
+                .push(
+                    widget::text_input("Repeat count (optional)", form.count.as_str())
+                        .on_input(Message::InspCount),
+                );
+            if form.editing.is_some() {
+                fields = fields.push(text::caption("Changes apply to every occurrence."));
+            }
+        }
+        if !form.all_day {
+            fields = fields.push(
+                row![
+                    text::body("Alert").width(Length::Fixed(80.0)),
+                    widget::dropdown(reminders, Some(form.reminder), Message::InspReminder),
+                ]
+                .spacing(8)
+                .align_y(Alignment::Center),
+            );
+        }
+        fields = fields.push(
+            widget::text_input("Notes", form.notes.as_str()).on_input(Message::InspNotes),
+        );
+        if let Some(error) = form.error.as_ref() {
+            fields = fields.push(
+                text::caption(error.as_str()).class(theme::Text::Color(palette_color(3))),
+            );
+        }
+        let mut buttons = row![].spacing(8);
+        if form.editing.is_some() {
+            buttons = buttons.push(button::destructive("Delete").on_press(Message::DeleteEvent));
+        }
+        buttons = buttons
+            .push(space::horizontal().width(Length::Fill))
+            .push(button::text("Cancel").on_press(Message::CloseInspector))
+            .push(button::suggested(if form.editing.is_some() { "Save" } else { "Add" }).on_press(Message::SaveEvent));
+        fields = fields.push(buttons);
+
+        scrollable(fields.padding(16))
+            .width(Length::Fixed(INSPECTOR_WIDTH))
+            .height(Length::Fill)
+            .into()
+    }
+
+    fn open_event(&mut self, index: usize, date: Date) {
+        if let Some(event) = self.events.get(index) {
+            self.selected = date;
+            self.inspector = Some(Inspector::for_event(index, event, &self.calendars));
+        }
+    }
+
+    fn save_inspector(&mut self) {
+        let Some(form) = self.inspector.as_mut() else {
+            return;
+        };
+        let base = match form.editing.and_then(|i| self.events.get(i)) {
+            Some(existing) => existing.clone(),
+            None => Event::new(self.selected, ""),
+        };
+        let built = form.build(base, &self.calendars);
+        let event = match built {
+            Ok(event) => event,
+            Err(err) => {
+                form.error = Some(err);
+                return;
+            }
+        };
+        let editing = form.editing;
+        self.inspector = None;
+        self.selected = event.date;
+        match editing {
+            Some(index) if index < self.events.len() => {
+                if !event.href.is_empty() && !self.edited.contains(&event.uid) {
+                    self.edited.push(event.uid.clone());
+                    self.save_sync_lists();
+                }
+                self.events[index] = event;
+            }
+            _ => self.events.push(event),
+        }
+        self.events.sort_by_key(|e| (e.date, e.start));
+        self.save_events();
+    }
+
+    fn delete_inspected(&mut self) {
+        let Some(index) = self.inspector.take().and_then(|form| form.editing) else {
+            return;
+        };
+        if index < self.events.len() {
+            let removed = self.events.remove(index);
+            self.save_events();
+            // Remember to delete it on the server at the next sync.
+            if !removed.href.is_empty() {
+                self.deleted.push(removed.href);
+            }
+            self.edited.retain(|uid| *uid != removed.uid);
+            self.save_sync_lists();
+        }
+    }
+
+    fn inspector_mut(&mut self) -> Option<&mut Inspector> {
+        self.inspector.as_mut()
+    }
+}
+
+/// Desktop notification through `notify-send`; failures are not fatal.
+fn notify(event: &Event, date: Date) {
+    let when = event.start.map(format_time).unwrap_or_default();
+    let mut body = format!("{date} {when}");
+    if !event.location.is_empty() {
+        body.push_str(&format!("\n{}", event.location));
+    }
+    let _ = std::process::Command::new("notify-send")
+        .args(["--app-name=Calendar", "--icon=appointment-soon", event.title.as_str(), &body])
+        .spawn();
 }
 
 impl cosmic::Application for Calendar {
     type Executor = cosmic::executor::Default;
-    type Flags = ();
+    type Flags = Vec<PathBuf>;
     type Message = Message;
     const APP_ID: &'static str = APP_ID;
 
@@ -541,24 +1206,72 @@ impl cosmic::Application for Calendar {
         &mut self.core
     }
 
-    fn init(mut core: app::Core, _flags: ()) -> (Self, app::Task<Message>) {
+    fn init(mut core: app::Core, files: Vec<PathBuf>) -> (Self, app::Task<Message>) {
         core.window.header_title = "Calendar".to_owned();
-        let today = Zoned::now().date();
-        (
-            Self {
-                core,
-                view: View::Month,
-                today,
-                selected: today,
-                events: load_events(),
-                form: None,
-                deleted: load_deleted(),
-                sync_form: None,
-                syncing: false,
-                status: None,
-            },
-            Task::none(),
-        )
+        let zoned = Zoned::now();
+        let dir = store::data_dir();
+        let calendars = dir.as_deref().map_or_else(event::default_calendars, store::load_calendars);
+        let mut events = dir.as_deref().map(store::load_events).unwrap_or_default();
+        store::assign_unknown_calendars(&mut events, &calendars);
+        events.sort_by_key(|e| (e.date, e.start));
+        let mut calendar = Self {
+            core,
+            view: View::Month,
+            today: zoned.date(),
+            now: (zoned.hour(), zoned.minute()),
+            selected: zoned.date(),
+            events,
+            calendars,
+            active_calendar: 0,
+            search: String::new(),
+            inspector: None,
+            new_calendar: String::new(),
+            import_path: None,
+            export_path: None,
+            deleted: dir.as_deref().map(|d| store::load_list(d, DELETED_FILE)).unwrap_or_default(),
+            edited: dir.as_deref().map(|d| store::load_list(d, EDITED_FILE)).unwrap_or_default(),
+            notified: HashSet::new(),
+            sync_form: None,
+            syncing: false,
+            status: None,
+        };
+        if !files.is_empty() {
+            calendar.import_files(&files);
+        }
+        calendar.check_reminders();
+        (calendar, Task::none())
+    }
+
+    fn subscription(&self) -> Subscription<Message> {
+        let keys = iced_event::listen_with(|ev, status, _id| match ev {
+            UiEvent::Window(window::Event::FileDropped(paths)) => {
+                Some(Message::FilesDropped(paths))
+            }
+            UiEvent::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. })
+                if status == iced_event::Status::Ignored
+                    && !modifiers.control()
+                    && !modifiers.alt()
+                    && !modifiers.logo() =>
+            {
+                match key {
+                    keyboard::Key::Named(keyboard::key::Named::ArrowLeft) => Some(Message::Previous),
+                    keyboard::Key::Named(keyboard::key::Named::ArrowRight) => Some(Message::Next),
+                    keyboard::Key::Named(keyboard::key::Named::Escape) => {
+                        Some(Message::CloseInspector)
+                    }
+                    keyboard::Key::Character(c) if c.eq_ignore_ascii_case("t") => {
+                        Some(Message::Today)
+                    }
+                    keyboard::Key::Character(c) if c.eq_ignore_ascii_case("n") => {
+                        Some(Message::NewEvent)
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        });
+        let clock = cosmic::iced::time::every(Duration::from_secs(30)).map(|_| Message::Tick);
+        Subscription::batch([keys, clock])
     }
 
     fn update(&mut self, message: Message) -> app::Task<Message> {
@@ -571,57 +1284,168 @@ impl cosmic::Application for Calendar {
                 self.selected = self.today;
             }
             Message::Select(date) => self.selected = date,
-            Message::NewEvent => {
-                self.form = Some(Form {
-                    title: String::new(),
-                    start: "09:00".to_owned(),
-                    end: "10:00".to_owned(),
-                });
+            Message::Search(query) => self.search = query,
+            Message::Tick => self.check_reminders(),
+            Message::ToggleCalendar(index, visible) => {
+                if let Some(calendar) = self.calendars.get_mut(index) {
+                    calendar.visible = visible;
+                    self.save_calendars();
+                }
             }
-            Message::FormTitle(value) => {
-                if let Some(form) = self.form.as_mut() {
+            Message::ActiveCalendar(index) => {
+                if index < self.calendars.len() {
+                    self.active_calendar = index;
+                }
+            }
+            Message::NewCalendarName(name) => self.new_calendar = name,
+            Message::AddCalendar => {
+                let name = self.new_calendar.trim().to_owned();
+                if !name.is_empty() {
+                    let color_idx = (self.calendars.len() % PALETTE.len()) as u8;
+                    self.calendars.push(CalendarInfo {
+                        id: calendar_id_for(&name, &self.calendars),
+                        name,
+                        color_idx,
+                        visible: true,
+                    });
+                    self.active_calendar = self.calendars.len() - 1;
+                    self.new_calendar.clear();
+                    self.save_calendars();
+                }
+            }
+            Message::ToggleImport => {
+                self.export_path = None;
+                self.import_path = match self.import_path {
+                    Some(_) => None,
+                    None => Some(String::new()),
+                };
+            }
+            Message::ImportPath(path) => self.import_path = Some(path),
+            Message::ImportFile => {
+                if let Some(path) = self.import_path.take() {
+                    let path = path.trim();
+                    let path = path.strip_prefix("file://").unwrap_or(path);
+                    self.import_files(&[PathBuf::from(path)]);
+                }
+            }
+            Message::ToggleExport => {
+                self.import_path = None;
+                self.export_path = match self.export_path {
+                    Some(_) => None,
+                    None => {
+                        let name = self
+                            .calendars
+                            .get(self.active_calendar)
+                            .map_or("calendar", |c| c.id.as_str());
+                        let base = std::env::var_os("HOME")
+                            .map(PathBuf::from)
+                            .unwrap_or_else(|| PathBuf::from("."));
+                        Some(base.join(format!("{name}.ics")).display().to_string())
+                    }
+                };
+            }
+            Message::ExportPath(path) => self.export_path = Some(path),
+            Message::ExportFile => {
+                if let Some(path) = self.export_path.take() {
+                    let path = path.trim();
+                    if let Some(calendar) = self.calendars.get(self.active_calendar) {
+                        let subset: Vec<Event> = self
+                            .events
+                            .iter()
+                            .filter(|e| e.calendar_id == calendar.id)
+                            .cloned()
+                            .collect();
+                        match store::export_ics_file(&PathBuf::from(path), &subset) {
+                            Ok(count) => {
+                                self.status = Some(format!(
+                                    "Exported {count} event(s) from {} to {path}.",
+                                    calendar.name
+                                ));
+                            }
+                            Err(err) => self.status = Some(err),
+                        }
+                    }
+                }
+            }
+            Message::FilesDropped(paths) => {
+                let files: Vec<PathBuf> = paths
+                    .into_iter()
+                    .filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("ics")))
+                    .collect();
+                self.import_files(&files);
+            }
+            Message::NewEvent => {
+                self.inspector = Some(Inspector::new_event(self.selected, self.active_calendar));
+            }
+            Message::NewEventAt(date, hour) => {
+                self.selected = date;
+                self.inspector =
+                    Some(Inspector::new_event_at(date, self.active_calendar, hour));
+            }
+            Message::OpenEvent(index, date) => self.open_event(index, date),
+            Message::InspTitle(value) => {
+                if let Some(form) = self.inspector_mut() {
                     form.title = value;
                 }
             }
-            Message::FormStart(value) => {
-                if let Some(form) = self.form.as_mut() {
+            Message::InspDate(value) => {
+                if let Some(form) = self.inspector_mut() {
+                    form.date = value;
+                }
+            }
+            Message::InspAllDay(value) => {
+                if let Some(form) = self.inspector_mut() {
+                    form.all_day = value;
+                }
+            }
+            Message::InspStart(value) => {
+                if let Some(form) = self.inspector_mut() {
                     form.start = value;
                 }
             }
-            Message::FormEnd(value) => {
-                if let Some(form) = self.form.as_mut() {
+            Message::InspEnd(value) => {
+                if let Some(form) = self.inspector_mut() {
                     form.end = value;
                 }
             }
-            Message::SaveEvent => {
-                if let Some(form) = self.form.take() {
-                    let title = form.title.trim();
-                    if !title.is_empty() {
-                        self.events.push(Event {
-                            date: self.selected,
-                            start: parse_time(&form.start),
-                            end: parse_time(&form.end),
-                            title: title.to_owned(),
-                            uid: new_uid(),
-                            href: String::new(),
-                        });
-                        self.events.sort_by_key(|e| (e.date, e.start));
-                        save_events(&self.events);
-                    }
+            Message::InspLocation(value) => {
+                if let Some(form) = self.inspector_mut() {
+                    form.location = value;
                 }
             }
-            Message::CancelEvent => self.form = None,
-            Message::DeleteEvent(index) => {
-                if index < self.events.len() {
-                    let removed = self.events.remove(index);
-                    save_events(&self.events);
-                    // Remember to delete it on the server at the next sync.
-                    if !removed.href.is_empty() {
-                        self.deleted.push(removed.href);
-                        save_deleted(&self.deleted);
-                    }
+            Message::InspNotes(value) => {
+                if let Some(form) = self.inspector_mut() {
+                    form.notes = value;
                 }
             }
+            Message::InspCalendar(index) => {
+                if let Some(form) = self.inspector_mut() {
+                    form.calendar = index;
+                }
+            }
+            Message::InspRepeat(index) => {
+                if let Some(form) = self.inspector_mut() {
+                    form.repeat = index;
+                }
+            }
+            Message::InspUntil(value) => {
+                if let Some(form) = self.inspector_mut() {
+                    form.until = value;
+                }
+            }
+            Message::InspCount(value) => {
+                if let Some(form) = self.inspector_mut() {
+                    form.count = value;
+                }
+            }
+            Message::InspReminder(index) => {
+                if let Some(form) = self.inspector_mut() {
+                    form.reminder = index;
+                }
+            }
+            Message::SaveEvent => self.save_inspector(),
+            Message::CloseInspector => self.inspector = None,
+            Message::DeleteEvent => self.delete_inspected(),
             Message::OpenSync => {
                 // Not set up yet: ask for the server; otherwise sync right away.
                 match caldav::load_server() {
@@ -673,11 +1497,14 @@ impl cosmic::Application for Calendar {
             Message::Synced(result) => {
                 self.syncing = false;
                 match result {
-                    Ok(events) => {
+                    Ok(mut events) => {
+                        store::assign_unknown_calendars(&mut events, &self.calendars);
                         self.events = events;
+                        self.inspector = None;
                         self.deleted.clear();
-                        save_events(&self.events);
-                        save_deleted(&self.deleted);
+                        self.edited.clear();
+                        self.save_events();
+                        self.save_sync_lists();
                         self.status = Some("Synced".to_owned());
                     }
                     Err(err) => self.status = Some(err),
@@ -693,7 +1520,7 @@ impl cosmic::Application for Calendar {
             View::Week => {
                 let start = week_start(self.selected);
                 let days = (0..7)
-                    .filter_map(|i| start.checked_add((i as i64).days()).ok())
+                    .filter_map(|i| start.checked_add(i64::from(i).days()).ok())
                     .collect();
                 self.time_grid(days)
             }
@@ -701,28 +1528,6 @@ impl cosmic::Application for Calendar {
         };
 
         let mut main = column![self.toolbar()];
-        if let Some(form) = self.form.as_ref() {
-            main = main.push(
-                row![
-                    text::body(format!("New event on {}", self.selected)),
-                    widget::text_input("Title", form.title.as_str())
-                        .on_input(Message::FormTitle)
-                        .on_submit(|_| Message::SaveEvent)
-                        .width(Length::Fill),
-                    widget::text_input("Start", form.start.as_str())
-                        .on_input(Message::FormStart)
-                        .width(Length::Fixed(80.0)),
-                    widget::text_input("End", form.end.as_str())
-                        .on_input(Message::FormEnd)
-                        .width(Length::Fixed(80.0)),
-                    button::suggested("Add").on_press(Message::SaveEvent),
-                    button::text("Cancel").on_press(Message::CancelEvent),
-                ]
-                .spacing(8)
-                .align_y(Alignment::Center)
-                .padding([8, 16]),
-            );
-        }
         if let Some(form) = self.sync_form.as_ref() {
             main = main.push(
                 row![
@@ -753,8 +1558,10 @@ impl cosmic::Application for Calendar {
             .width(Length::Fill)
             .height(Length::Fill);
 
-        row![self.sidebar(), divider::vertical::default(), main]
-        .height(Length::Fill)
-        .into()
+        let mut layout = row![self.sidebar(), divider::vertical::default(), main];
+        if let Some(form) = self.inspector.as_ref() {
+            layout = layout.push(divider::vertical::default()).push(self.inspector_view(form));
+        }
+        layout.height(Length::Fill).into()
     }
 }

@@ -14,7 +14,10 @@ use jiff::{
     tz::TimeZone,
 };
 
-use crate::Event;
+use crate::{
+    event::{Event, new_uid},
+    recurrence::RecurrenceRule,
+};
 
 type Result<T> = std::result::Result<T, String>;
 
@@ -199,10 +202,10 @@ fn unescape(text: &str) -> String {
 }
 
 /// Date and optional time of a DTSTART/DTEND value, in local time.
-fn parse_time(params: &str, value: &str) -> Option<(Date, Option<(i8, i8)>)> {
+pub fn parse_time(params: &str, value: &str) -> Option<(Date, Option<(i8, i8)>)> {
     let value = value.trim();
     if value.len() == 8 {
-        let date = DateTime::strptime("%Y%m%d%H%M%S", &format!("{value}000000")).ok()?;
+        let date = DateTime::strptime("%Y%m%d%H%M%S", format!("{value}000000")).ok()?;
         return Some((date.date(), None));
     }
     let utc = value.ends_with('Z');
@@ -226,8 +229,106 @@ fn parse_time(params: &str, value: &str) -> Option<(Date, Option<(i8, i8)>)> {
     Some((civil.date(), Some((civil.hour(), civil.minute()))))
 }
 
-/// Events found in a block of iCalendar text.
-fn parse_events(ics: &str, href: &str) -> Vec<Event> {
+/// Undo iCalendar TEXT escaping (`\n`, `\,`, `\;`, `\\`).
+fn unescape_text(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    let mut chars = value.chars();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('n' | 'N') => out.push('\n'),
+            Some(other) => out.push(other),
+            None => out.push('\\'),
+        }
+    }
+    out
+}
+
+fn escape_text(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for c in value.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            ',' => out.push_str("\\,"),
+            ';' => out.push_str("\\;"),
+            '\n' => out.push_str("\\n"),
+            '\r' => {}
+            other => out.push(other),
+        }
+    }
+    out
+}
+
+/// Minutes of a duration such as `PT1H30M`, `P1D` or `P1W`.
+fn parse_duration_minutes(value: &str) -> Option<u32> {
+    let rest = value.strip_prefix('P')?;
+    let mut total = 0u32;
+    let mut number = String::new();
+    for c in rest.chars() {
+        let unit = match c {
+            '0'..='9' => {
+                number.push(c);
+                continue;
+            }
+            'T' => continue,
+            'W' => 7 * 24 * 60,
+            'D' => 24 * 60,
+            'H' => 60,
+            'M' => 1,
+            'S' => 0,
+            _ => return None,
+        };
+        total = total.checked_add(number.parse::<u32>().ok()?.checked_mul(unit)?)?;
+        number.clear();
+    }
+    number.is_empty().then_some(total)
+}
+
+/// Minutes before the start of a `TRIGGER` such as `-PT15M`. Triggers after
+/// the start or at absolute times are not supported.
+fn parse_trigger(value: &str) -> Option<u32> {
+    let value = value.trim();
+    match value.strip_prefix('-') {
+        Some(rest) => parse_duration_minutes(rest),
+        None => parse_duration_minutes(value.strip_prefix('+').unwrap_or(value)).filter(|m| *m == 0),
+    }
+}
+
+fn trigger_value(minutes: u32) -> String {
+    if minutes == 0 {
+        "PT0S".to_owned()
+    } else if minutes.is_multiple_of(24 * 60) {
+        format!("-P{}D", minutes / (24 * 60))
+    } else if minutes.is_multiple_of(60) {
+        format!("-PT{}H", minutes / 60)
+    } else {
+        format!("-PT{minutes}M")
+    }
+}
+
+fn blank_event(href: &str) -> Event {
+    let mut event = Event::new(Date::constant(1970, 1, 1), "");
+    event.uid.clear();
+    event.href = href.to_owned();
+    event
+}
+
+/// What the end of a timed event is, given its DTSTART day.
+fn end_on_day(start_day: Date, end: (Date, Option<(i8, i8)>)) -> Option<(i8, i8)> {
+    match end {
+        (day, Some(time)) if day == start_day => Some(time),
+        // Ends on a later day: show it until the end of this one.
+        (day, _) if day > start_day => Some((23, 59)),
+        _ => None,
+    }
+}
+
+/// Events found in a block of iCalendar text. Events without a `UID` get
+/// a fresh one, so any `.ics` file can be imported.
+pub fn parse_events(ics: &str, href: &str) -> Vec<Event> {
     // Unfold continued lines first.
     let mut lines: Vec<String> = Vec::new();
     for line in ics.lines() {
@@ -241,38 +342,68 @@ fn parse_events(ics: &str, href: &str) -> Vec<Event> {
     }
     let mut events = Vec::new();
     let mut current: Option<Event> = None;
+    let mut dtend: Option<(Date, Option<(i8, i8)>)> = None;
+    let mut duration: Option<u32> = None;
+    let mut in_alarm = false;
     for line in lines {
         let line = line.trim_end();
-        if line == "BEGIN:VEVENT" {
-            current = Some(Event {
-                date: Date::constant(1970, 1, 1),
-                start: None,
-                end: None,
-                title: String::new(),
-                uid: String::new(),
-                href: href.to_owned(),
-            });
-        } else if line == "END:VEVENT" {
-            if let Some(event) = current.take()
-                && !event.uid.is_empty()
+        if line.eq_ignore_ascii_case("BEGIN:VEVENT") {
+            current = Some(blank_event(href));
+            (dtend, duration, in_alarm) = (None, None, false);
+        } else if line.eq_ignore_ascii_case("END:VEVENT") {
+            if let Some(mut event) = current.take()
                 && event.date.year() > 1970
             {
+                if event.start.is_some() {
+                    event.end = dtend.and_then(|end| end_on_day(event.date, end)).or_else(|| {
+                        let (h, m) = event.start?;
+                        let total = (i32::from(h) * 60 + i32::from(m))
+                            .saturating_add(i32::try_from(duration?).ok()?);
+                        let total = total.min(23 * 60 + 59);
+                        Some(((total / 60) as i8, (total % 60) as i8))
+                    });
+                }
+                if event.uid.is_empty() {
+                    event.uid = new_uid();
+                }
                 events.push(event);
             }
+        } else if line.eq_ignore_ascii_case("BEGIN:VALARM") {
+            in_alarm = true;
+        } else if line.eq_ignore_ascii_case("END:VALARM") {
+            in_alarm = false;
         } else if let Some(event) = current.as_mut()
             && let Some((name_and_params, value)) = line.split_once(':')
         {
             let (name, params) = name_and_params
                 .split_once(';')
                 .unwrap_or((name_and_params, ""));
-            match name {
+            if in_alarm {
+                // Only the first alarm's TRIGGER counts; alarm text is ignored.
+                if name.eq_ignore_ascii_case("TRIGGER") && event.reminder_minutes.is_none() {
+                    event.reminder_minutes = parse_trigger(value);
+                }
+                continue;
+            }
+            match name.to_ascii_uppercase().as_str() {
                 "UID" => event.uid = value.to_owned(),
-                "SUMMARY" => {
-                    event.title = value
-                        .replace("\\,", ",")
-                        .replace(r"\;", ";")
-                        .replace("\\n", " ")
-                        .replace("\\\\", "\\");
+                "SUMMARY" => event.title = unescape_text(value).replace('\n', " "),
+                "LOCATION" => event.location = unescape_text(value).replace('\n', ", "),
+                "DESCRIPTION" => event.notes = unescape_text(value),
+                "CATEGORIES" => {
+                    if let Some(first) = value.split(',').next().map(str::trim)
+                        && !first.is_empty()
+                    {
+                        event.calendar_id = unescape_text(first);
+                    }
+                }
+                "X-MAC-COLOR" => event.color_idx = value.trim().parse().unwrap_or(0),
+                "X-MAC-HREF" if href.is_empty() => event.href = value.to_owned(),
+                "RRULE" => {
+                    event.recurrence = RecurrenceRule::parse(value, |until| {
+                        parse_time("", until).map(|(date, _)| date)
+                    })
+                    .unwrap_or_default();
                 }
                 "DTSTART" => {
                     if let Some((date, start)) = parse_time(params, value) {
@@ -280,11 +411,8 @@ fn parse_events(ics: &str, href: &str) -> Vec<Event> {
                         event.start = start;
                     }
                 }
-                "DTEND" => {
-                    if let Some((_, end)) = parse_time(params, value) {
-                        event.end = end;
-                    }
-                }
+                "DTEND" => dtend = parse_time(params, value),
+                "DURATION" => duration = parse_duration_minutes(value),
                 _ => {}
             }
         }
@@ -292,14 +420,32 @@ fn parse_events(ics: &str, href: &str) -> Vec<Event> {
     events
 }
 
-fn to_ics(event: &Event) -> String {
+/// Break a content line at 75 octets, as iCalendar requires.
+fn fold(line: &str) -> String {
+    let mut out = String::with_capacity(line.len() + 8);
+    let mut width = 0;
+    for c in line.chars() {
+        // Continuation lines start with a space, which counts too.
+        if width + c.len_utf8() > 75 {
+            out.push_str("\r\n ");
+            width = 1;
+        }
+        out.push(c);
+        width += c.len_utf8();
+    }
+    out.push_str("\r\n");
+    out
+}
+
+fn write_event(out: &mut String, event: &Event, local: bool) {
     let date = |d: Date| format!("{:04}{:02}{:02}", d.year(), d.month(), d.day());
     let time = |(h, m): (i8, i8)| format!("T{h:02}{m:02}00");
     let stamp = Zoned::now().with_time_zone(TimeZone::UTC);
-    let mut out = String::from("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//mac-calendar//EN\r\nBEGIN:VEVENT\r\n");
-    out.push_str(&format!("UID:{}\r\n", event.uid));
-    out.push_str(&format!(
-        "DTSTAMP:{:04}{:02}{:02}T{:02}{:02}{:02}Z\r\n",
+    let mut put = |line: String| out.push_str(&fold(&line));
+    put("BEGIN:VEVENT".to_owned());
+    put(format!("UID:{}", event.uid));
+    put(format!(
+        "DTSTAMP:{:04}{:02}{:02}T{:02}{:02}{:02}Z",
         stamp.year(),
         stamp.month(),
         stamp.day(),
@@ -309,24 +455,60 @@ fn to_ics(event: &Event) -> String {
     ));
     match event.start {
         Some(start) => {
-            out.push_str(&format!("DTSTART:{}{}\r\n", date(event.date), time(start)));
+            put(format!("DTSTART:{}{}", date(event.date), time(start)));
             if let Some(end) = event.end {
-                out.push_str(&format!("DTEND:{}{}\r\n", date(event.date), time(end)));
+                put(format!("DTEND:{}{}", date(event.date), time(end)));
             }
         }
         None => {
-            out.push_str(&format!("DTSTART;VALUE=DATE:{}\r\n", date(event.date)));
+            put(format!("DTSTART;VALUE=DATE:{}", date(event.date)));
             let next = event.date.tomorrow().unwrap_or(event.date);
-            out.push_str(&format!("DTEND;VALUE=DATE:{}\r\n", date(next)));
+            put(format!("DTEND;VALUE=DATE:{}", date(next)));
         }
     }
-    let title = event
-        .title
-        .replace('\\', "\\\\")
-        .replace(',', "\\,")
-        .replace(';', r"\;");
-    out.push_str(&format!("SUMMARY:{title}\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"));
+    put(format!("SUMMARY:{}", escape_text(&event.title)));
+    if !event.location.is_empty() {
+        put(format!("LOCATION:{}", escape_text(&event.location)));
+    }
+    if !event.notes.is_empty() {
+        put(format!("DESCRIPTION:{}", escape_text(&event.notes)));
+    }
+    if !event.calendar_id.is_empty() {
+        put(format!("CATEGORIES:{}", escape_text(&event.calendar_id)));
+    }
+    if let Some(rule) = event.recurrence.to_value() {
+        put(format!("RRULE:{rule}"));
+    }
+    if local {
+        put(format!("X-MAC-COLOR:{}", event.color_idx));
+        if !event.href.is_empty() {
+            put(format!("X-MAC-HREF:{}", event.href));
+        }
+    }
+    if let Some(minutes) = event.reminder_minutes {
+        put("BEGIN:VALARM".to_owned());
+        put("ACTION:DISPLAY".to_owned());
+        put(format!("DESCRIPTION:{}", escape_text(&event.title)));
+        put(format!("TRIGGER:{}", trigger_value(minutes)));
+        put("END:VALARM".to_owned());
+    }
+    put("END:VEVENT".to_owned());
+}
+
+/// A whole calendar file holding `events`. `local` adds this app's own
+/// bookkeeping lines (color and server link) that a server has no use for.
+pub fn events_to_ics(events: &[Event], local: bool) -> String {
+    let mut out = String::from("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//mac-calendar//EN\r\n");
+    for event in events {
+        write_event(&mut out, event, local);
+    }
+    out.push_str("END:VCALENDAR\r\n");
     out
+}
+
+/// One event as the calendar resource uploaded to a server.
+fn to_ics(event: &Event) -> String {
+    events_to_ics(std::slice::from_ref(event), false)
 }
 
 /// All events of the calendar.
@@ -389,14 +571,16 @@ pub fn delete(server: &Server, password: &str, href: &str) -> Result<()> {
         .ok_or_else(|| format!("Could not delete an event (status {status})."))
 }
 
-/// Bring the local events and the server in line: upload new local events,
-/// delete events removed here, take the server's version of the rest, and
-/// add events that only exist on the server.
+/// Bring the local events and the server in line: upload new local events
+/// and the ones edited here (`edited` holds their uids), delete events
+/// removed here, take the server's version of the rest, and add events that
+/// only exist on the server.
 pub fn sync(
     server: &Server,
     password: &str,
     local: Vec<Event>,
     deleted: Vec<String>,
+    edited: &[String],
 ) -> Result<Vec<Event>> {
     for href in &deleted {
         delete(server, password, href)?;
@@ -411,7 +595,17 @@ pub fn sync(
             let href = upload(server, password, &event)?;
             merged.push(Event { href, ..event });
         } else if let Some(remote_event) = by_uid.get(event.uid.as_str()) {
-            merged.push((*remote_event).clone());
+            if edited.contains(&event.uid) {
+                // Edited here since the last sync: our version wins.
+                let href = upload(server, password, &event)?;
+                merged.push(Event { href, ..event });
+            } else {
+                // Keep what the server does not store.
+                merged.push(Event {
+                    color_idx: event.color_idx,
+                    ..(*remote_event).clone()
+                });
+            }
         }
         // Synced before but gone from the server: deleted elsewhere, drop it.
     }
@@ -422,4 +616,86 @@ pub fn sync(
     }
     merged.sort_by_key(|e| (e.date, e.start));
     Ok(merged)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::recurrence::Frequency;
+    use jiff::civil::{Weekday, date};
+
+    #[test]
+    fn ics_round_trip_with_rich_fields() {
+        let mut ev = Event::new(date(2026, 5, 20), "Quarterly Review, Q2; Team");
+        ev.start = Some((14, 30));
+        ev.end = Some((16, 0));
+        ev.location = "Room 4B, Building 2".to_owned();
+        ev.notes = "Bring slides\nReview roadmap; check KPIs".to_owned();
+        ev.calendar_id = "work".to_owned();
+        ev.color_idx = 1;
+        ev.reminder_minutes = Some(15);
+        ev.recurrence = RecurrenceRule {
+            freq: Frequency::Weekly,
+            interval: 2,
+            until: Some(date(2026, 12, 31)),
+            count: Some(10),
+            by_day: vec![Weekday::Wednesday],
+        };
+
+        let ics = events_to_ics(std::slice::from_ref(&ev), true);
+        assert!(ics.contains("LOCATION:Room 4B\\, Building 2"));
+        assert!(ics.contains("DESCRIPTION:Bring slides\\nReview roadmap\\; check KPIs"));
+        assert!(ics.contains("CATEGORIES:work"));
+        assert!(ics.contains("RRULE:FREQ=WEEKLY;INTERVAL=2;UNTIL=20261231;COUNT=10;BYDAY=WE"));
+        assert!(ics.contains("BEGIN:VALARM"));
+        assert!(ics.contains("TRIGGER:-PT15M"));
+
+        let parsed = parse_events(&ics, "");
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0], ev);
+    }
+
+    #[test]
+    fn parses_minimal_legacy_ics_and_duration() {
+        let ics = "BEGIN:VCALENDAR\r\n\
+                   VERSION:2.0\r\n\
+                   BEGIN:VEVENT\r\n\
+                   UID:legacy-1\r\n\
+                   DTSTART:20260704T090000\r\n\
+                   DURATION:PT1H30M\r\n\
+                   SUMMARY:Parade\r\n\
+                   END:VEVENT\r\n\
+                   END:VCALENDAR\r\n";
+        let parsed = parse_events(ics, "");
+        assert_eq!(parsed.len(), 1);
+        let ev = &parsed[0];
+        assert_eq!(ev.uid, "legacy-1");
+        assert_eq!(ev.date, date(2026, 7, 4));
+        assert_eq!(ev.start, Some((9, 0)));
+        assert_eq!(ev.end, Some((10, 30)));
+        assert_eq!(ev.title, "Parade");
+        assert_eq!(ev.calendar_id, "personal");
+        assert_eq!(ev.reminder_minutes, None);
+        assert!(ev.recurrence.is_none());
+    }
+
+    #[test]
+    fn parses_folded_lines_and_valarm_units() {
+        let ics = "BEGIN:VCALENDAR\r\n\
+                   BEGIN:VEVENT\r\n\
+                   UID:fold-1\r\n\
+                   DTSTART:20260801T100000\r\n\
+                   DTEND:20260801T110000\r\n\
+                   SUMMARY:Very long summary \r\n that wraps across lines\r\n\
+                   BEGIN:VALARM\r\n\
+                   ACTION:DISPLAY\r\n\
+                   TRIGGER:-P1D\r\n\
+                   END:VALARM\r\n\
+                   END:VEVENT\r\n\
+                   END:VCALENDAR\r\n";
+        let parsed = parse_events(ics, "");
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].title, "Very long summary that wraps across lines");
+        assert_eq!(parsed[0].reminder_minutes, Some(1440));
+    }
 }
