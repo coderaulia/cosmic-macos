@@ -309,11 +309,23 @@ impl MailBackend {
 
         self.harvest_from_summaries(&older_summaries);
 
+        let existing_lowest = self
+            .cache
+            .load_folder_headers(folder)
+            .map_or(0, |h| h.lowest_seq_loaded);
+        let next_lowest = if has_more {
+            existing_lowest
+                .saturating_sub(older_summaries.len() as u32)
+                .max(2)
+        } else {
+            1
+        };
+
         let mut merged = self.cache.merge_folder_headers(
             folder,
             mailbox.uid_validity,
             mailbox.exists,
-            1,
+            next_lowest,
             has_more,
             older_summaries,
             false,
@@ -534,7 +546,8 @@ impl MailBackend {
                         session.uid_mv(&uid_str, target)?;
                     }
                     Some(target) => {
-                        session.uid_copy(&uid_str, target)?;
+                        let quoted = quote_imap_mailbox(target);
+                        session.uid_copy(&uid_str, quoted)?;
                         session.uid_store(&uid_str, "+FLAGS (\\Deleted)")?;
                         session.expunge()?;
                     }
@@ -761,6 +774,13 @@ pub fn should_append_to_sent(smtp_host: &str) -> bool {
         lower.as_str(),
         "smtp.gmail.com" | "smtp.googlemail.com"
     )
+}
+
+/// Quote a mailbox name as an IMAP quoted-string (required by `Session::uid_copy`
+/// which passes `mailbox_name` unquoted).
+pub fn quote_imap_mailbox(mailbox: &str) -> String {
+    let escaped = mailbox.replace('\\', "\\\\").replace('"', "\\\"");
+    format!("\"{escaped}\"")
 }
 
 fn folder_looks_like_trash(folder: &str) -> bool {
@@ -1268,5 +1288,17 @@ mod tests {
             Some("<style>.x{color:red}</style><script>alert(1)</script><p>Hello   <b>world</b>!\nSecond line</p>"),
         );
         assert_eq!(preview, "Hello world ! Second line");
+    }
+
+    #[test]
+    fn quote_imap_mailbox_escapes_spaces_quotes_and_backslashes() {
+        assert_eq!(
+            quote_imap_mailbox("[Gmail]/Sent Mail"),
+            "\"[Gmail]/Sent Mail\""
+        );
+        assert_eq!(
+            quote_imap_mailbox("Folder \"A\"\\B"),
+            "\"Folder \\\"A\\\"\\\\B\""
+        );
     }
 }
