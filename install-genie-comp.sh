@@ -56,9 +56,12 @@ if command -v mold >/dev/null && command -v clang >/dev/null; then
   export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=clang
   LINK_FLAGS="-C link-arg=-fuse-ld=mold"
 fi
+# Build into this project's own folder, whatever ~/.cargo/config.toml says.
+export CARGO_TARGET_DIR="$SOURCE/target"
 (cd "$SOURCE" && RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-stable}" \
   RUSTFLAGS="${RUSTFLAGS:-} $LINK_FLAGS" cargo build --profile genie)
 
+[ "$SOURCE/target/genie/cosmic-comp" -nt "$0" ] || [ -n "$(find "$SOURCE/target/genie/cosmic-comp" -mmin -30 2>/dev/null)" ] || { echo "the build output is old; the build may have gone elsewhere" >&2; exit 1; }
 install -Dm755 "$SOURCE/target/genie/cosmic-comp" "$LIB_DIR/cosmic-comp"
 
 mkdir -p "$(dirname "$LAUNCHER")" "$STATE"

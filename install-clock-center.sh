@@ -44,8 +44,11 @@ if [ "${1:-}" = "--uninstall" ]; then
   exit 0
 fi
 
+# Build into this project's own folder, whatever ~/.cargo/config.toml says.
+export CARGO_TARGET_DIR="$WORKSPACE/target"
 (cd "$WORKSPACE" && cargo build --release -p "$BIN_NAME")
 
+[ "$WORKSPACE/target/release/$BIN_NAME" -nt "$0" ] || [ -n "$(find "$WORKSPACE/target/release/$BIN_NAME" -mmin -30 2>/dev/null)" ] || { echo "the build output is old; the build may have gone elsewhere" >&2; exit 1; }
 install -Dm755 "$WORKSPACE/target/release/$BIN_NAME" "$BIN_DIR/$BIN_NAME"
 # The panel may not have ~/.local/bin in PATH, so use an absolute Exec path.
 mkdir -p "$APPS_DIR"

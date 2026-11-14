@@ -26,9 +26,13 @@ if [ "${1:-}" = "--uninstall" ]; then
 fi
 
 # Use the installed stable toolchain rather than downloading the pinned one.
+# Build into this project's own folder, whatever ~/.cargo/config.toml says
+# (a global target-dir would make the copy below pick up an old binary).
+export CARGO_TARGET_DIR="$WORKSPACE/target"
 (cd "$WORKSPACE" && RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-stable}" cargo build --release -p "$BIN_NAME")
 
 pkill -x "$BIN_NAME" || true
+[ "$WORKSPACE/target/release/$BIN_NAME" -nt "$0" ] || [ -n "$(find "$WORKSPACE/target/release/$BIN_NAME" -mmin -30 2>/dev/null)" ] || { echo "the build output is old; the build may have gone elsewhere" >&2; exit 1; }
 install -Dm755 "$WORKSPACE/target/release/$BIN_NAME" "$BIN_DIR/$BIN_NAME"
 
 # The preset hides the COSMIC dock and marks that the standalone one runs.
