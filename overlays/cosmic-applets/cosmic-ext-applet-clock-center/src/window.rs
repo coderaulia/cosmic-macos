@@ -22,6 +22,9 @@ use cosmic::{
         scrollable, space, text, toggler,
     },
 };
+use cosmic_ext_mac_applet_style::{
+    PANEL_TEXT_SIZE, PillVariant, mac_pill_button, mac_popover_container_sized,
+};
 use cosmic_notifications_config::NotificationsConfig;
 use cosmic_notifications_util::{ActionId, Notification, markup};
 use mpris2_zbus::player::PlaybackStatus;
@@ -44,7 +47,11 @@ use std::sync::LazyLock;
 use timedate_zbus::TimeDateProxy;
 use tokio::{sync::watch, time};
 
-use crate::{config::TimeAppletConfig, fl, time::get_calendar_first};
+use crate::{
+    config::TimeAppletConfig,
+    fl,
+    time::{format_macos_clock, get_calendar_first},
+};
 use cosmic::applet::token::subscription::{
     TokenRequest, TokenUpdate, activation_token_subscription,
 };
@@ -103,8 +110,6 @@ const POPUP_WIDTH: f32 = 468.0;
 /// the popup. The stock applet uses 44.
 const CELL_WIDTH: f32 = 60.0;
 
-static AUTOSIZE_POPUP_ID: LazyLock<Id> = LazyLock::new(|| Id::new("autosize-popup"));
-
 /// The stock time applet's config is reused so COSMIC Settings keeps working.
 const TIME_CONFIG_ID: &str = "com.system76.CosmicAppletTime";
 
@@ -129,10 +134,10 @@ fn get_system_locale() -> Locale {
             }
 
             // Try language-only fallback (e.g., "en" from "en-US")
-            if let Some(lang) = cleaned_locale.split('-').next() {
-                if let Ok(locale) = Locale::try_from_str(lang) {
-                    return locale;
-                }
+            if let Some(lang) = cleaned_locale.split('-').next()
+                && let Ok(locale) = Locale::try_from_str(lang)
+            {
+                return locale;
             }
         }
     }
@@ -183,6 +188,7 @@ pub enum Message {
     Token(TokenUpdate),
     ConfigChanged(TimeAppletConfig),
     TimezoneUpdate(String),
+    #[allow(dead_code)]
     Surface(surface::Action<Message>),
     Mpris(MprisUpdate),
     MprisRequest(MprisRequest),
@@ -497,60 +503,8 @@ impl Window {
     }
 
     fn horizontal_layout(&self) -> Element<'_, Message> {
-        let formatted_date = if let Some(strftime) = self.maybe_strftime() {
-            strftime
-        } else {
-            let datetime = self.create_datetime(&self.now.date());
-            let mut prefs = DateTimeFormatterPreferences::from(self.locale.clone());
-            prefs.hour_cycle = Some(if self.config.military_time {
-                HourCycle::H23
-            } else {
-                HourCycle::H12
-            });
-
-            if self.config.show_date_in_top_panel {
-                if self.config.show_weekday {
-                    let mut fs = fieldsets::MDET::medium();
-                    if !self.config.show_seconds {
-                        fs = fs.with_time_precision(TimePrecision::Minute);
-                    }
-                    DateTimeFormatter::try_new(prefs, fs)
-                        .unwrap()
-                        .format(&datetime)
-                        .to_string()
-                } else {
-                    let mut fs = fieldsets::MDT::medium();
-                    if !self.config.show_seconds {
-                        fs = fs.with_time_precision(TimePrecision::Minute);
-                    }
-                    DateTimeFormatter::try_new(prefs, fs)
-                        .unwrap()
-                        .format(&datetime)
-                        .to_string()
-                }
-            } else {
-                let mut fs = fieldsets::T::medium();
-                if !self.config.show_seconds {
-                    fs = fs.with_time_precision(TimePrecision::Minute);
-                }
-                DateTimeFormatter::try_new(prefs, fs)
-                    .unwrap()
-                    .format(&datetime)
-                    .to_string()
-            }
-        };
-
-        Element::from(
-            row!(
-                self.core.applet.text(formatted_date),
-                container(space::vertical().height(Length::Fixed(
-                    (self.core.applet.suggested_size(true).1
-                        + 2 * self.core.applet.suggested_padding(true).1)
-                        as f32
-                )))
-            )
-            .align_y(Alignment::Center),
-        )
+        let formatted_date = format_macos_clock(&self.now, &self.config, &self.locale);
+        text(formatted_date).size(PANEL_TEXT_SIZE).into()
     }
 }
 
@@ -634,7 +588,7 @@ impl cosmic::Application for Window {
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        fn time_subscription(mut show_seconds: watch::Receiver<bool>) -> Subscription<Message> {
+        fn time_subscription(show_seconds: watch::Receiver<bool>) -> Subscription<Message> {
             struct Wrapper {
                 inner: watch::Receiver<bool>,
                 id: &'static str,
@@ -649,7 +603,7 @@ impl cosmic::Application for Window {
                     inner: show_seconds,
                     id: "time-sub",
                 },
-                |Wrapper { inner, id }| {
+                |Wrapper { inner, id: _ }| {
                     let mut show_seconds = inner.clone();
                     stream::channel(1, move |mut output: mpsc::Sender<Message>| async move {
                         // Mark this receiver's state as changed so that it always receives an initial
@@ -805,7 +759,7 @@ impl cosmic::Application for Window {
                 if let Some(p) = self.popup.take() {
                     destroy_popup(p)
                 } else {
-                    return cosmic::surface::surface_task(cosmic::surface::action::app_popup(
+                    cosmic::surface::surface_task(cosmic::surface::action::app_popup(
                         |_| Default::default(),
                         |app: &mut Self| {
                             app.date_today = app.now.date();
@@ -844,12 +798,12 @@ impl cosmic::Application for Window {
                             popup_settings
                         },
                         None,
-                    ));
+                    ))
                 }
             }
             Message::Tick => {
                 self.now = self.timezone.as_ref().map_or_else(
-                    || Zoned::now(),
+                    Zoned::now,
                     |tz| Zoned::now().with_time_zone(tz.clone()),
                 );
                 Task::none()
@@ -971,7 +925,7 @@ impl cosmic::Application for Window {
                 self.update(Message::Tick)
             }
             Message::Surface(a) => {
-                return cosmic::task::message(cosmic::Action::Surface(a));
+                cosmic::task::message(cosmic::Action::Surface(a))
             }
             Message::Mpris(MprisUpdate::Player(p)) => {
                 self.player_status = Some(p);
@@ -1034,10 +988,10 @@ impl cosmic::Application for Window {
             }
             Message::DoNotDisturb(enabled) => {
                 self.notifications_config.do_not_disturb = enabled;
-                if let Some(helper) = &self.notifications_config_helper {
-                    if let Err(err) = self.notifications_config.write_entry(helper) {
-                        tracing::error!(?err, "Failed to save Do Not Disturb");
-                    }
+                if let Some(helper) = &self.notifications_config_helper
+                    && let Err(err) = self.notifications_config.write_entry(helper)
+                {
+                    tracing::error!(?err, "Failed to save Do Not Disturb");
                 }
                 Task::none()
             }
@@ -1083,24 +1037,26 @@ impl cosmic::Application for Window {
             PanelAnchor::Top | PanelAnchor::Bottom
         );
 
-        let button = button::custom(if horizontal {
-            self.horizontal_layout()
-        } else {
-            self.vertical_layout()
-        })
-        .padding(if horizontal {
-            [0, self.core.applet.suggested_padding(true).0]
-        } else {
-            [self.core.applet.suggested_padding(true).0, 0]
-        })
-        .on_press_down(Message::TogglePopup)
-        .class(cosmic::theme::Button::AppletIcon);
+        let btn = mac_pill_button(
+            if horizontal {
+                self.horizontal_layout()
+            } else {
+                self.vertical_layout()
+            },
+            self.popup.is_some(),
+            if horizontal {
+                PillVariant::Text
+            } else {
+                PillVariant::IconOnly
+            },
+        )
+        .on_press_down(Message::TogglePopup);
 
         autosize::autosize(
             if let Some(tracker) = self.rectangle_tracker.as_ref() {
-                Element::from(tracker.container(0, button).ignore_bounds(true))
+                Element::from(tracker.container(0, btn).ignore_bounds(true))
             } else {
-                button.into()
+                btn.into()
             },
             AUTOSIZE_MAIN_ID.clone(),
         )
@@ -1160,7 +1116,9 @@ impl cosmic::Application for Window {
             content_list = content_list.push(divider()).push(agenda);
         }
 
-        if let Some(status) = self.player_status.as_ref() {
+        if !control_center_installed()
+            && let Some(status) = self.player_status.as_ref()
+        {
             content_list = content_list
                 .push(divider())
                 .push(self.now_playing(status));
@@ -1175,40 +1133,31 @@ impl cosmic::Application for Window {
                     .on_press(Message::OpenDateTimeSettings),
             );
 
-        // Same look as the applet popup container, but without its 360 px cap.
-        let framed = container(content_list)
-            .width(Length::Fixed(POPUP_WIDTH))
-            .class(theme::Container::custom(|theme| {
-                let cosmic = theme.cosmic();
-                let background = cosmic.background(theme.transparent);
-                container::Style {
-                    text_color: Some(background.on.into()),
-                    icon_color: Some(background.on.into()),
-                    background: Some(cosmic::iced::Color::from(background.base).into()),
-                    border: cosmic::iced::Border {
-                        radius: cosmic.corner_radii.radius_m.into(),
-                        width: 1.0,
-                        color: background.divider.into(),
-                    },
-                    shadow: Default::default(),
-                    snap: true,
-                }
-            }));
-
-        autosize::autosize(framed, AUTOSIZE_POPUP_ID.clone())
-            .limits(
-                cosmic::iced::Limits::NONE
-                    .min_height(1.0)
-                    .min_width(POPUP_WIDTH)
-                    .max_width(POPUP_WIDTH)
-                    .max_height(1000.0),
-            )
-            .into()
+        mac_popover_container_sized(
+            &self.core.applet,
+            content_list.width(Length::Fixed(POPUP_WIDTH)),
+            POPUP_WIDTH,
+            POPUP_WIDTH,
+        )
+        .into()
     }
 
     fn on_close_requested(&self, id: window::Id) -> Option<Message> {
         Some(Message::CloseRequested(id))
     }
+}
+
+/// Hide Now Playing inside the Clock popover when Control Center is installed
+/// so media controls are not shown twice.
+fn control_center_installed() -> bool {
+    let data_home = std::env::var_os("XDG_DATA_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local/share"))
+        });
+    data_home
+        .map(|d| d.join("applications/dev.asw.CosmicExtAppletControlCenter.desktop").is_file())
+        .unwrap_or(false)
 }
 
 fn truncate(value: &str, max_chars: usize) -> String {

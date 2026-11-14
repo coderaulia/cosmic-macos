@@ -1,0 +1,13 @@
+[Desktop Entry]
+Name=Control Center
+Comment=Quick toggles for Wi-Fi, Bluetooth, Focus, Tiling, Display, Sound and Now Playing
+Type=Application
+Exec=cosmic-ext-applet-control-center
+Terminal=false
+Categories=COSMIC;
+Keywords=COSMIC;Applet;Control Center;Wi-Fi;Bluetooth;Volume;Brightness;Focus;Tiling;
+Icon=preferences-system-symbolic
+NoDisplay=true
+X-CosmicApplet=true
+X-HostWaylandDisplay=true
+X-CosmicHoverPopup=Auto

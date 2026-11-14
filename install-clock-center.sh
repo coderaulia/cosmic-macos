@@ -14,25 +14,10 @@ PRESET="${XDG_CONFIG_HOME:-$HOME/.config}/cosmic-presets/macos-glass/com.system7
 write_panel_layout() {
   # $1 = applet shown in the panel center
   # $2 = "yes" to keep the stock notifications applet in the right wing
-  local center="$1" notifications=""
-  [ "$2" = "yes" ] && notifications=$'\n    "com.system76.CosmicAppletNotifications",'
-  printf 'Some([\n    "%s",\n])' "$center" >"$PRESET/plugins_center"
-  printf '%s' "Some(([
-    \"dev.cappsy.CosmicExtAppletLogoMenu\",
-    \"com.system76.CosmicPanelLauncherButton\",
-    \"com.system76.CosmicPanelWorkspacesButton\",
-    \"com.system76.CosmicPanelAppButton\",
-], [
-    \"io.github.cosmic_utils.minimon-applet\",
-    \"io.github.k33wee.clippy-land\",
-    \"com.system76.CosmicAppletTiling\",
-    \"com.system76.CosmicAppletStatusArea\",
-    \"com.system76.CosmicAppletAudio\",
-    \"com.system76.CosmicAppletNetwork\",
-    \"com.system76.CosmicAppletBluetooth\",
-    \"com.system76.CosmicAppletBattery\",$notifications
-    \"com.system76.CosmicAppletPower\",
-]))" >"$PRESET/plugins_wings"
+  local center="$1" notifications="$2"
+  "$ROOT/tools/panel-layout.sh" --preset "$PRESET" \
+    --set "clock=$center" \
+    --set "notifications=$notifications"
 }
 
 [ -d "$PRESET" ] || { echo "macos-glass preset not found at $PRESET" >&2; exit 1; }

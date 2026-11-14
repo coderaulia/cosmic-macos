@@ -21,7 +21,9 @@ Components (`./install.sh --list`):
 |---|---|
 | `preset` | `cosmic-preset`: switch between your original desktop and the macOS preset |
 | `dock` | Magnifying dock: bounce, slide-hide, window previews on hover, drag to reorder (after "Edit Dock…"), right-click menu, trash |
+| `panel` | macOS-style top menu bar applets (lord menu, active app menu, Spotlight button, Control Center) |
 | `clock` | Panel clock with a calendar that shows your events, now playing, and notifications |
+| `clipboard` | Clipboard history daemon, quick-paste window (`Super+V`), and panel applet |
 | `spotlight` | Spotlight-style launcher on the Super key, with result headings and a details pane |
 | `files` | Files with an inline tree, Finder-style columns with preview, Quick Look on Space |
 | `notepad` | Notepad as a searchable Notes app (notes in `~/Documents/Notes`, saved automatically) |
@@ -56,7 +58,7 @@ the upstream history is not copied.
 | Path | Contents |
 |---|---|
 | `apps/mac-suite/` | Calendar, Mail and the theme tool (our own Rust workspace) |
-| `overlays/cosmic-applets/` | The dock and the clock applet (new directories inside `cosmic-applets`) |
+| `overlays/cosmic-applets/` | Our custom applets (`cosmic-ext-dock`, `cosmic-ext-mac-applet-style`, and the panel/clipboard applets) |
 | `patches/*.patch` | Our changes to cosmic-files, cosmic-edit, cosmic-viewer, cosmic-launcher, cosmic-comp, cosmic-applets, and libcosmic |
 | `presets/macos-glass/` | The macOS preset for `cosmic-preset` |
 | `bin/cosmic-preset` | The preset switcher |
@@ -84,9 +86,8 @@ run it in a clean directory, and fix the patches that no longer apply.
 ## Requirements
 
 Rust (via `rustup`), `git`, `rsync`, `libsecret` (`secret-tool`), `clang` and
-`mold` for fast links, `nasm` for the image viewer, and COSMIC 1.11. The preset
-also uses these third-party panel applets: `cosmic-ext-applet-logomenu`,
-`minimon`, and `clippy-land`, and the WhiteSur icon theme. Missing ones are
+`mold` for fast links, `nasm` for the image viewer, and COSMIC 1.11. Optionally
+install the WhiteSur icon theme for macOS-style icons. Missing applets are
 reported by `cosmic-preset apply`.
 
 ## Roadmap

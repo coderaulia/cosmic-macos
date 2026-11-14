@@ -8,6 +8,7 @@ description = "Clock applet with calendar, now-playing controls and notification
 [dependencies]
 anyhow.workspace = true
 cosmic-applets-config.workspace = true
+cosmic-ext-mac-applet-style = { path = "../cosmic-ext-mac-applet-style" }
 cosmic-notifications-config = { git = "https://github.com/pop-os/cosmic-notifications" }
 cosmic-notifications-util = { git = "https://github.com/pop-os/cosmic-notifications" }
 futures-util = { workspace = true, features = ["sink"] }

@@ -1,0 +1,29 @@
+[package]
+name = "cosmic-ext-applet-control-center"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+description = "macOS-style Control Center panel applet for COSMIC"
+
+[dependencies]
+anyhow.workspace = true
+cctk.workspace = true
+cosmic-config.workspace = true
+cosmic-ext-mac-applet-style = { path = "../cosmic-ext-mac-applet-style" }
+cosmic-notifications-config = { git = "https://github.com/pop-os/cosmic-notifications" }
+cosmic-protocols.workspace = true
+cosmic-settings-daemon-subscription = { git = "https://github.com/pop-os/cosmic-settings" }
+futures.workspace = true
+futures-util = { workspace = true, features = ["sink"] }
+libcosmic.workspace = true
+mpris2-zbus = { git = "https://github.com/pop-os/dbus-settings-bindings" }
+rustc-hash.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json = "1"
+tokio.workspace = true
+tracing.workspace = true
+tracing-log.workspace = true
+tracing-subscriber.workspace = true
+url = "2"
+urlencoding = "2.1.3"
+zbus = { workspace = true, features = ["tokio"] }
