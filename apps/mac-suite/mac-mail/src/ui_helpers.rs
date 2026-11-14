@@ -73,6 +73,7 @@ fn strip_folder_prefix(name: &str) -> &str {
 /// Logical sidebar ordering key for a raw IMAP folder name:
 /// Inbox, Drafts, Sent, Archive, Spam, Trash, Starred, Important, Outbox,
 /// followed by custom folders in alphabetical order.
+#[allow(dead_code)]
 pub fn folder_sort_key(raw: &str) -> (u8, String, String) {
     let friendly = friendly_folder_name(raw);
     let priority = match friendly.as_str() {
@@ -91,6 +92,7 @@ pub fn folder_sort_key(raw: &str) -> (u8, String, String) {
 }
 
 /// Sort folder names in logical mailbox order.
+#[allow(dead_code)]
 pub fn sort_folders(folders: &mut [String]) {
     folders.sort_by_key(|name| folder_sort_key(name));
 }

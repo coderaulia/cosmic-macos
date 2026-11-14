@@ -13,12 +13,13 @@ mod backend;
 mod cache;
 #[allow(dead_code)]
 mod imap_pool;
-mod mail_io;
 mod ui_helpers;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use account::Account;
+use backend::{AttachmentInfo, DEFAULT_PAGE_SIZE, FolderPage, MailBackend, OpenedMessage};
+use cache::{FolderInfo, FolderKind, MessageSummary};
 use cosmic::{
     Apply, Element, Task, app,
     iced::{
@@ -29,7 +30,7 @@ use cosmic::{
         self, button, column, container, divider, row, scrollable, text, text_editor,
     },
 };
-use mail_io::{FolderInfo, Opened, Summary};
+use imap_pool::{IdleWatcher, NewMailNotification};
 
 const APP_ID: &str = "dev.asw.MacMail";
 const SIDEBAR_WIDTH: f32 = 220.0;
@@ -71,13 +72,16 @@ enum Msg {
     SignOut,
     Folders(Result<Vec<FolderInfo>, String>),
     SelectFolder(String),
-    Headers(String, Result<Vec<Summary>, String>),
+    Headers(String, Result<FolderPage, String>),
+    OlderHeaders(String, Result<FolderPage, String>),
+    LoadOlder,
     SelectMessage(u32),
     SelectNext,
     SelectPrev,
-    Body(u32, Result<Opened, String>),
+    Body(u32, Box<Result<OpenedMessage, String>>),
     SearchText(String),
     RunSearch,
+    SearchResults(String, Result<Vec<MessageSummary>, String>),
     ClearSearch,
     Delete,
     Archive,
@@ -88,6 +92,7 @@ enum Msg {
     SaveAttachment(usize),
     Saved(Result<String, String>),
     Refresh,
+    NewMail(NewMailNotification),
     Compose,
     ComposeTo(String),
     ComposeSubject(String),
@@ -105,17 +110,20 @@ enum Msg {
 
 struct Mail {
     core: app::Core,
-    /// The signed-in account, once its password is known.
+    /// The signed-in account and persistent backend, once signed in.
     account: Option<Account>,
     password: String,
+    backend: Option<MailBackend>,
     setup: Setup,
-    folders: Vec<String>,
-    folder_unreads: HashMap<String, usize>,
+    folders: Vec<FolderInfo>,
     folder: String,
-    messages: Vec<Summary>,
+    messages: Vec<MessageSummary>,
+    has_more: bool,
+    loading_older: bool,
     selected: Option<u32>,
-    body: Option<String>,
-    attachments: Vec<String>,
+    opened: Option<OpenedMessage>,
+    body_error: Option<String>,
+    attachments: Vec<AttachmentInfo>,
     show_recipients: bool,
     /// Text in the search box, and whether the list shows its results.
     search_text: String,
@@ -146,6 +154,18 @@ fn done_error(message: String) -> Msg {
 /// Empty space that takes up the remaining width.
 fn space_fill() -> widget::Space {
     widget::space::horizontal().width(Length::Fill)
+}
+
+fn folder_icon_for(info: &FolderInfo) -> &'static str {
+    match info.kind {
+        FolderKind::Inbox => "mail-inbox-symbolic",
+        FolderKind::Drafts => "document-edit-symbolic",
+        FolderKind::Sent => "mail-send-symbolic",
+        FolderKind::Archive => "mail-archive-symbolic",
+        FolderKind::Junk => "mail-mark-junk-symbolic",
+        FolderKind::Trash => "user-trash-symbolic",
+        FolderKind::Other => ui_helpers::folder_icon(&info.raw_name),
+    }
 }
 
 /// Subtle tinted selection style that preserves readable foreground text
@@ -229,85 +249,120 @@ fn extract_email_addr(formatted: &str) -> String {
     formatted.trim().to_owned()
 }
 
+fn idle_subscription_worker(
+    params: &(String, String, u16, String, u16, String),
+) -> cosmic::iced::futures::stream::BoxStream<'static, Msg> {
+    let account = Account {
+        email: params.0.clone(),
+        imap_host: params.1.clone(),
+        imap_port: params.2,
+        smtp_host: params.3.clone(),
+        smtp_port: params.4,
+    };
+    let password = params.5.clone();
+    Box::pin(cosmic::iced::stream::channel::<Msg>(
+        16,
+        move |tx: cosmic::iced::futures::channel::mpsc::Sender<Msg>| async move {
+            let _watcher = IdleWatcher::start(account, password, move |notif| {
+                let mut sender = tx.clone();
+                let _ = sender.try_send(Msg::NewMail(notif));
+            });
+            std::future::pending::<()>().await;
+        },
+    ))
+}
+
 impl Mail {
-    /// The first folder whose raw or friendly name matches one of `words`.
-    fn find_folder(&self, words: &[&str]) -> Option<String> {
+    fn current_folder_display(&self) -> String {
         self.folders
             .iter()
-            .find(|name| {
-                let lower = name.to_lowercase();
-                let friendly = ui_helpers::friendly_folder_name(name).to_lowercase();
-                words
-                    .iter()
-                    .any(|word| lower.contains(word) || friendly.contains(word))
-            })
-            .cloned()
+            .find(|f| f.raw_name == self.folder)
+            .map(|f| f.display_name.clone())
+            .unwrap_or_else(|| ui_helpers::friendly_folder_name(&self.folder))
+    }
+
+    fn current_folder_is_trash(&self) -> bool {
+        self.folders
+            .iter()
+            .find(|f| f.raw_name == self.folder)
+            .is_some_and(|f| f.kind == FolderKind::Trash)
+            || {
+                let lower = self.folder.to_lowercase();
+                lower.contains("trash") || lower.contains("deleted") || lower.contains("bin")
+            }
+    }
+
+    fn has_archive_folder(&self) -> bool {
+        self.folders.iter().any(|f| f.kind == FolderKind::Archive)
+    }
+
+    fn adjust_folder_unread(&mut self, folder: &str, delta: isize) {
+        if let Some(info) = self.folders.iter_mut().find(|f| f.raw_name == folder) {
+            if delta < 0 {
+                info.unread = info.unread.saturating_sub((-delta) as u32);
+            } else {
+                info.unread = info.unread.saturating_add(delta as u32);
+            }
+        }
     }
 
     fn select_message_by_uid(&mut self, uid: u32) -> app::Task<Msg> {
         self.compose = None;
         self.selected = Some(uid);
-        self.body = None;
+        self.opened = None;
+        self.body_error = None;
         self.attachments.clear();
         self.show_recipients = false;
+        let folder = self.folder.clone();
         if let Some(message) = self.messages.iter_mut().find(|m| m.uid == uid)
             && message.unread
         {
             message.unread = false;
-            if let Some(count) = self.folder_unreads.get_mut(&self.folder) {
-                *count = count.saturating_sub(1);
-            }
+            self.adjust_folder_unread(&folder, -1);
         }
-        let Some(account) = self.account.clone() else {
+        let Some(backend) = self.backend.clone() else {
             return Task::none();
         };
-        let password = self.password.clone();
-        let folder = self.folder.clone();
         run(
-            move || mail_io::body(&account, &password, &folder, uid),
-            move |result| Msg::Body(uid, result),
-        )
-    }
-
-    /// Move or delete the open message; the list updates when the server agrees.
-    fn move_selected(&mut self, target: Option<String>) -> app::Task<Msg> {
-        let (Some(account), Some(uid)) = (self.account.clone(), self.selected) else {
-            return Task::none();
-        };
-        self.busy = true;
-        let password = self.password.clone();
-        let folder = self.folder.clone();
-        run(
-            move || mail_io::move_message(&account, &password, &folder, uid, target.as_deref()),
-            move |result| Msg::Moved(uid, result),
+            move || backend.open_message(&folder, uid),
+            move |result| Msg::Body(uid, Box::new(result)),
         )
     }
 
     fn load_headers(&mut self, folder: &str) -> app::Task<Msg> {
-        let Some(account) = self.account.clone() else {
+        let Some(backend) = self.backend.clone() else {
             return Task::none();
         };
+        if let Some(cached) = backend.cached_headers(folder)
+            && !cached.summaries.is_empty()
+        {
+            self.messages = cached.summaries;
+            self.has_more = cached.has_more;
+        }
         self.busy = true;
-        let password = self.password.clone();
         let folder = folder.to_owned();
         let name = folder.clone();
         run(
-            move || mail_io::headers(&account, &password, &folder),
+            move || backend.sync_headers(&folder, DEFAULT_PAGE_SIZE),
             move |result| Msg::Headers(name, result),
         )
     }
 
     fn sidebar(&self) -> Element<'_, Msg> {
         let mut list = column![text::caption("Mailboxes")].spacing(2);
-        for name in &self.folders {
-            let unread = self.folder_unreads.get(name).copied().unwrap_or(0);
-            let friendly = ui_helpers::friendly_folder_name(name);
-            let is_selected = *name == self.folder;
+        for info in &self.folders {
+            let unread = info.unread;
+            let is_selected = info.raw_name == self.folder;
+            let label = if info.display_name.is_empty() {
+                ui_helpers::friendly_folder_name(&info.raw_name)
+            } else {
+                info.display_name.clone()
+            };
             let mut entry = row![
-                widget::icon::from_name(ui_helpers::folder_icon(name))
+                widget::icon::from_name(folder_icon_for(info))
                     .size(16)
                     .icon(),
-                text::body(friendly).width(Length::Fill),
+                text::body(label).width(Length::Fill),
             ]
             .spacing(8)
             .align_y(Alignment::Center);
@@ -338,7 +393,7 @@ impl Mail {
                     .class(list_row_button_class(is_selected))
                     .width(Length::Fill)
                     .padding([6, 8])
-                    .on_press(Msg::SelectFolder(name.clone())),
+                    .on_press(Msg::SelectFolder(info.raw_name.clone())),
             );
         }
         let account = self.account.as_ref().map_or("", |a| a.email.as_str());
@@ -387,7 +442,9 @@ impl Mail {
                 text::body(message.from.as_str())
             };
 
-            let mut top_row = row![from.width(Length::Fill)].spacing(6).align_y(Alignment::Center);
+            let mut top_row = row![from.width(Length::Fill)]
+                .spacing(6)
+                .align_y(Alignment::Center);
             if message.has_attachments {
                 top_row = top_row.push(
                     widget::icon::from_name("mail-attachment-symbolic")
@@ -436,11 +493,25 @@ impl Mail {
                 )
                 .push(divider::horizontal::default());
         }
+        if self.has_more && !self.searching && !self.messages.is_empty() {
+            let label = if self.loading_older {
+                "Loading older messages…"
+            } else {
+                "Load older messages"
+            };
+            list = list.push(
+                button::standard(label)
+                    .on_press_maybe((!self.loading_older).then_some(Msg::LoadOlder))
+                    .width(Length::Fill)
+                    .apply(container)
+                    .padding([8, 12]),
+            );
+        }
         if self.messages.is_empty() && !self.busy {
             list = list.push(text::body("No messages").apply(container).padding(16));
         }
 
-        let folder_title = ui_helpers::friendly_folder_name(&self.folder);
+        let folder_title = self.current_folder_display();
         let header = row![
             text::title3(folder_title).width(Length::Fill),
             button::icon(widget::icon::from_name("view-refresh-symbolic"))
@@ -500,11 +571,15 @@ impl Mail {
                 .center(Length::Fill)
                 .into();
         };
-        let body = self.body.as_deref().unwrap_or("Loading…");
-        let in_trash = {
-            let lower = self.folder.to_lowercase();
-            lower.contains("trash") || lower.contains("deleted") || lower.contains("bin")
-        };
+
+        let body = self
+            .opened
+            .as_ref()
+            .map(|o| o.text.as_str())
+            .or(self.body_error.as_deref())
+            .unwrap_or("Loading…");
+
+        let in_trash = self.current_folder_is_trash();
 
         let mut actions = row![space_fill()].spacing(4).align_y(Alignment::Center);
         actions = actions
@@ -523,7 +598,7 @@ impl Mail {
                     .tooltip("Forward")
                     .on_press(Msg::Forward),
             );
-        if self.find_folder(&["archive", "all mail"]).is_some() {
+        if self.has_archive_folder() {
             actions = actions.push(
                 button::icon(widget::icon::from_name("mail-archive-symbolic"))
                     .tooltip("Archive")
@@ -551,11 +626,11 @@ impl Mail {
             );
 
         // Sender initials avatar circle.
-        let initials = ui_helpers::sender_initials(&message.from, &message.from_email);
-        let [r, g, b] = ui_helpers::avatar_color_rgb(if message.from_email.is_empty() {
+        let initials = ui_helpers::sender_initials(&message.from, &message.from_address);
+        let [r, g, b] = ui_helpers::avatar_color_rgb(if message.from_address.is_empty() {
             &message.from
         } else {
-            &message.from_email
+            &message.from_address
         });
         let avatar = text::heading(initials)
             .class(theme::Text::Color(Color::WHITE))
@@ -573,10 +648,12 @@ impl Mail {
                 ..Default::default()
             }));
 
-        let mut sender_line = row![text::heading(message.from.as_str())].spacing(6).align_y(Alignment::Center);
-        if !message.from_email.is_empty() && message.from_email != message.from {
+        let mut sender_line = row![text::heading(message.from.as_str())]
+            .spacing(6)
+            .align_y(Alignment::Center);
+        if !message.from_address.is_empty() && message.from_address != message.from {
             sender_line = sender_line.push(
-                text::caption(format!("<{}>", message.from_email)).class(muted_text_class()),
+                text::caption(format!("<{}>", message.from_address)).class(muted_text_class()),
             );
         }
 
@@ -587,12 +664,23 @@ impl Mail {
             "Details ▾"
         };
 
+        let to_list = self
+            .opened
+            .as_ref()
+            .filter(|o| !o.to.is_empty())
+            .map_or(message.to.as_slice(), |o| o.to.as_slice());
+        let cc_list = self
+            .opened
+            .as_ref()
+            .filter(|o| !o.cc.is_empty())
+            .map_or(message.cc.as_slice(), |o| o.cc.as_slice());
+
         let mut sender_col = column![sender_line].spacing(2).width(Length::Fill);
-        if !self.show_recipients && !message.to.is_empty() {
-            let summary_to = if message.to.len() == 1 {
-                format!("To: {}", message.to[0])
+        if !self.show_recipients && !to_list.is_empty() {
+            let summary_to = if to_list.len() == 1 {
+                format!("To: {}", to_list[0])
             } else {
-                format!("To: {} (+{} more)", message.to[0], message.to.len() - 1)
+                format!("To: {} (+{} more)", to_list[0], to_list.len() - 1)
             };
             sender_col = sender_col.push(text::caption(summary_to).class(muted_text_class()));
         }
@@ -621,19 +709,19 @@ impl Mail {
 
         if self.show_recipients {
             let mut details = column![].spacing(4);
-            let from_full = if message.from_email.is_empty() {
+            let from_full = if message.from_address.is_empty() {
                 message.from.clone()
-            } else if message.from == message.from_email {
-                message.from_email.clone()
+            } else if message.from == message.from_address {
+                message.from_address.clone()
             } else {
-                format!("{} <{}>", message.from, message.from_email)
+                format!("{} <{}>", message.from, message.from_address)
             };
             details = details.push(text::caption(format!("From: {from_full}")));
-            if !message.to.is_empty() {
-                details = details.push(text::caption(format!("To: {}", message.to.join(", "))));
+            if !to_list.is_empty() {
+                details = details.push(text::caption(format!("To: {}", to_list.join(", "))));
             }
-            if !message.cc.is_empty() {
-                details = details.push(text::caption(format!("Cc: {}", message.cc.join(", "))));
+            if !cc_list.is_empty() {
+                details = details.push(text::caption(format!("Cc: {}", cc_list.join(", "))));
             }
             if !message.date.is_empty() {
                 details = details.push(text::caption(format!("Date: {}", message.date)));
@@ -660,9 +748,9 @@ impl Mail {
         }
 
         let mut attachments = row![].spacing(8);
-        for (index, name) in self.attachments.iter().enumerate() {
+        for (index, att) in self.attachments.iter().enumerate() {
             attachments = attachments.push(
-                button::standard(name.as_str()).on_press(Msg::SaveAttachment(index)),
+                button::standard(att.filename.as_str()).on_press(Msg::SaveAttachment(index)),
             );
         }
 
@@ -750,13 +838,16 @@ impl cosmic::Application for Mail {
             core,
             account: None,
             password: String::new(),
+            backend: None,
             setup: Setup::default(),
             folders: Vec::new(),
-            folder_unreads: HashMap::new(),
             folder: "INBOX".to_owned(),
             messages: Vec::new(),
+            has_more: false,
+            loading_older: false,
             selected: None,
-            body: None,
+            opened: None,
+            body_error: None,
             attachments: Vec::new(),
             show_recipients: false,
             search_text: String::new(),
@@ -766,19 +857,31 @@ impl cosmic::Application for Mail {
             compose: None,
         };
 
-        // A saved account with a stored password signs in by itself.
+        // A saved account with a stored password signs in by itself and shows cached mail immediately.
         let saved = account::load().and_then(|account| {
             account::load_password(&account.email).map(|password| (account, password))
         });
         let task = match saved {
             Some((account, password)) => {
-                mail.account = Some(account.clone());
-                mail.password = password.clone();
+                let backend = MailBackend::new(account.clone(), password.clone());
+                let cached_folders = backend.cached_folders();
+                if !cached_folders.is_empty() {
+                    mail.folder = cached_folders
+                        .iter()
+                        .find(|f| f.kind == FolderKind::Inbox || f.raw_name.eq_ignore_ascii_case("INBOX"))
+                        .or(cached_folders.first())
+                        .map_or_else(|| "INBOX".to_owned(), |f| f.raw_name.clone());
+                    mail.folders = cached_folders;
+                    if let Some(cached_page) = backend.cached_headers(&mail.folder) {
+                        mail.messages = cached_page.summaries;
+                        mail.has_more = cached_page.has_more;
+                    }
+                }
+                mail.account = Some(account);
+                mail.password = password;
+                mail.backend = Some(backend.clone());
                 mail.busy = true;
-                run(
-                    move || mail_io::folders(&account, &password),
-                    Msg::Folders,
-                )
+                run(move || backend.sync_folders(), Msg::Folders)
             }
             None => Task::none(),
         };
@@ -786,30 +889,47 @@ impl cosmic::Application for Mail {
     }
 
     fn subscription(&self) -> Subscription<Msg> {
-        if self.account.is_none() || self.compose.is_some() {
-            return Subscription::none();
+        let mut subs = Vec::new();
+
+        if let Some(account) = self.account.as_ref() {
+            subs.push(Subscription::run_with(
+                (
+                    account.email.clone(),
+                    account.imap_host.clone(),
+                    account.imap_port,
+                    account.smtp_host.clone(),
+                    account.smtp_port,
+                    self.password.clone(),
+                ),
+                idle_subscription_worker,
+            ));
         }
-        event::listen_with(|ev, status, _id| {
-            if status != event::Status::Ignored {
-                return None;
-            }
-            let Event::Keyboard(keyboard::Event::KeyPressed {
-                key, modifiers, ..
-            }) = ev
-            else {
-                return None;
-            };
-            if modifiers.control() || modifiers.alt() || modifiers.logo() {
-                return None;
-            }
-            match key {
-                keyboard::Key::Named(keyboard::key::Named::ArrowDown) => Some(Msg::SelectNext),
-                keyboard::Key::Named(keyboard::key::Named::ArrowUp) => Some(Msg::SelectPrev),
-                keyboard::Key::Named(keyboard::key::Named::Delete) => Some(Msg::Delete),
-                keyboard::Key::Character(c) if c.eq_ignore_ascii_case("r") => Some(Msg::Reply),
-                _ => None,
-            }
-        })
+
+        if self.account.is_some() && self.compose.is_none() {
+            subs.push(event::listen_with(|ev, status, _id| {
+                if status != event::Status::Ignored {
+                    return None;
+                }
+                let Event::Keyboard(keyboard::Event::KeyPressed {
+                    key, modifiers, ..
+                }) = ev
+                else {
+                    return None;
+                };
+                if modifiers.control() || modifiers.alt() || modifiers.logo() {
+                    return None;
+                }
+                match key {
+                    keyboard::Key::Named(keyboard::key::Named::ArrowDown) => Some(Msg::SelectNext),
+                    keyboard::Key::Named(keyboard::key::Named::ArrowUp) => Some(Msg::SelectPrev),
+                    keyboard::Key::Named(keyboard::key::Named::Delete) => Some(Msg::Delete),
+                    keyboard::Key::Character(c) if c.eq_ignore_ascii_case("r") => Some(Msg::Reply),
+                    _ => None,
+                }
+            }));
+        }
+
+        Subscription::batch(subs)
     }
 
     fn update(&mut self, message: Msg) -> app::Task<Msg> {
@@ -834,12 +954,11 @@ impl cosmic::Application for Mail {
                 self.busy = true;
                 self.status = None;
                 let password = self.setup.password.clone();
-                self.account = Some(account.clone());
-                self.password = password.clone();
-                return run(
-                    move || mail_io::folders(&account, &password),
-                    Msg::SignedIn,
-                );
+                let backend = MailBackend::new(account.clone(), password.clone());
+                self.account = Some(account);
+                self.password = password;
+                self.backend = Some(backend.clone());
+                return run(move || backend.sync_folders(), Msg::SignedIn);
             }
             Msg::SignedIn(result) => match result {
                 Ok(folders) => {
@@ -856,74 +975,117 @@ impl cosmic::Application for Mail {
                 Err(err) => {
                     self.busy = false;
                     self.account = None;
+                    self.backend = None;
                     self.status = Some(err);
                 }
             },
             Msg::SignOut => {
+                if let Some(backend) = self.backend.take() {
+                    backend.disconnect();
+                }
                 if let Some(account) = self.account.take() {
                     account::forget(&account.email);
                 }
                 self.password.clear();
                 self.folders.clear();
-                self.folder_unreads.clear();
                 self.messages.clear();
+                self.has_more = false;
+                self.loading_older = false;
                 self.selected = None;
-                self.body = None;
+                self.opened = None;
+                self.body_error = None;
+                self.attachments.clear();
                 self.show_recipients = false;
                 self.compose = None;
                 self.status = None;
             }
             Msg::Folders(result) => match result {
-                Ok(folder_infos) => {
-                    self.folder_unreads.clear();
-                    let mut names = Vec::with_capacity(folder_infos.len());
-                    for info in folder_infos {
-                        self.folder_unreads.insert(info.name.clone(), info.unread);
-                        names.push(info.name);
+                Ok(folders) => {
+                    let keep_current = folders.iter().any(|f| f.raw_name == self.folder);
+                    if !keep_current {
+                        self.folder = folders
+                            .iter()
+                            .find(|f| {
+                                f.kind == FolderKind::Inbox
+                                    || f.raw_name.eq_ignore_ascii_case("INBOX")
+                            })
+                            .or(folders.first())
+                            .map_or_else(|| "INBOX".to_owned(), |f| f.raw_name.clone());
                     }
-                    ui_helpers::sort_folders(&mut names);
-                    self.folder = names
-                        .iter()
-                        .find(|name| name.eq_ignore_ascii_case("INBOX"))
-                        .or(names.first())
-                        .cloned()
-                        .unwrap_or_else(|| "INBOX".to_owned());
-                    self.folders = names;
+                    self.folders = folders;
                     let folder = self.folder.clone();
                     return self.load_headers(&folder);
                 }
                 Err(err) => {
                     self.busy = false;
-                    self.account = None;
+                    if self.folders.is_empty() {
+                        self.account = None;
+                        self.backend = None;
+                    }
                     self.status = Some(err);
                 }
             },
             Msg::SelectFolder(folder) => {
                 self.folder.clone_from(&folder);
                 self.messages.clear();
+                self.has_more = false;
+                self.loading_older = false;
                 self.selected = None;
-                self.body = None;
+                self.opened = None;
+                self.body_error = None;
+                self.attachments.clear();
                 self.show_recipients = false;
                 self.compose = None;
+                self.searching = false;
                 return self.load_headers(&folder);
             }
             Msg::Headers(folder, result) => {
                 self.busy = false;
                 if folder == self.folder {
                     match result {
-                        Ok(messages) => {
-                            if !self.searching {
-                                let count = messages.iter().filter(|m| m.unread).count();
-                                self.folder_unreads
-                                    .entry(folder)
-                                    .and_modify(|existing| {
-                                        if messages.len() < 60 {
-                                            *existing = count;
-                                        }
-                                    })
-                                    .or_insert(count);
+                        Ok(page) => {
+                            self.has_more = page.has_more;
+                            self.messages = page.summaries;
+                            if let Some(backend) = self.backend.as_ref() {
+                                let updated_folders = backend.cached_folders();
+                                if !updated_folders.is_empty() {
+                                    self.folders = updated_folders;
+                                }
                             }
-                            self.messages = messages;
+                            self.status = None;
+                        }
+                        Err(err) => {
+                            if self.messages.is_empty() {
+                                self.status = Some(err);
+                            } else {
+                                // Offline / transient error: keep cached headers visible.
+                                self.status = Some(format!("Offline or sync error: {err}"));
+                            }
+                        }
+                    }
+                }
+            }
+            Msg::LoadOlder => {
+                let (Some(backend), Some(oldest)) =
+                    (self.backend.clone(), self.messages.last().map(|m| m.uid))
+                else {
+                    return Task::none();
+                };
+                self.loading_older = true;
+                let folder = self.folder.clone();
+                let name = folder.clone();
+                return run(
+                    move || backend.load_older_headers(&folder, oldest, DEFAULT_PAGE_SIZE),
+                    move |result| Msg::OlderHeaders(name, result),
+                );
+            }
+            Msg::OlderHeaders(folder, result) => {
+                self.loading_older = false;
+                if folder == self.folder {
+                    match result {
+                        Ok(page) => {
+                            self.messages = page.summaries;
+                            self.has_more = page.has_more;
                             self.status = None;
                         }
                         Err(err) => self.status = Some(err),
@@ -933,6 +1095,22 @@ impl cosmic::Application for Mail {
             Msg::Refresh => {
                 let folder = self.folder.clone();
                 return self.load_headers(&folder);
+            }
+            Msg::NewMail(_notif) => {
+                let Some(backend) = self.backend.clone() else {
+                    return Task::none();
+                };
+                let folder_task = if self.folder.eq_ignore_ascii_case("INBOX") && !self.searching {
+                    let b = backend.clone();
+                    run(
+                        move || b.sync_headers("INBOX", DEFAULT_PAGE_SIZE),
+                        |res| Msg::Headers("INBOX".to_owned(), res),
+                    )
+                } else {
+                    Task::none()
+                };
+                let folders_task = run(move || backend.sync_folders(), Msg::Folders);
+                return Task::batch([folder_task, folders_task]);
             }
             Msg::SelectMessage(uid) => {
                 return self.select_message_by_uid(uid);
@@ -972,12 +1150,16 @@ impl cosmic::Application for Mail {
             }
             Msg::Body(uid, result) => {
                 if self.selected == Some(uid) {
-                    match result {
+                    match *result {
                         Ok(opened) => {
-                            self.body = Some(opened.text);
-                            self.attachments = opened.attachments;
+                            self.attachments = opened.attachments.clone();
+                            self.opened = Some(opened);
+                            self.body_error = None;
                         }
-                        Err(err) => self.body = Some(err),
+                        Err(err) => {
+                            self.opened = None;
+                            self.body_error = Some(err);
+                        }
                     }
                 }
             }
@@ -987,18 +1169,30 @@ impl cosmic::Application for Mail {
                 if query.is_empty() {
                     return self.update(Msg::ClearSearch);
                 }
-                let Some(account) = self.account.clone() else {
+                let Some(backend) = self.backend.clone() else {
                     return Task::none();
                 };
                 self.busy = true;
                 self.searching = true;
-                let password = self.password.clone();
                 let folder = self.folder.clone();
                 let name = folder.clone();
                 return run(
-                    move || mail_io::search(&account, &password, &folder, &query),
-                    move |result| Msg::Headers(name, result),
+                    move || backend.search(&folder, &query),
+                    move |result| Msg::SearchResults(name, result),
                 );
+            }
+            Msg::SearchResults(folder, result) => {
+                self.busy = false;
+                if folder == self.folder {
+                    match result {
+                        Ok(messages) => {
+                            self.messages = messages;
+                            self.has_more = false;
+                            self.status = None;
+                        }
+                        Err(err) => self.status = Some(err),
+                    }
+                }
             }
             Msg::ClearSearch => {
                 self.search_text.clear();
@@ -1007,35 +1201,40 @@ impl cosmic::Application for Mail {
                 return self.load_headers(&folder);
             }
             Msg::Delete => {
-                // Deleting from the trash is final; otherwise move to the trash.
-                let lower = self.folder.to_lowercase();
-                let target = if lower.contains("trash") || lower.contains("deleted") {
-                    None
-                } else {
-                    self.find_folder(&["trash", "deleted", "bin"])
-                };
-                return self.move_selected(target);
-            }
-            Msg::Archive => {
-                let target = self.find_folder(&["archive", "all mail"]);
-                if target.is_some() {
-                    return self.move_selected(target);
-                }
-            }
-            Msg::MarkUnread => {
-                let (Some(account), Some(uid)) = (self.account.clone(), self.selected) else {
+                let (Some(backend), Some(uid)) = (self.backend.clone(), self.selected) else {
                     return Task::none();
                 };
+                self.busy = true;
+                let folder = self.folder.clone();
+                return run(
+                    move || backend.trash_or_delete_message(&folder, uid),
+                    move |result| Msg::Moved(uid, result),
+                );
+            }
+            Msg::Archive => {
+                let (Some(backend), Some(uid)) = (self.backend.clone(), self.selected) else {
+                    return Task::none();
+                };
+                self.busy = true;
+                let folder = self.folder.clone();
+                return run(
+                    move || backend.archive_message(&folder, uid),
+                    move |result| Msg::Moved(uid, result),
+                );
+            }
+            Msg::MarkUnread => {
+                let (Some(backend), Some(uid)) = (self.backend.clone(), self.selected) else {
+                    return Task::none();
+                };
+                let folder = self.folder.clone();
                 if let Some(msg) = self.messages.iter_mut().find(|m| m.uid == uid)
                     && !msg.unread
                 {
                     msg.unread = true;
-                    *self.folder_unreads.entry(self.folder.clone()).or_insert(0) += 1;
+                    self.adjust_folder_unread(&folder, 1);
                 }
-                let password = self.password.clone();
-                let folder = self.folder.clone();
                 return run(
-                    move || mail_io::set_unread(&account, &password, &folder, uid, true),
+                    move || backend.set_unread(&folder, uid, true),
                     move |result| Msg::MarkedUnread(uid, result),
                 );
             }
@@ -1051,16 +1250,17 @@ impl cosmic::Application for Mail {
                 self.busy = false;
                 match result {
                     Ok(()) => {
+                        let folder = self.folder.clone();
                         if let Some(msg) = self.messages.iter().find(|m| m.uid == uid)
                             && msg.unread
-                            && let Some(count) = self.folder_unreads.get_mut(&self.folder)
                         {
-                            *count = count.saturating_sub(1);
+                            self.adjust_folder_unread(&folder, -1);
                         }
                         self.messages.retain(|m| m.uid != uid);
                         if self.selected == Some(uid) {
                             self.selected = None;
-                            self.body = None;
+                            self.opened = None;
+                            self.body_error = None;
                             self.attachments.clear();
                             self.show_recipients = false;
                         }
@@ -1069,13 +1269,16 @@ impl cosmic::Application for Mail {
                 }
             }
             Msg::SaveAttachment(index) => {
-                let (Some(account), Some(uid)) = (self.account.clone(), self.selected) else {
+                let (Some(backend), Some(uid)) = (self.backend.clone(), self.selected) else {
                     return Task::none();
                 };
-                let password = self.password.clone();
                 let folder = self.folder.clone();
                 return run(
-                    move || mail_io::save_attachment(&account, &password, &folder, uid, index),
+                    move || {
+                        backend
+                            .save_attachment(&folder, uid, index, None)
+                            .map(|p| p.display().to_string())
+                    },
                     Msg::Saved,
                 );
             }
@@ -1105,8 +1308,9 @@ impl cosmic::Application for Mail {
                 };
                 // The original text, quoted line by line.
                 let quoted: String = self
-                    .body
-                    .as_deref()
+                    .opened
+                    .as_ref()
+                    .map(|o| o.text.as_str())
                     .unwrap_or_default()
                     .lines()
                     .map(|line| format!("> {line}\n"))
@@ -1133,9 +1337,19 @@ impl cosmic::Application for Mail {
                         .unwrap_or_default();
                     let mut seen = HashSet::new();
                     let mut recipients = Vec::new();
+                    let to_list = self
+                        .opened
+                        .as_ref()
+                        .filter(|o| !o.to.is_empty())
+                        .map_or(original.to.as_slice(), |o| o.to.as_slice());
+                    let cc_list = self
+                        .opened
+                        .as_ref()
+                        .filter(|o| !o.cc.is_empty())
+                        .map_or(original.cc.as_slice(), |o| o.cc.as_slice());
                     for raw in std::iter::once(original.address.as_str())
-                        .chain(original.to.iter().map(String::as_str))
-                        .chain(original.cc.iter().map(String::as_str))
+                        .chain(to_list.iter().map(String::as_str))
+                        .chain(cc_list.iter().map(String::as_str))
                     {
                         let addr = extract_email_addr(raw);
                         let lower = addr.to_lowercase();
@@ -1203,12 +1417,13 @@ impl cosmic::Application for Mail {
             }
             Msg::CancelCompose => self.compose = None,
             Msg::Send => {
-                let (Some(account), Some(compose)) =
-                    (self.account.clone(), self.compose.as_ref())
-                else {
+                let (Some(backend), Some(account), Some(compose)) = (
+                    self.backend.clone(),
+                    self.account.clone(),
+                    self.compose.as_ref(),
+                ) else {
                     return Task::none();
                 };
-                let password = self.password.clone();
                 let (to, subject, body, attachments) = (
                     compose.to.clone(),
                     compose.subject.clone(),
@@ -1218,7 +1433,40 @@ impl cosmic::Application for Mail {
                 self.busy = true;
                 return run(
                     move || {
-                        mail_io::send(&account, &password, &to, &subject, &body, &attachments)
+                        use lettre::message::{
+                            Attachment, MultiPart, SinglePart, header::ContentType,
+                        };
+                        let builder = lettre::Message::builder()
+                            .from(
+                                account
+                                    .email
+                                    .parse()
+                                    .map_err(|_| "Your address is not valid".to_owned())?,
+                            )
+                            .to(to
+                                .parse()
+                                .map_err(|_| "The recipient address is not valid".to_owned())?)
+                            .subject(subject);
+                        let msg = if attachments.is_empty() {
+                            builder.body(body)
+                        } else {
+                            let mut parts =
+                                MultiPart::mixed().singlepart(SinglePart::plain(body));
+                            for path in &attachments {
+                                let data = std::fs::read(path)
+                                    .map_err(|err| format!("Could not read {path}: {err}"))?;
+                                let name = std::path::Path::new(path).file_name().map_or_else(
+                                    || "attachment".to_owned(),
+                                    |n| n.to_string_lossy().into_owned(),
+                                );
+                                let ct = ContentType::parse("application/octet-stream")
+                                    .map_err(|err| err.to_string())?;
+                                parts = parts.singlepart(Attachment::new(name).body(data, ct));
+                            }
+                            builder.multipart(parts)
+                        }
+                        .map_err(|err| err.to_string())?;
+                        backend.send_message(&msg, None)
                     },
                     Msg::Sent,
                 );
