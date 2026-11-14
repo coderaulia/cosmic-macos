@@ -1,0 +1,603 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index e478a98..2280ad0 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -821,7 +821,6 @@ dependencies = [
+ [[package]]
+ name = "build_helpers"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "cfg_aliases",
+ ]
+@@ -1361,7 +1360,6 @@ dependencies = [
+ [[package]]
+ name = "cosmic-config"
+ version = "1.0.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "atomicwrites",
+  "cosmic-config-derive",
+@@ -1382,7 +1380,6 @@ dependencies = [
+ [[package]]
+ name = "cosmic-config-derive"
+ version = "1.0.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "quote",
+  "syn 2.0.119",
+@@ -1557,7 +1554,6 @@ dependencies = [
+ [[package]]
+ name = "cosmic-theme"
+ version = "1.0.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "almost",
+  "configparser",
+@@ -3184,7 +3180,6 @@ dependencies = [
+ [[package]]
+ name = "iced"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "build_helpers",
+  "dnd",
+@@ -3206,7 +3201,6 @@ dependencies = [
+ [[package]]
+ name = "iced_accessibility"
+ version = "0.1.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "accesskit",
+  "accesskit_winit",
+@@ -3215,7 +3209,6 @@ dependencies = [
+ [[package]]
+ name = "iced_core"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "bitflags 2.13.2",
+  "build_helpers",
+@@ -3241,7 +3234,6 @@ dependencies = [
+ [[package]]
+ name = "iced_debug"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "iced_core",
+  "iced_futures",
+@@ -3251,7 +3243,6 @@ dependencies = [
+ [[package]]
+ name = "iced_futures"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "futures",
+  "iced_core",
+@@ -3265,7 +3256,6 @@ dependencies = [
+ [[package]]
+ name = "iced_graphics"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "bitflags 2.13.2",
+  "bytemuck",
+@@ -3286,7 +3276,6 @@ dependencies = [
+ [[package]]
+ name = "iced_program"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "iced_graphics",
+  "iced_runtime",
+@@ -3295,7 +3284,6 @@ dependencies = [
+ [[package]]
+ name = "iced_renderer"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "iced_graphics",
+  "iced_tiny_skia",
+@@ -3307,7 +3295,6 @@ dependencies = [
+ [[package]]
+ name = "iced_runtime"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "build_helpers",
+  "bytes",
+@@ -3323,7 +3310,6 @@ dependencies = [
+ [[package]]
+ name = "iced_tiny_skia"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "bytemuck",
+  "cosmic-text",
+@@ -3340,7 +3326,6 @@ dependencies = [
+ [[package]]
+ name = "iced_wgpu"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "as-raw-xcb-connection",
+  "bitflags 2.13.2",
+@@ -3372,7 +3357,6 @@ dependencies = [
+ [[package]]
+ name = "iced_widget"
+ version = "0.14.2"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "build_helpers",
+  "cosmic-client-toolkit",
+@@ -3391,7 +3375,6 @@ dependencies = [
+ [[package]]
+ name = "iced_winit"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "build_helpers",
+  "cosmic-client-toolkit",
+@@ -4495,7 +4478,6 @@ checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
+ [[package]]
+ name = "libcosmic"
+ version = "1.0.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "apply",
+  "ashpd 0.12.3",
+diff --git a/Cargo.toml b/Cargo.toml
+index 955992c..877c7e4 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -73,3 +73,24 @@ debug = true
+ 
+ # [patch."https://github.com/pop-os/cosmic-files.git"]
+ # cosmic-files = { git = "https://github.com/pop-os/cosmic-files//", branch = "theme-v2" }
++
++# macOS look: window buttons on the left (local libcosmic fork).
++[patch."https://github.com/pop-os/libcosmic.git"]
++build_helpers = { path = "../../libcosmic-mac/iced/build_helpers" }
++cosmic-config = { path = "../../libcosmic-mac/cosmic-config" }
++cosmic-config-derive = { path = "../../libcosmic-mac/cosmic-config-derive" }
++cosmic-theme = { path = "../../libcosmic-mac/cosmic-theme" }
++iced = { path = "../../libcosmic-mac/iced" }
++iced_accessibility = { path = "../../libcosmic-mac/iced/accessibility" }
++iced_core = { path = "../../libcosmic-mac/iced/core" }
++iced_debug = { path = "../../libcosmic-mac/iced/debug" }
++iced_futures = { path = "../../libcosmic-mac/iced/futures" }
++iced_graphics = { path = "../../libcosmic-mac/iced/graphics" }
++iced_program = { path = "../../libcosmic-mac/iced/program" }
++iced_renderer = { path = "../../libcosmic-mac/iced/renderer" }
++iced_runtime = { path = "../../libcosmic-mac/iced/runtime" }
++iced_tiny_skia = { path = "../../libcosmic-mac/iced/tiny_skia" }
++iced_wgpu = { path = "../../libcosmic-mac/iced/wgpu" }
++iced_widget = { path = "../../libcosmic-mac/iced/widget" }
++iced_winit = { path = "../../libcosmic-mac/iced/winit" }
++libcosmic = { path = "../../libcosmic-mac" }
+diff --git a/build.rs b/build.rs
+index 6a34258..4994ffe 100644
+--- a/build.rs
++++ b/build.rs
+@@ -2,7 +2,7 @@ use std::{env, fs, path::PathBuf};
+ use xdgen::{App, Context, FluentString};
+ 
+ fn main() {
+-    let id = "com.system76.CosmicEdit";
++    let id = "dev.asw.MacNotepad";
+     let ctx = Context::new("i18n", env::var("CARGO_PKG_NAME").unwrap()).unwrap();
+     let app = App::new(FluentString("cosmic-text-editor"))
+         .comment(FluentString("comment"))
+diff --git a/res/dev.asw.MacNotepad.desktop b/res/dev.asw.MacNotepad.desktop
+new file mode 100644
+index 0000000..2a131e5
+--- /dev/null
++++ b/res/dev.asw.MacNotepad.desktop
+@@ -0,0 +1,11 @@
++[Desktop Entry]
++Name=COSMIC Text Editor
++Comment=Text editor for the COSMIC desktop
++Exec=cosmic-edit %F
++Terminal=false
++Type=Application
++StartupNotify=true
++MimeType=text/plain;application/x-zerosize;application/json;
++Icon=com.system76.CosmicEdit
++Categories=COSMIC;Utility;TextEditor;
++Keywords=Text;Editor;
+diff --git a/res/dev.asw.MacNotepad.metainfo.xml b/res/dev.asw.MacNotepad.metainfo.xml
+new file mode 100644
+index 0000000..19a0a3c
+--- /dev/null
++++ b/res/dev.asw.MacNotepad.metainfo.xml
+@@ -0,0 +1,92 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<component type="desktop-application">
++  <id>com.system76.CosmicEdit</id>
++  <metadata_license>CC0-1.0</metadata_license>
++  <project_license>GPL-3.0-only</project_license>
++  <project_group>COSMIC</project_group>
++  <developer_name>System76</developer_name>
++  <update_contact>jeremy@system76.com</update_contact>
++  <url type="homepage">https://github.com/pop-os/cosmic-edit</url>
++  <url type="bugtracker">https://github.com/pop-os/cosmic-edit</url>
++  <name>COSMIC Text Editor</name>
++  <summary>Text editor for the COSMIC desktop</summary>
++  <description>
++    <p>Text editor that provides advanced features with high performance</p>
++    <p xml:lang="ar">محرِّر نصوص يوفر ميزات متقدمة بأداء عالٍ</p>
++    <p xml:lang="cs">Textový editor, který poskytuje pokročilé funkce s vysokým výkonem</p>
++    <p xml:lang="pl">Edytor tekstu oferujący zaawansowane funkcje i wysoką wydajność</p>
++    <p xml:lang="pt_BR">Editor de texto que fornece funcionalidades avançadas com alta performance</p>
++    <p xml:lang="hu">Nagy teljesítményű szövegszerkesztő fejlett funkciókkal</p>
++    <p xml:lang="ru">Текстовый редактор который предоставляет продвинутые возможности с высокой производительностью</p>
++    <p xml:lang="sk">Textový editor, ktorý poskytuje pokročilé funkcie s vysokým výkonom</p>
++    <p xml:lang="es">Editor de texto que provee funcionalidades avanzadas con alto rendimiento</p>
++    <p xml:lang="it">Editor di testo con funzionalità avanzate ad alte prestazioni</p>
++    <p xml:lang="sv">Textredigerare som tillhandahåller avancerade funktioner med hög prestanda</p>
++    <ul>
++        <li>Written in Rust for performance and safety</li>
++        <li xml:lang="ar">مكتوب بلغة Rust من أجل الأداء والأمان</li>
++        <li xml:lang="cs">Napsané v jazyce Rust pro výkon a bezpečnost</li>
++        <li xml:lang="pl">Napisany w Ruście dla wydajności i bezpieczeństwa</li>
++        <li xml:lang="hu">Rustban írva a teljesítmény és biztonság érdekében</li>
++        <li xml:lang="pt_BR">Escrito em Rust visando performance e segurança</li>
++        <li xml:lang="ru">Написан на Rust для производительности и безопасности</li>
++        <li xml:lang="sk">Napísané v jazyku Rust pre výkon a bezpečnosť</li>
++        <li xml:lang="es">Escrito en Rust por rendimiento y seguridad</li>
++        <li xml:lang="it">Scritto in Rust per maggore velocità e sicurezza</li>
++        <li xml:lang="sv">Skriven i Rust för prestanda och säkerhet</li>
++      <li>Syntax highlighting built in for most languages</li>
++        <li xml:lang="ar">إبراز بناء الجملة مدمج لمعظم اللغات</li>
++        <li xml:lang="cs">Vestavěné zvýrazňování syntaxe pro většinu jazyků</li>
++        <li xml:lang="pl">Wbudowane podświetlanie składni dla większości języków</li>
++        <li xml:lang="hu">Szintaxiskiemelés a legtöbb nyelvhez</li>
++        <li xml:lang="pt_BR">Realce de sintaxe embutido para a maioria das linguagens</li>
++        <li xml:lang="ru">Подсветка синтаксиса встроена для большинства языков</li>
++        <li xml:lang="sk">Vstavané zvýrazňovanie syntaxe pre väčšinu jazykov</li>
++        <li xml:lang="es">Resaltado de sintaxis incorporado para la mayoría de lenguajes</li>
++        <li xml:lang="it">Evidenziazione della sintassi integrata per la maggior parte dei linguaggi</li>
++        <li xml:lang="sv">Inbyggd syntaxmarkering för de flesta språken</li>
++      <li>Provides project-based editing</li>
++        <li xml:lang="ar">يوفر تحريرًا قائمًا على المشاريع</li>
++        <li xml:lang="cs">Umožňuje úpravy založené na projektech</li>
++        <li xml:lang="pl">Możliwość edycji projektów</li>
++        <li xml:lang="hu">Projektalapú szerkesztést biztosít</li>
++        <li xml:lang="pt_BR">Fornece edição baseada em projeto</li>
++        <li xml:lang="ru">Предоставляет редактор для проектов</li>
++        <li xml:lang="sk">Poskytuje úpravu založenú na projektoch</li>
++        <li xml:lang="es">Provee edición basada por proyecto</li>
++        <li xml:lang="it">Supporta la modifica basata su progetti</li>
++        <li xml:lang="sv">Tillhandahåller projektbaserad redigering</li>
++      <li>Integrated git management</li>
++        <li xml:lang="ar">إدارة Git مدمجة</li>
++        <li xml:lang="cs">Integrovaná správa git</li>
++        <li xml:lang="pl">Wbudowane zarządzanie repozytoriami git</li>
++        <li xml:lang="hu">Integrált Git-kezelő</li>
++        <li xml:lang="pt_BR">Gerenciador Git integrado</li>
++        <li xml:lang="ru">Встроенное управление репозиториями git</li>
++        <li xml:lang="sk">Integrovaná správa git repozitárov</li>
++        <li xml:lang="sk">Gestión de git integrada</li>
++        <li xml:lang="sv">Integrerad git-hantering</li>
++        <li xml:lang="it">Gestione Git integrata</li>
++    </ul>
++  </description>
++  <keywords>
++    <keyword>Text</keyword>
++    <keyword>Editor</keyword>
++  </keywords>
++  <launchable type="desktop-id">com.system76.CosmicEdit.desktop</launchable>
++  <icon type="remote" height="256" width="256">https://raw.githubusercontent.com/pop-os/cosmic-edit/master/res/icons/hicolor/256x256/apps/com.system76.CosmicEdit.svg</icon>
++  <screenshots>
++    <screenshot type="default">
++      <image>https://media.githubusercontent.com/media/pop-os/cosmic-edit/master/res/screenshots/screenshot-1.png</image>
++    </screenshot>
++  </screenshots>
++  <provides>
++    <id>com.system76.CosmicApplication</id>
++    <mimetypes>
++      <mimetype>text/plain</mimetype>
++    </mimetypes>
++    <binaries>
++      <binary>cosmic-edit</binary>
++    </binaries>
++  </provides>
++</component>
+diff --git a/src/config.rs b/src/config.rs
+index 3eaaac0..65dcdc0 100644
+--- a/src/config.rs
++++ b/src/config.rs
+@@ -65,8 +65,8 @@ impl Default for Config {
+             font_name: "Noto Sans Mono".to_string(),
+             font_size: 14,
+             font_size_zoom_step_mul_100: 100,
+-            highlight_current_line: true,
+-            line_numbers: true,
++            highlight_current_line: false,
++            line_numbers: false,
+             syntax_theme_dark: "COSMIC Dark".to_string(),
+             syntax_theme_light: "COSMIC Light".to_string(),
+             tab_width: 4,
+diff --git a/src/main.rs b/src/main.rs
+index 4b9cbba..9ed48b0 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -303,6 +303,94 @@ impl MenuAction for Action {
+     }
+ }
+ 
++/// Notes mode: a folder of plain-text notes that save automatically.
++mod notes {
++    use std::{
++        fs,
++        path::{Path, PathBuf},
++        sync::atomic::AtomicBool,
++    };
++
++    pub static ENABLED: AtomicBool = AtomicBool::new(false);
++
++    /// `~/Documents/Notes`, created on first use.
++    pub fn dir() -> Option<PathBuf> {
++        let dir = PathBuf::from(std::env::var_os("HOME")?).join("Documents/Notes");
++        fs::create_dir_all(&dir).ok()?;
++        Some(dir)
++    }
++
++    /// The most recently modified note.
++    pub fn latest(dir: &Path) -> Option<PathBuf> {
++        fs::read_dir(dir)
++            .ok()?
++            .filter_map(Result::ok)
++            .filter(|entry| entry.path().is_file())
++            .filter_map(|entry| Some((entry.metadata().ok()?.modified().ok()?, entry.path())))
++            .max_by_key(|(modified, _)| *modified)
++            .map(|(_, path)| path)
++    }
++
++    /// One note as the sidebar shows it.
++    #[derive(Clone, Debug)]
++    pub struct Entry {
++        pub path: PathBuf,
++        /// First line of the note, or its file name when empty.
++        pub title: String,
++        /// Second line of the note.
++        pub preview: String,
++        /// Lower-cased text, for searching.
++        pub text_lower: String,
++    }
++
++    /// All notes, most recently edited first.
++    pub fn list(dir: &Path) -> Vec<Entry> {
++        let mut entries: Vec<(std::time::SystemTime, Entry)> = fs::read_dir(dir)
++            .into_iter()
++            .flatten()
++            .filter_map(Result::ok)
++            .filter(|entry| entry.path().is_file())
++            .filter_map(|entry| {
++                let modified = entry.metadata().ok()?.modified().ok()?;
++                let path = entry.path();
++                let text = fs::read_to_string(&path).unwrap_or_default();
++                let mut lines = text.lines().map(str::trim).filter(|line| !line.is_empty());
++                let short = |line: &str| -> String { line.chars().take(80).collect() };
++                let title = lines.next().map(short).unwrap_or_else(|| {
++                    path.file_stem()
++                        .map_or_else(String::new, |s| s.to_string_lossy().into_owned())
++                });
++                let preview = lines.next().map(short).unwrap_or_default();
++                Some((
++                    modified,
++                    Entry {
++                        path,
++                        title,
++                        preview,
++                        text_lower: text.to_lowercase(),
++                    },
++                ))
++            })
++            .collect();
++        entries.sort_by(|a, b| b.0.cmp(&a.0));
++        entries.into_iter().map(|(_, entry)| entry).collect()
++    }
++
++    /// A new empty note named "Note", "Note 2", "Note 3", ...
++    pub fn create(dir: &Path) -> Option<PathBuf> {
++        let path = (1..1000).map(|n| {
++            if n == 1 {
++                dir.join("Note.md")
++            } else {
++                dir.join(format!("Note {n}.md"))
++            }
++        })
++        .find(|path| !path.exists())?;
++        fs::write(&path, "").ok()?;
++        Some(path)
++    }
++}
++
+ #[derive(Clone, Debug)]
+ pub struct Flags {
+     config_handler: Option<cosmic_config::Config>,
+@@ -337,6 +425,10 @@ enum NewTab {
+ #[allow(dead_code)]
+ #[derive(Clone, Debug)]
+ pub enum Message {
++    /// Notes sidebar: search text changed.
++    NoteSearch(String),
++    /// Notes sidebar: open this note.
++    NoteOpen(PathBuf),
+     AppTheme(AppTheme),
+     AutoScroll(Option<f32>),
+     Config(Config),
+@@ -454,6 +546,9 @@ pub enum Find {
+ 
+ pub struct App {
+     core: Core,
++    /// Notes mode: the notes shown in the sidebar and the search box text.
++    notes: Vec<notes::Entry>,
++    note_search: String,
+     about: About,
+     nav_model: segmented_button::SingleSelectModel,
+     tab_model: segmented_button::SingleSelectModel,
+@@ -499,6 +594,65 @@ struct FindField {
+ }
+ 
+ impl App {
++    /// Notes mode sidebar: a search box and the notes with a preview line each.
++    fn notes_sidebar(&self) -> Element<'_, action::Action<Message>> {
++        let active = match self.tab_model.active_data::<Tab>() {
++            Some(Tab::Editor(tab)) => tab.path_opt.clone(),
++            _ => None,
++        };
++        let query = self.note_search.trim().to_lowercase();
++
++        let mut list = widget::column::with_capacity(self.notes.len()).spacing(2);
++        for note in self
++            .notes
++            .iter()
++            .filter(|note| query.is_empty() || note.text_lower.contains(&query))
++        {
++            let selected = active.as_ref() == Some(&note.path);
++            let mut text = widget::column::with_capacity(2)
++                .spacing(2)
++                .push(widget::text::heading(note.title.clone()));
++            if !note.preview.is_empty() {
++                text = text.push(widget::text::caption(note.preview.clone()));
++            }
++            list = list.push(
++                widget::button::custom(text.width(Length::Fill))
++                    .class(if selected {
++                        widget::button::ButtonClass::Suggested
++                    } else {
++                        widget::button::ButtonClass::Text
++                    })
++                    .width(Length::Fill)
++                    .on_press(action::app(Message::NoteOpen(note.path.clone()))),
++            );
++        }
++
++        let header = widget::row::with_capacity(2)
++            .spacing(8)
++            .align_y(Alignment::Center)
++            .push(
++                widget::search_input("Search notes", self.note_search.as_str())
++                    .on_input(|value| action::app(Message::NoteSearch(value)))
++                    .on_clear(action::app(Message::NoteSearch(String::new())))
++                    .width(Length::Fill),
++            )
++            .push(
++                widget::button::icon(widget::icon::from_name("list-add-symbolic"))
++                    .on_press(action::app(Message::NewFile)),
++            );
++
++        widget::column::with_capacity(2)
++            .spacing(8)
++            .padding(8)
++            .push(header)
++            .push(widget::scrollable(list).height(Length::Fill))
++            .width(Length::Fixed(260.0))
++            .height(Length::Fill)
++            .apply(widget::container)
++            .class(theme::Container::custom(nav_bar::nav_bar_style))
++            .into()
++    }
++
+     pub fn active_tab(&self) -> Option<&Tab> {
+         self.tab_model.active_data()
+     }
+@@ -1391,7 +1545,7 @@ impl Application for App {
+     type Message = Message;
+ 
+     /// The unique application ID to supply to the window manager.
+-    const APP_ID: &'static str = "com.system76.CosmicEdit";
++    const APP_ID: &'static str = "dev.asw.MacNotepad";
+ 
+     fn core(&self) -> &Core {
+         &self.core
+@@ -1477,6 +1631,8 @@ impl Application for App {
+             about,
+             nav_model: nav_bar::Model::builder().build(),
+             tab_model: segmented_button::Model::builder().build(),
++            notes: Vec::new(),
++            note_search: String::new(),
+             config_handler: flags.config_handler,
+             config: flags.config,
+             config_state_handler: flags.config_state_handler,
+@@ -1522,9 +1678,19 @@ impl Application for App {
+ 
+         app.update_nav_bar_placeholder();
+ 
+-        // Open an empty file if no arguments provided
++        // Notes mode: started without files, show the notes folder in the
++        // sidebar and open the most recently edited note (or a new one).
+         if app.tab_model.iter().next().is_none() {
+-            app.open_tab(None);
++            if let Some(dir) = notes::dir() {
++                notes::ENABLED.store(true, std::sync::atomic::Ordering::Relaxed);
++                app.open_project(&dir);
++                app.core.nav_bar_set_toggled(true);
++                let note = notes::latest(&dir).or_else(|| notes::create(&dir));
++                app.open_tab(note);
++                app.notes = notes::list(&dir);
++            } else {
++                app.open_tab(None);
++            }
+         }
+ 
+         //TODO: try update_config here? It breaks loading system theme by default
+@@ -1538,6 +1704,10 @@ impl Application for App {
+             return None;
+         }
+ 
++        if notes::ENABLED.load(std::sync::atomic::Ordering::Relaxed) {
++            return Some(self.notes_sidebar());
++        }
++
+         let nav_model = self.nav_model()?;
+ 
+         let cosmic_theme::Spacing {
+@@ -2146,8 +2316,26 @@ impl Application for App {
+             Message::Modifiers(modifiers) => {
+                 self.modifiers = modifiers;
+             }
++            Message::NoteSearch(value) => {
++                self.note_search = value;
++            }
++            Message::NoteOpen(path) => {
++                self.open_tab(Some(path));
++                return self.update_tab();
++            }
+             Message::NewFile => {
+-                self.open_tab(None);
++                // In notes mode a new note is a real file in the notes folder.
++                let note = notes::ENABLED
++                    .load(std::sync::atomic::Ordering::Relaxed)
++                    .then(notes::dir)
++                    .flatten()
++                    .and_then(|dir| notes::create(&dir));
++                self.open_tab(note);
++                if notes::ENABLED.load(std::sync::atomic::Ordering::Relaxed)
++                    && let Some(dir) = notes::dir()
++                {
++                    self.notes = notes::list(&dir);
++                }
+                 return self.update_tab();
+             }
+             Message::NewWindow => {
+@@ -2751,6 +2939,17 @@ impl Application for App {
+                 }
+             }
+             Message::TabChanged(entity) => {
++                // Notes save themselves, like macOS Notes.
++                if notes::ENABLED.load(std::sync::atomic::Ordering::Relaxed)
++                    && let Some(Tab::Editor(tab)) = self.tab_model.data_mut::<Tab>(entity)
++                    && tab.path_opt.is_some()
++                    && tab.changed()
++                {
++                    tab.save();
++                    if let Some(dir) = notes::dir() {
++                        self.notes = notes::list(&dir);
++                    }
++                }
+                 if let Some(Tab::Editor(tab)) = self.tab_model.data::<Tab>(entity) {
+                     let mut title = tab.title();
+                     //TODO: better way of adding change indicator

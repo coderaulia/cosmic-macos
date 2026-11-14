@@ -1,6 +1,12 @@
-# Each project below has its own repository.
-/apps/
+# Working copies made by setup.sh from upstream COSMIC projects plus patches/.
+# Everything of ours is in patches/, overlays/, presets/ and apps/mac-suite/.
+/apps/*
+!/apps/mac-suite/
 /cosmic-comp/
 /libcosmic-mac/
-/smithay-ref/
 /upstream-applets/
+/smithay-ref/
+
+# Build output.
+target/
+.target/

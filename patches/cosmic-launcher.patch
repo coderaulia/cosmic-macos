@@ -1,0 +1,194 @@
+diff --git a/src/app.rs b/src/app.rs
+index 9ab01dd..832d4bb 100644
+--- a/src/app.rs
++++ b/src/app.rs
+@@ -53,6 +53,13 @@ use std::time::Instant;
+ use tokio::sync::mpsc;
+ use tracing::{debug, error, info};
+ 
++/// Width of the Spotlight-style window (the alt-tab switcher stays narrow).
++const WINDOW_WIDTH: f32 = 760.;
++
++/// Extra distance from the top edge, in pixels: about 17.5% of a 1080 px
++/// screen, so the window sits in the upper third like macOS Spotlight.
++const TOP_OFFSET: i32 = 190;
++
+ static AUTOSIZE_ID: LazyLock<Id> = LazyLock::new(|| Id::new("autosize"));
+ static MAIN_ID: LazyLock<Id> = LazyLock::new(|| Id::new("main"));
+ static INPUT_ID: LazyLock<Id> = LazyLock::new(|| Id::new("input_id"));
+@@ -345,7 +352,7 @@ impl CosmicLauncher {
+     fn layer_margin(&self) -> IcedMargin {
+         IcedMargin {
+             #[allow(clippy::cast_possible_truncation)]
+-            top: self.margin as i32 + 16,
++            top: self.margin as i32 + 16 + TOP_OFFSET,
+             ..Default::default()
+         }
+     }
+@@ -389,6 +396,60 @@ async fn try_get_gpu_envs(gpu: GpuPreference) -> Option<HashMap<String, String>>
+     .map(|gpu| gpu.environment)
+ }
+ 
++/// Which kind of result this is, from the plugin that produced it.
++fn category_heading(item: &SearchResult) -> Option<&'static str> {
++    let IconSource::Name(name) = item.category_icon.as_ref()? else {
++        return None;
++    };
++    Some(match name.as_ref() {
++        "focus-windows-symbolic" => "Windows",
++        "new-window-symbolic" => "Applications",
++        "system-file-manager" => "Files",
++        "x-office-spreadsheet" => "Calculator",
++        "utilities-terminal" => "Commands",
++        "multimedia-volume-control" => "Sound",
++        "system-search" => "Web Search",
++        _ => return None,
++    })
++}
++
++impl CosmicLauncher {
++    /// Details of the highlighted result: large icon, name and description.
++    fn preview_pane(&self) -> Element<'_, Message> {
++        let Some(item) = self.launcher_items.get(self.focused) else {
++            return horizontal_space().width(Length::FillPortion(2)).into();
++        };
++        let mut pane = Column::new()
++            .spacing(8)
++            .align_x(Alignment::Center)
++            .width(Length::FillPortion(2));
++        if let Some(Some(handle)) = self.launcher_item_icon_handles.get(self.focused) {
++            pane = pane.push(
++                icon(handle.clone())
++                    .width(Length::Fixed(72.0))
++                    .height(Length::Fixed(72.0)),
++            );
++        }
++        pane = pane.push(
++            text::title4(item.name.clone())
++                .ellipsize(Ellipsize::End(EllipsizeHeightLimit::Lines(2)))
++                .align_x(Horizontal::Center),
++        );
++        if !item.description.is_empty() {
++            pane = pane.push(
++                text::caption(item.description.clone())
++                    .ellipsize(Ellipsize::End(EllipsizeHeightLimit::Lines(4)))
++                    .align_x(Horizontal::Center),
++            );
++        }
++        container(pane)
++            .width(Length::FillPortion(2))
++            .center_y(Length::Fill)
++            .padding([8, 8])
++            .into()
++    }
++}
++
+ impl cosmic::Application for CosmicLauncher {
+     type Message = Message;
+     type Executor = cosmic::executor::single::Executor;
+@@ -920,7 +981,9 @@ impl cosmic::Application for CosmicLauncher {
+                     focused: Box::new(|theme| theme.focused(&cosmic::theme::TextInput::Search)),
+                     disabled: Box::new(|theme| theme.disabled(&cosmic::theme::TextInput::Search)),
+                 })
+-                .width(600.)
++                .width(if self.alt_tab { 600. } else { WINDOW_WIDTH })
++                .size(22.)
++                .padding([10, 16])
+                 .id(INPUT_ID.clone())
+                 .always_active();
+ 
+@@ -1100,10 +1163,31 @@ impl cosmic::Application for CosmicLauncher {
+                         }),
+                     )
+                     .on_right_release(Message::Context(i));
++
++                    // A heading above the first result of each kind, like macOS
++                    // Spotlight. It shares an element with its result so the
++                    // list's alternating button/divider layout stays intact.
++                    let heading = category_heading(item).filter(|heading| {
++                        i == 0
++                            || self
++                                .launcher_items
++                                .get(i - 1)
++                                .and_then(category_heading)
++                                != Some(*heading)
++                    });
++                    let btn: Element<'_, Message> = match heading {
++                        Some(heading) if !self.alt_tab => column![
++                            container(text::caption(heading.to_uppercase()))
++                                .padding([8, 24, 2, 24]),
++                            btn
++                        ]
++                        .into(),
++                        _ => btn.into(),
++                    };
+                     if i == self.launcher_items.len() - 1 {
+-                        vec![btn.into()]
++                        vec![btn]
+                     } else {
+-                        vec![btn.into(), divider::horizontal::light().into()]
++                        vec![btn, divider::horizontal::light().into()]
+                     }
+                 })
+                 .collect();
+@@ -1116,19 +1200,34 @@ impl cosmic::Application for CosmicLauncher {
+                     .height(Length::Shrink)
+             } else {
+                 column![launcher_entry]
+-                    .max_width(600)
++                    .max_width(WINDOW_WIDTH)
+                     .width(Length::Shrink)
+                     .height(Length::Shrink)
+                     .spacing(16)
+             };
+ 
+-            if buttons.len() > SCROLL_MIN {
+-                content = content.push(
++            if !buttons.is_empty() {
++                let list: Element<'_, Message> = if buttons.len() > SCROLL_MIN {
+                     container(scrollable(components::list::column(buttons)).id(SCROLLABLE.clone()))
+-                        .max_height(504),
+-                );
+-            } else if !buttons.is_empty() {
+-                content = content.push(components::list::column(buttons));
++                        .max_height(504)
++                        .into()
++                } else {
++                    components::list::column(buttons).into()
++                };
++                if self.alt_tab {
++                    content = content.push(list);
++                } else {
++                    // Results on the left, details of the highlighted one on the right.
++                    content = content.push(
++                        row![
++                            container(list).width(Length::FillPortion(3)),
++                            divider::vertical::light(),
++                            self.preview_pane(),
++                        ]
++                        .spacing(16)
++                        .height(Length::Shrink),
++                    );
++                }
+             }
+ 
+             let window = Column::new().push(
+@@ -1137,7 +1236,8 @@ impl cosmic::Application for CosmicLauncher {
+                     .height(Length::Shrink)
+                     .class(Container::Custom(Box::new(|theme| {
+                         let t = theme.cosmic();
+-                        let radii = t.radius_s().map(|x| if x < 4.0 { x } else { x + 4.0 });
++                        // Large, soft corners like macOS Spotlight.
++                        let radii = [22.0; 4];
+ 
+                         container::Style {
+                             text_color: Some(t.on_bg_color().into()),
+@@ -1154,7 +1254,7 @@ impl cosmic::Application for CosmicLauncher {
+                             snap: true,
+                         }
+                     })))
+-                    .padding([24, 32]),
++                    .padding([20, 24]),
+             );
+ 
+             let autosize = autosize::autosize(

@@ -1,0 +1,70 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index cf3d59d..c8a0744 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -1356,6 +1356,52 @@ dependencies = [
+  "zbus",
+ ]
+ 
++[[package]]
++name = "cosmic-ext-applet-clock-center"
++version = "0.1.0"
++dependencies = [
++ "anyhow",
++ "cosmic-applets-config",
++ "cosmic-notifications-config",
++ "cosmic-notifications-util",
++ "futures-util",
++ "i18n-embed",
++ "i18n-embed-fl",
++ "icu",
++ "jiff",
++ "libcosmic",
++ "logind-zbus",
++ "mpris2-zbus",
++ "rust-embed",
++ "timedate-zbus",
++ "tokio",
++ "tracing",
++ "tracing-log",
++ "tracing-subscriber",
++ "url",
++ "urlencoding",
++ "zbus",
++]
++
++[[package]]
++name = "cosmic-ext-dock"
++version = "0.1.0"
++dependencies = [
++ "anyhow",
++ "cosmic-app-list-config",
++ "cosmic-client-toolkit",
++ "cosmic-protocols",
++ "futures",
++ "image",
++ "libcosmic",
++ "memmap2 0.9.11",
++ "rustix 1.1.5",
++ "tokio",
++ "tracing",
++ "tracing-log",
++ "tracing-subscriber",
++]
++
+ [[package]]
+ name = "cosmic-freedesktop-icons"
+ version = "0.4.0"
+diff --git a/Cargo.toml b/Cargo.toml
+index 77d96a9..c826d0e 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -15,6 +15,8 @@ members = [
+     "cosmic-applet-status-area",
+     "cosmic-applet-tiling",
+     "cosmic-applet-time",
++    "cosmic-ext-applet-clock-center",
++    "cosmic-ext-dock",
+     "cosmic-applet-workspaces",
+     "cosmic-panel-button",
+     "cosmic-applet-input-sources",

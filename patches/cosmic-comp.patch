@@ -1,0 +1,859 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index 1f3e055..57bd31e 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -142,6 +142,13 @@ inherits = "release"
+ [profile.release]
+ lto = "fat"
+ 
++# Fast local builds for the genie patch: no LTO, parallel codegen, incremental.
++[profile.genie]
++inherits = "release"
++lto = "off"
++codegen-units = 16
++incremental = true
++
+ [patch."https://github.com/pop-os/cosmic-protocols"]
+ cosmic-protocols = { git = "https://github.com/pop-os//cosmic-protocols", branch = "main" }
+ 
+diff --git a/src/backend/render/mod.rs b/src/backend/render/mod.rs
+index 9ad6158..eba0193 100644
+--- a/src/backend/render/mod.rs
++++ b/src/backend/render/mod.rs
+@@ -446,8 +446,20 @@ pub fn init_shaders(renderer: &mut GlesRenderer) -> Result<(), GlesError> {
+         ],
+     )?;
+     let blur_shaders = BlurShaders::compile(renderer)?;
++    let genie_shader = renderer.compile_custom_texture_shader(
++        wayland::genie::GENIE_SHADER,
++        &[
++            UniformName::new("dst_size", UniformType::_2f),
++            UniformName::new("window_rect", UniformType::_4f),
++            UniformName::new("target_rect", UniformType::_4f),
++            UniformName::new("progress", UniformType::_1f),
++        ],
++    )?;
+ 
+     let egl_context = renderer.egl_context();
++    egl_context
++        .user_data()
++        .insert_if_missing(|| wayland::genie::GenieShader(genie_shader));
+     egl_context
+         .user_data()
+         .insert_if_missing(|| IndicatorShader(outline_shader));
+diff --git a/src/backend/render/shaders/genie.frag b/src/backend/render/shaders/genie.frag
+new file mode 100644
+index 0000000..7cf2009
+--- /dev/null
++++ b/src/backend/render/shaders/genie.frag
+@@ -0,0 +1,96 @@
++// Genie (magic lamp) warp for minimize and restore animations.
++//
++// The texture holds a snapshot of the window. It is drawn over a destination
++// rectangle covering both the window and its target (the dock icon). For each
++// output pixel the shader finds the source pixel by inverting the warp, which
++// works row by row: at screen row y the window occupies a horizontal span that
++// narrows toward the target, and the rows are squashed vertically between a
++// moving top edge and a moving bottom edge.
++
++#version 100
++
++//_DEFINES_
++
++#if defined(EXTERNAL)
++#extension GL_OES_EGL_image_external : require
++#endif
++
++precision highp float;
++#if defined(EXTERNAL)
++uniform samplerExternalOES tex;
++#else
++uniform sampler2D tex;
++#endif
++
++uniform float alpha;
++varying vec2 v_coords;
++
++#if defined(DEBUG_FLAGS)
++uniform float tint;
++#endif
++
++// Destination size in physical pixels.
++uniform vec2 dst_size;
++// Window and target rectangles (x, y, w, h) relative to the destination.
++uniform vec4 window_rect;
++uniform vec4 target_rect;
++// 0.0 = window fully shown, 1.0 = fully collapsed into the target.
++uniform float progress;
++
++void main() {
++    vec2 pos = v_coords * dst_size;
++
++    float win_top = window_rect.y;
++    float win_bottom = window_rect.y + window_rect.w;
++    float tgt_top = target_rect.y;
++    float tgt_bottom = target_rect.y + target_rect.w;
++
++    // The bottom edge reaches the target first, the top edge follows, so the
++    // window pours into the icon instead of shrinking uniformly.
++    float bottom = mix(win_bottom, tgt_bottom, smoothstep(0.0, 0.7, progress));
++    float top = mix(win_top, tgt_top, smoothstep(0.3, 1.0, progress));
++    float height = bottom - top;
++    if (height <= 0.5) {
++        discard;
++    }
++    float v = (pos.y - top) / height;
++    if (v < 0.0 || v > 1.0) {
++        discard;
++    }
++
++    // How far this row has narrowed toward the target span: nothing at the
++    // start, everything at the end, and a smooth funnel in between that is
++    // tighter closer to the target.
++    float span = max(tgt_bottom - win_top, 1.0);
++    float row = clamp((pos.y - win_top) / span, 0.0, 1.0);
++    float pinch = smoothstep(0.0, 1.0, clamp(row + 2.0 * progress - 1.0, 0.0, 1.0));
++
++    float left = mix(window_rect.x, target_rect.x, pinch);
++    float right = mix(window_rect.x + window_rect.z, target_rect.x + target_rect.z, pinch);
++    float width = right - left;
++    if (width <= 0.5) {
++        discard;
++    }
++    float u = (pos.x - left) / width;
++    if (u < 0.0 || u > 1.0) {
++        discard;
++    }
++
++    vec4 color = texture2D(tex, vec2(u, v));
++
++    // Fade out as the window disappears into the icon.
++    float fade = 1.0 - smoothstep(0.8, 1.0, progress);
++
++#if defined(NO_ALPHA)
++    color = vec4(color.rgb, 1.0) * alpha * fade;
++#else
++    color = color * alpha * fade;
++#endif
++
++#if defined(DEBUG_FLAGS)
++    if (tint == 1.0)
++        color = vec4(0.0, 0.2, 0.0, 0.2) + color * 0.8;
++#endif
++
++    gl_FragColor = color;
++}
+diff --git a/src/backend/render/wayland/genie.rs b/src/backend/render/wayland/genie.rs
+new file mode 100644
+index 0000000..cfc925e
+--- /dev/null
++++ b/src/backend/render/wayland/genie.rs
+@@ -0,0 +1,226 @@
++// SPDX-License-Identifier: GPL-3.0-only
++
++//! Genie ("magic lamp") minimize and restore animation.
++//!
++//! The window is rendered into an offscreen texture, which is then drawn with
++//! a warp shader over a rectangle covering both the window and its minimize
++//! target, usually the app's icon in the dock.
++
++use std::borrow::{Borrow, BorrowMut};
++
++use smithay::{
++    backend::{
++        allocator::Fourcc,
++        renderer::{
++            Color32F, Frame, Offscreen,
++            element::{Element, Id, Kind, RenderElement, UnderlyingStorage},
++            gles::{GlesFrame, GlesRenderer, GlesTexProgram, GlesTexture, Uniform},
++            utils::{CommitCounter, DamageSet, OpaqueRegions, draw_render_elements},
++        },
++    },
++    utils::{Buffer, Physical, Rectangle, Scale, Size, Transform, user_data::UserDataMap},
++};
++
++use crate::backend::render::element::AsGlowRenderer;
++
++pub static GENIE_SHADER: &str = include_str!("../shaders/genie.frag");
++pub struct GenieShader(pub GlesTexProgram);
++
++impl GenieShader {
++    pub fn get<R: AsGlowRenderer>(renderer: &R) -> GlesTexProgram {
++        Borrow::<GlesRenderer>::borrow(renderer.glow_renderer())
++            .egl_context()
++            .user_data()
++            .get::<GenieShader>()
++            .expect("Custom Shaders not initialized")
++            .0
++            .clone()
++    }
++}
++
++#[derive(Debug)]
++pub struct GenieRenderElement {
++    id: Id,
++    commit: CommitCounter,
++    texture: GlesTexture,
++    texture_size: Size<i32, Buffer>,
++    /// Area covered by the window, its target and everything in between.
++    geometry: Rectangle<i32, Physical>,
++    program: GlesTexProgram,
++    uniforms: Vec<Uniform<'static>>,
++}
++
++impl GenieRenderElement {
++    /// Snapshot `elements` (the window, rendered with its geometry's top-left
++    /// corner at the origin) and build an element drawing it warped
++    /// `progress` of the way from `window` toward `target`, both given in
++    /// physical output coordinates.
++    ///
++    /// Returns `None` if the snapshot cannot be made; the caller then falls
++    /// back to the plain animation.
++    pub fn new<R, E>(
++        renderer: &mut R,
++        elements: &[E],
++        window: Rectangle<i32, Physical>,
++        target: Rectangle<i32, Physical>,
++        scale: Scale<f64>,
++        progress: f32,
++    ) -> Option<Self>
++    where
++        R: AsGlowRenderer,
++        R::TextureId: 'static,
++        E: RenderElement<R>,
++    {
++        if window.size.w <= 0 || window.size.h <= 0 {
++            return None;
++        }
++        let program = GenieShader::get(renderer);
++
++        let texture_size = Size::<i32, Buffer>::from((window.size.w, window.size.h));
++        let mut texture: GlesTexture =
++            Offscreen::<GlesTexture>::create_buffer(renderer, Fourcc::Abgr8888, texture_size)
++                .map_err(|err| tracing::warn!(?err, "genie: failed to create texture"))
++                .ok()?;
++
++        {
++            let mut target_fb = renderer
++                .bind(&mut texture)
++                .map_err(|err| tracing::warn!(?err, "genie: failed to bind texture"))
++                .ok()?;
++            let size = Size::<i32, Physical>::from((window.size.w, window.size.h));
++            let mut frame = renderer
++                .render(&mut target_fb, size, Transform::Normal)
++                .map_err(|err| tracing::warn!(?err, "genie: failed to start frame"))
++                .ok()?;
++            let full = [Rectangle::from_size(size)];
++            frame
++                .clear(Color32F::TRANSPARENT, &full)
++                .map_err(|err| tracing::warn!(?err, "genie: failed to clear"))
++                .ok()?;
++            // Framebuffer effects (background blur) sample what is already
++            // drawn and need a capture cache this offscreen pass doesn't
++            // have, so the snapshot leaves them out.
++            let plain: Vec<&E> = elements
++                .iter()
++                .filter(|elem| !elem.is_framebuffer_effect())
++                .collect();
++            draw_render_elements::<R, _, _>(&mut frame, scale, &plain, &full)
++                .map_err(|err| tracing::warn!(?err, "genie: failed to draw window"))
++                .ok()?;
++            let sync = frame
++                .finish()
++                .map_err(|err| tracing::warn!(?err, "genie: failed to finish frame"))
++                .ok()?;
++            let _ = sync.wait();
++        }
++
++        let geometry = window.merge(target);
++        let local = |rect: Rectangle<i32, Physical>| {
++            [
++                (rect.loc.x - geometry.loc.x) as f32,
++                (rect.loc.y - geometry.loc.y) as f32,
++                rect.size.w as f32,
++                rect.size.h as f32,
++            ]
++        };
++        let uniforms = vec![
++            Uniform::new(
++                "dst_size",
++                (geometry.size.w as f32, geometry.size.h as f32),
++            ),
++            Uniform::new("window_rect", local(window)),
++            Uniform::new("target_rect", local(target)),
++            Uniform::new("progress", progress.clamp(0.0, 1.0)),
++        ];
++
++        Some(Self {
++            // A new id every frame: the damage tracker then redraws the whole
++            // area, which the animation changes anyway.
++            id: Id::new(),
++            commit: CommitCounter::default(),
++            texture,
++            texture_size,
++            geometry,
++            program,
++            uniforms,
++        })
++    }
++}
++
++impl Element for GenieRenderElement {
++    fn id(&self) -> &Id {
++        &self.id
++    }
++
++    fn current_commit(&self) -> CommitCounter {
++        self.commit
++    }
++
++    fn geometry(&self, _scale: Scale<f64>) -> Rectangle<i32, Physical> {
++        self.geometry
++    }
++
++    fn src(&self) -> Rectangle<f64, Buffer> {
++        Rectangle::from_size(self.texture_size).to_f64()
++    }
++
++    fn transform(&self) -> Transform {
++        Transform::Normal
++    }
++
++    fn damage_since(
++        &self,
++        _scale: Scale<f64>,
++        _commit: Option<CommitCounter>,
++    ) -> DamageSet<i32, Physical> {
++        DamageSet::from_slice(&[Rectangle::from_size(self.geometry.size)])
++    }
++
++    fn opaque_regions(&self, _scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
++        OpaqueRegions::default()
++    }
++
++    fn alpha(&self) -> f32 {
++        1.0
++    }
++
++    fn kind(&self) -> Kind {
++        Kind::Unspecified
++    }
++}
++
++impl<R> RenderElement<R> for GenieRenderElement
++where
++    R: AsGlowRenderer,
++    R::TextureId: 'static,
++{
++    fn draw(
++        &self,
++        frame: &mut R::Frame<'_, '_>,
++        src: Rectangle<f64, Buffer>,
++        dst: Rectangle<i32, Physical>,
++        damage: &[Rectangle<i32, Physical>],
++        _opaque_regions: &[Rectangle<i32, Physical>],
++        _cache: Option<&UserDataMap>,
++    ) -> Result<(), R::Error> {
++        let gles_frame: &mut GlesFrame =
++            BorrowMut::<GlesFrame>::borrow_mut(R::glow_frame_mut(frame));
++        gles_frame
++            .render_texture_from_to(
++                &self.texture,
++                src,
++                dst,
++                damage,
++                &[],
++                Transform::Normal,
++                1.0,
++                Some(&self.program),
++                &self.uniforms,
++            )
++            .map_err(R::from_gles_error)
++    }
++
++    fn underlying_storage(&self, _renderer: &mut R) -> Option<UnderlyingStorage<'_>> {
++        None
++    }
++}
+diff --git a/src/backend/render/wayland/mod.rs b/src/backend/render/wayland/mod.rs
+index c2b7d4e..7b393de 100644
+--- a/src/backend/render/wayland/mod.rs
++++ b/src/backend/render/wayland/mod.rs
+@@ -18,6 +18,7 @@ use crate::backend::render::{
+ 
+ pub mod blur_effect;
+ pub mod clipped_surface;
++pub mod genie;
+ 
+ render_elements! {
+     pub SurfaceRenderElement<R> where R: AsGlowRenderer + ImportAll, R::TextureId: Send;
+diff --git a/src/shell/element/mod.rs b/src/shell/element/mod.rs
+index c7e799b..1328fa4 100644
+--- a/src/shell/element/mod.rs
++++ b/src/shell/element/mod.rs
+@@ -1129,6 +1129,7 @@ where
+     MovingWindow(
+         RelocateRenderElement<RescaleRenderElement<self::window::CosmicWindowRenderElement<R>>>,
+     ),
++    Genie(crate::backend::render::wayland::genie::GenieRenderElement),
+     GrabbedStack(RescaleRenderElement<self::stack::CosmicStackRenderElement<R>>),
+     GrabbedWindow(RescaleRenderElement<self::window::CosmicWindowRenderElement<R>>),
+     FocusIndicator(PixelShaderElement),
+@@ -1152,6 +1153,7 @@ where
+             CosmicMappedRenderElement::TiledOverlay(elem) => elem.id(),
+             CosmicMappedRenderElement::MovingStack(elem) => elem.id(),
+             CosmicMappedRenderElement::MovingWindow(elem) => elem.id(),
++            CosmicMappedRenderElement::Genie(elem) => elem.id(),
+             CosmicMappedRenderElement::GrabbedStack(elem) => elem.id(),
+             CosmicMappedRenderElement::GrabbedWindow(elem) => elem.id(),
+             CosmicMappedRenderElement::FocusIndicator(elem) => elem.id(),
+@@ -1171,6 +1173,7 @@ where
+             CosmicMappedRenderElement::TiledOverlay(elem) => elem.current_commit(),
+             CosmicMappedRenderElement::MovingStack(elem) => elem.current_commit(),
+             CosmicMappedRenderElement::MovingWindow(elem) => elem.current_commit(),
++            CosmicMappedRenderElement::Genie(elem) => elem.current_commit(),
+             CosmicMappedRenderElement::GrabbedStack(elem) => elem.current_commit(),
+             CosmicMappedRenderElement::GrabbedWindow(elem) => elem.current_commit(),
+             CosmicMappedRenderElement::FocusIndicator(elem) => elem.current_commit(),
+@@ -1190,6 +1193,7 @@ where
+             CosmicMappedRenderElement::TiledOverlay(elem) => elem.src(),
+             CosmicMappedRenderElement::MovingStack(elem) => elem.src(),
+             CosmicMappedRenderElement::MovingWindow(elem) => elem.src(),
++            CosmicMappedRenderElement::Genie(elem) => elem.src(),
+             CosmicMappedRenderElement::GrabbedStack(elem) => elem.src(),
+             CosmicMappedRenderElement::GrabbedWindow(elem) => elem.src(),
+             CosmicMappedRenderElement::FocusIndicator(elem) => elem.src(),
+@@ -1209,6 +1213,7 @@ where
+             CosmicMappedRenderElement::TiledOverlay(elem) => elem.geometry(scale),
+             CosmicMappedRenderElement::MovingStack(elem) => elem.geometry(scale),
+             CosmicMappedRenderElement::MovingWindow(elem) => elem.geometry(scale),
++            CosmicMappedRenderElement::Genie(elem) => elem.geometry(scale),
+             CosmicMappedRenderElement::GrabbedStack(elem) => elem.geometry(scale),
+             CosmicMappedRenderElement::GrabbedWindow(elem) => elem.geometry(scale),
+             CosmicMappedRenderElement::FocusIndicator(elem) => elem.geometry(scale),
+@@ -1228,6 +1233,7 @@ where
+             CosmicMappedRenderElement::TiledOverlay(elem) => elem.location(scale),
+             CosmicMappedRenderElement::MovingStack(elem) => elem.location(scale),
+             CosmicMappedRenderElement::MovingWindow(elem) => elem.location(scale),
++            CosmicMappedRenderElement::Genie(elem) => elem.location(scale),
+             CosmicMappedRenderElement::GrabbedStack(elem) => elem.location(scale),
+             CosmicMappedRenderElement::GrabbedWindow(elem) => elem.location(scale),
+             CosmicMappedRenderElement::FocusIndicator(elem) => elem.location(scale),
+@@ -1247,6 +1253,7 @@ where
+             CosmicMappedRenderElement::TiledOverlay(elem) => elem.transform(),
+             CosmicMappedRenderElement::MovingStack(elem) => elem.transform(),
+             CosmicMappedRenderElement::MovingWindow(elem) => elem.transform(),
++            CosmicMappedRenderElement::Genie(elem) => elem.transform(),
+             CosmicMappedRenderElement::GrabbedStack(elem) => elem.transform(),
+             CosmicMappedRenderElement::GrabbedWindow(elem) => elem.transform(),
+             CosmicMappedRenderElement::FocusIndicator(elem) => elem.transform(),
+@@ -1270,6 +1277,7 @@ where
+             CosmicMappedRenderElement::TiledOverlay(elem) => elem.damage_since(scale, commit),
+             CosmicMappedRenderElement::MovingStack(elem) => elem.damage_since(scale, commit),
+             CosmicMappedRenderElement::MovingWindow(elem) => elem.damage_since(scale, commit),
++            CosmicMappedRenderElement::Genie(elem) => elem.damage_since(scale, commit),
+             CosmicMappedRenderElement::GrabbedStack(elem) => elem.damage_since(scale, commit),
+             CosmicMappedRenderElement::GrabbedWindow(elem) => elem.damage_since(scale, commit),
+             CosmicMappedRenderElement::FocusIndicator(elem) => elem.damage_since(scale, commit),
+@@ -1291,6 +1299,7 @@ where
+             CosmicMappedRenderElement::TiledOverlay(elem) => elem.opaque_regions(scale),
+             CosmicMappedRenderElement::MovingStack(elem) => elem.opaque_regions(scale),
+             CosmicMappedRenderElement::MovingWindow(elem) => elem.opaque_regions(scale),
++            CosmicMappedRenderElement::Genie(elem) => elem.opaque_regions(scale),
+             CosmicMappedRenderElement::GrabbedStack(elem) => elem.opaque_regions(scale),
+             CosmicMappedRenderElement::GrabbedWindow(elem) => elem.opaque_regions(scale),
+             CosmicMappedRenderElement::FocusIndicator(elem) => elem.opaque_regions(scale),
+@@ -1310,6 +1319,7 @@ where
+             CosmicMappedRenderElement::TiledOverlay(elem) => elem.alpha(),
+             CosmicMappedRenderElement::MovingStack(elem) => elem.alpha(),
+             CosmicMappedRenderElement::MovingWindow(elem) => elem.alpha(),
++            CosmicMappedRenderElement::Genie(elem) => elem.alpha(),
+             CosmicMappedRenderElement::GrabbedStack(elem) => elem.alpha(),
+             CosmicMappedRenderElement::GrabbedWindow(elem) => elem.alpha(),
+             CosmicMappedRenderElement::FocusIndicator(elem) => elem.alpha(),
+@@ -1329,6 +1339,7 @@ where
+             CosmicMappedRenderElement::TiledOverlay(elem) => elem.kind(),
+             CosmicMappedRenderElement::MovingStack(elem) => elem.kind(),
+             CosmicMappedRenderElement::MovingWindow(elem) => elem.kind(),
++            CosmicMappedRenderElement::Genie(elem) => elem.kind(),
+             CosmicMappedRenderElement::GrabbedStack(elem) => elem.kind(),
+             CosmicMappedRenderElement::GrabbedWindow(elem) => elem.kind(),
+             CosmicMappedRenderElement::FocusIndicator(elem) => elem.kind(),
+@@ -1348,6 +1359,7 @@ where
+             CosmicMappedRenderElement::TiledOverlay(elem) => elem.is_framebuffer_effect(),
+             CosmicMappedRenderElement::MovingStack(elem) => elem.is_framebuffer_effect(),
+             CosmicMappedRenderElement::MovingWindow(elem) => elem.is_framebuffer_effect(),
++            CosmicMappedRenderElement::Genie(elem) => elem.is_framebuffer_effect(),
+             CosmicMappedRenderElement::GrabbedStack(elem) => elem.is_framebuffer_effect(),
+             CosmicMappedRenderElement::GrabbedWindow(elem) => elem.is_framebuffer_effect(),
+             CosmicMappedRenderElement::FocusIndicator(elem) => elem.is_framebuffer_effect(),
+@@ -1402,6 +1414,17 @@ where
+             CosmicMappedRenderElement::MovingWindow(elem) => {
+                 elem.draw(frame, src, dst, damage, opaque_regions, cache)
+             }
++            CosmicMappedRenderElement::Genie(elem) => {
++                <crate::backend::render::wayland::genie::GenieRenderElement as RenderElement<R>>::draw(
++                    elem,
++                    frame,
++                    src,
++                    dst,
++                    damage,
++                    opaque_regions,
++                    cache,
++                )
++            }
+             CosmicMappedRenderElement::GrabbedStack(elem) => {
+                 elem.draw(frame, src, dst, damage, opaque_regions, cache)
+             }
+@@ -1459,6 +1482,7 @@ where
+             }
+             CosmicMappedRenderElement::MovingStack(elem) => elem.underlying_storage(renderer),
+             CosmicMappedRenderElement::MovingWindow(elem) => elem.underlying_storage(renderer),
++            CosmicMappedRenderElement::Genie(elem) => elem.underlying_storage(renderer),
+             CosmicMappedRenderElement::GrabbedStack(elem) => elem.underlying_storage(renderer),
+             CosmicMappedRenderElement::GrabbedWindow(elem) => elem.underlying_storage(renderer),
+             CosmicMappedRenderElement::FocusIndicator(elem) => {
+@@ -1514,6 +1538,11 @@ where
+             CosmicMappedRenderElement::MovingWindow(elem) => {
+                 elem.capture_framebuffer(frame, src, dst, cache)
+             }
++            CosmicMappedRenderElement::Genie(elem) => {
++                <crate::backend::render::wayland::genie::GenieRenderElement as RenderElement<R>>::capture_framebuffer(
++                    elem, frame, src, dst, cache,
++                )
++            }
+             CosmicMappedRenderElement::GrabbedStack(elem) => {
+                 elem.capture_framebuffer(frame, src, dst, cache)
+             }
+diff --git a/src/shell/layout/floating/mod.rs b/src/shell/layout/floating/mod.rs
+index da54445..431720d 100644
+--- a/src/shell/layout/floating/mod.rs
++++ b/src/shell/layout/floating/mod.rs
+@@ -29,7 +29,10 @@ use smithay::{
+ };
+ 
+ use crate::{
+-    backend::render::{IndicatorShader, Key, Usage, element::AsGlowRenderer},
++    backend::render::{
++        IndicatorShader, Key, Usage, element::AsGlowRenderer,
++        wayland::genie::GenieRenderElement,
++    },
+     shell::{
+         CosmicSurface, Direction, ManagedLayer, MoveResult, ResizeMode,
+         element::{
+@@ -53,7 +56,8 @@ mod grabs;
+ pub use self::grabs::*;
+ 
+ pub const ANIMATION_DURATION: Duration = Duration::from_millis(200);
+-pub const MINIMIZE_ANIMATION_DURATION: Duration = Duration::from_millis(320);
++/// Long enough for the genie warp to read clearly, like macOS's.
++pub const MINIMIZE_ANIMATION_DURATION: Duration = Duration::from_millis(560);
+ const SHAKE_ANIMATION_DURATION: Duration = Duration::from_millis(320);
+ const SHAKE_AMPLITUDE: f32 = 10.0;
+ 
+@@ -123,6 +127,32 @@ impl Animation {
+         }
+     }
+ 
++    /// For minimize and restore: the window's full-size position, the
++    /// minimize target (the dock icon) and how far the window has collapsed
++    /// into the target, from 0.0 (shown) to 1.0 (gone).
++    fn genie(&self) -> Option<(Rectangle<i32, Local>, Rectangle<i32, Local>, f32)> {
++        let elapsed = |start: &Instant| {
++            Instant::now()
++                .duration_since(*start)
++                .min(MINIMIZE_ANIMATION_DURATION)
++                .as_secs_f32()
++                / MINIMIZE_ANIMATION_DURATION.as_secs_f32()
++        };
++        match self {
++            Animation::Minimize {
++                start,
++                previous_geometry,
++                target_geometry,
++            } => Some((*previous_geometry, *target_geometry, elapsed(start))),
++            Animation::Unminimize {
++                start,
++                previous_geometry,
++                target_geometry,
++            } => Some((*target_geometry, *previous_geometry, 1.0 - elapsed(start))),
++            Animation::Tiled { .. } | Animation::Shake { .. } => None,
++        }
++    }
++
+     fn previous_geometry(&self) -> &Rectangle<i32, Local> {
+         match self {
+             Animation::Tiled {
+@@ -1581,6 +1611,53 @@ impl FloatingLayout {
+             .map(|(elem, _)| elem)
+             .chain(self.space.elements().rev())
+         {
++            // Minimize and restore: draw the window through the genie warp.
++            if let Some((window_rect, icon_rect, progress)) =
++                self.animations.get(elem).and_then(Animation::genie)
++            {
++                let mut above = Vec::new();
++                let mut below = Vec::new();
++                // Render the window with its geometry's top-left at the origin.
++                let window_loc = elem.geometry().loc;
++                elem.push_render_elements(
++                    renderer,
++                    Point::<i32, Logical>::from((-window_loc.x, -window_loc.y))
++                        .to_physical_precise_round(output_scale),
++                    None,
++                    output_scale.into(),
++                    alpha,
++                    None,
++                    None,
++                    &mut |e| above.push(e),
++                    &mut |e| below.push(e),
++                );
++                above.extend(below);
++
++                let window_physical = Rectangle::new(
++                    window_rect
++                        .loc
++                        .as_logical()
++                        .to_physical_precise_round(output_scale),
++                    elem.geometry()
++                        .size
++                        .to_physical_precise_round(output_scale),
++                );
++                let icon_physical = icon_rect
++                    .as_logical()
++                    .to_physical_precise_round(output_scale);
++                if let Some(genie) = GenieRenderElement::new(
++                    renderer,
++                    &above,
++                    window_physical,
++                    icon_physical,
++                    output_scale.into(),
++                    progress,
++                ) {
++                    push(CosmicMappedRenderElement::Genie(genie));
++                    continue;
++                }
++            }
++
+             let (mut geometry, alpha) = self
+                 .animations
+                 .get(elem)
+diff --git a/src/shell/layout/tiling/mod.rs b/src/shell/layout/tiling/mod.rs
+index 20e11b7..1d51fd1 100644
+--- a/src/shell/layout/tiling/mod.rs
++++ b/src/shell/layout/tiling/mod.rs
+@@ -3,7 +3,7 @@
+ use crate::{
+     backend::render::{
+         ACTIVE_GROUP_COLOR, BackdropShader, GROUP_COLOR, IndicatorShader, Key, Usage,
+-        element::AsGlowRenderer,
++        element::AsGlowRenderer, wayland::genie::GenieRenderElement,
+     },
+     shell::{
+         CosmicSurface, Direction, FocusResult, MoveResult, OverviewMode, ResizeMode, Trigger,
+@@ -80,7 +80,8 @@ pub use self::blocker::*;
+ pub use self::grabs::*;
+ 
+ pub const ANIMATION_DURATION: Duration = Duration::from_millis(200);
+-pub const MINIMIZE_ANIMATION_DURATION: Duration = Duration::from_millis(320);
++/// Matches the floating layer, so both play the genie at the same speed.
++pub const MINIMIZE_ANIMATION_DURATION: Duration = Duration::from_millis(560);
+ pub const MOUSE_ANIMATION_DELAY: Duration = Duration::from_millis(150);
+ pub const INITIAL_MOUSE_ANIMATION_DELAY: Duration = Duration::from_millis(500);
+ 
+@@ -5095,7 +5096,22 @@ fn render_old_tree_windows<R>(
+         output_scale,
+         percentage,
+         is_swap_mode,
+-        |mapped, elem_geometry, geo, alpha, is_minimizing| {
++        |mapped, elem_geometry, geo, alpha, genie| {
++            if let Some((original, icon, progress)) = genie
++                && let Some(element) = genie_element(
++                    renderer,
++                    mapped,
++                    original,
++                    icon,
++                    progress,
++                    output_scale,
++                    scanout_node,
++                )
++            {
++                push(CosmicMappedRenderElement::Genie(element));
++                return;
++            }
++            let is_minimizing = genie.is_some();
+             let radius = mapped.corner_radius(geo.size.as_logical(), indicator_thickness);
+             if is_minimizing && indicator_thickness > 0 {
+                 push(CosmicMappedRenderElement::FocusIndicator(
+@@ -5151,6 +5167,56 @@ fn render_old_tree_windows<R>(
+     }
+ }
+ 
++/// A snapshot of `mapped` warped between `window` and `icon` by the genie
++/// shader. `progress` is 0.0 with the window in place, 1.0 inside the icon.
++fn genie_element<R>(
++    renderer: &mut R,
++    mapped: &CosmicMapped,
++    window: Rectangle<i32, Local>,
++    icon: Rectangle<i32, Local>,
++    progress: f32,
++    output_scale: f64,
++    scanout_node: Option<DrmNode>,
++) -> Option<GenieRenderElement>
++where
++    R: AsGlowRenderer,
++    R::TextureId: Send + Clone + 'static,
++    CosmicMappedRenderElement<R>: RenderElement<R>,
++    CosmicWindowRenderElement<R>: RenderElement<R>,
++    CosmicStackRenderElement<R>: RenderElement<R>,
++{
++    let geometry = mapped.geometry();
++    let mut above = Vec::new();
++    let mut below = Vec::new();
++    // Render the window with its geometry's top-left corner at the origin.
++    mapped.push_render_elements(
++        renderer,
++        Point::<i32, smithay::utils::Logical>::from((-geometry.loc.x, -geometry.loc.y))
++            .to_physical_precise_round(output_scale),
++        Some(window.size.as_logical()),
++        Scale::from(output_scale),
++        1.0,
++        None,
++        scanout_node,
++        &mut |elem| above.push(elem),
++        &mut |elem| below.push(elem),
++    );
++    above.extend(below);
++    let window_physical = Rectangle::new(
++        window.loc.as_logical().to_physical_precise_round(output_scale),
++        window.size.as_logical().to_physical_precise_round(output_scale),
++    );
++    let icon_physical = icon.as_logical().to_physical_precise_round(output_scale);
++    GenieRenderElement::new(
++        renderer,
++        &above,
++        window_physical,
++        icon_physical,
++        Scale::from(output_scale),
++        progress,
++    )
++}
++
+ fn render_old_tree(
+     reference_tree: &Tree<Data>,
+     target_tree: &Tree<Data>,
+@@ -5158,7 +5224,13 @@ fn render_old_tree(
+     output_scale: f64,
+     percentage: f32,
+     is_swap_mode: bool,
+-    mut processor: impl FnMut(&CosmicMapped, Rectangle<i32, Physical>, Rectangle<i32, Local>, f32, bool),
++    mut processor: impl FnMut(
++        &CosmicMapped,
++        Rectangle<i32, Physical>,
++        Rectangle<i32, Local>,
++        f32,
++        Option<(Rectangle<i32, Local>, Rectangle<i32, Local>, f32)>,
++    ),
+ ) {
+     if let Some(root) = reference_tree.root_node_id() {
+         let geometries = geometries.unwrap_or_default();
+@@ -5227,7 +5299,9 @@ fn render_old_tree(
+ 
+                 let elem_geometry = mapped.geometry().to_physical_precise_round(output_scale);
+ 
+-                processor(mapped, elem_geometry, geo, alpha, minimize_geo.is_some())
++                // For a minimizing window: where it started, the icon, and how far along.
++                let genie = minimize_geo.map(|icon| (*original_geo, icon, percentage));
++                processor(mapped, elem_geometry, geo, alpha, genie)
+             });
+     }
+ }
+@@ -5616,6 +5690,26 @@ fn render_new_tree_windows<R>(
+             }
+ 
+             if let Data::Mapped { mapped, .. } = data {
++                // A window coming back from the dock pours out of its icon.
++                if !is_overview
++                    && let Data::Mapped {
++                        minimize_rect: Some(icon),
++                        ..
++                    } = data
++                    && let Some(element) = genie_element(
++                        renderer,
++                        mapped,
++                        *original_geo,
++                        *icon,
++                        1.0 - percentage,
++                        output_scale,
++                        scanout_node,
++                    )
++                {
++                    window_upper_elements.push(CosmicMappedRenderElement::Genie(element));
++                    return;
++                }
++
+                 let elem_geometry = mapped.geometry().to_physical_precise_round(output_scale);
+ 
+                 let scale = geo.size.to_f64() / original_geo.size.to_f64();
+diff --git a/src/wayland/handlers/toplevel_management.rs b/src/wayland/handlers/toplevel_management.rs
+index 91e22a4..a8749f4 100644
+--- a/src/wayland/handlers/toplevel_management.rs
++++ b/src/wayland/handlers/toplevel_management.rs
+@@ -295,6 +295,7 @@ pub fn minimize_rectangle(output: &Output, window: &CosmicSurface) -> Rectangle<
+                 )
+             })
+         })
++        .or_else(|| ext_dock_icon_rectangle(output, &window.app_id()))
+         .unwrap_or_else(|| {
+             let output_size = output.geometry().size;
+             Rectangle::new(
+@@ -308,4 +309,49 @@ pub fn minimize_rectangle(output: &Output, window: &CosmicSurface) -> Rectangle<
+         .as_local()
+ }
+ 
++/// Where the standalone dock (cosmic-ext-dock) shows the icon for `app_id`.
++///
++/// The dock runs on its own Wayland connection, so it cannot attach
++/// rectangles to toplevels. Instead it writes one line per app to
++/// `$XDG_RUNTIME_DIR/cosmic-ext-dock-icons`:
++/// `app_id<TAB>center_offset<TAB>size<TAB>bottom_offset`, where the offset is
++/// from the dock's horizontal center and the bottom offset from the screen's
++/// bottom edge. The dock's layer surface (namespace "dock") gives the center.
++fn ext_dock_icon_rectangle(
++    output: &Output,
++    app_id: &str,
++) -> Option<Rectangle<i32, smithay::utils::Logical>> {
++    if app_id.is_empty() {
++        return None;
++    }
++    let path = std::path::Path::new(&std::env::var_os("XDG_RUNTIME_DIR")?)
++        .join("cosmic-ext-dock-icons");
++    let contents = std::fs::read_to_string(path).ok()?;
++    let (offset, size, bottom) = contents.lines().find_map(|line| {
++        let mut fields = line.split('\t');
++        let id = fields.next()?;
++        if !id.eq_ignore_ascii_case(app_id) {
++            return None;
++        }
++        let offset: i32 = fields.next()?.parse().ok()?;
++        let size: i32 = fields.next()?.parse().ok()?;
++        let bottom: i32 = fields.next()?.parse().ok()?;
++        Some((offset, size, bottom))
++    })?;
++
++    let output_size = output.geometry().size;
++    let map = layer_map_for_output(output);
++    let center = map
++        .layers()
++        .find(|layer| layer.namespace() == "dock")
++        .and_then(|layer| map.layer_geometry(layer))
++        .map(|geo| geo.loc.x + geo.size.w / 2)
++        .unwrap_or(output_size.w / 2);
++
++    Some(Rectangle::new(
++        Point::from((center + offset - size / 2, output_size.h - bottom - size)),
++        Size::from((size, size)),
++    ))
++}
++
+ delegate_toplevel_management!(State);

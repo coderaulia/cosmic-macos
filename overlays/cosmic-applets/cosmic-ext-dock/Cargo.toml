@@ -1,0 +1,21 @@
+[package]
+name = "cosmic-ext-dock"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+description = "Standalone dock with hover magnification and launch bounce"
+
+[dependencies]
+anyhow.workspace = true
+cctk.workspace = true
+cosmic-app-list-config = { path = "../cosmic-app-list/cosmic-app-list-config" }
+cosmic-protocols.workspace = true
+futures.workspace = true
+image = { version = "0.25.9", default-features = false }
+libcosmic.workspace = true
+memmap2 = "0.9.10"
+rustix.workspace = true
+tokio.workspace = true
+tracing-log.workspace = true
+tracing-subscriber.workspace = true
+tracing.workspace = true

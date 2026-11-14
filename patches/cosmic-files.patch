@@ -1,0 +1,866 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index c897043..cf8612f 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -832,7 +832,6 @@ dependencies = [
+ [[package]]
+ name = "build_helpers"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "cfg_aliases",
+ ]
+@@ -1364,7 +1363,6 @@ dependencies = [
+ [[package]]
+ name = "cosmic-config"
+ version = "1.0.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "atomicwrites",
+  "cosmic-config-derive",
+@@ -1385,7 +1383,6 @@ dependencies = [
+ [[package]]
+ name = "cosmic-config-derive"
+ version = "1.0.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "quote",
+  "syn 2.0.119",
+@@ -1564,7 +1561,6 @@ dependencies = [
+ [[package]]
+ name = "cosmic-theme"
+ version = "1.0.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "almost",
+  "configparser",
+@@ -3142,7 +3138,6 @@ dependencies = [
+ [[package]]
+ name = "iced"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "build_helpers",
+  "dnd",
+@@ -3164,7 +3159,6 @@ dependencies = [
+ [[package]]
+ name = "iced_accessibility"
+ version = "0.1.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "accesskit",
+  "accesskit_winit",
+@@ -3173,7 +3167,6 @@ dependencies = [
+ [[package]]
+ name = "iced_core"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "bitflags 2.13.2",
+  "build_helpers",
+@@ -3199,7 +3192,6 @@ dependencies = [
+ [[package]]
+ name = "iced_debug"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "iced_core",
+  "iced_futures",
+@@ -3209,7 +3201,6 @@ dependencies = [
+ [[package]]
+ name = "iced_futures"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "futures",
+  "iced_core",
+@@ -3223,7 +3214,6 @@ dependencies = [
+ [[package]]
+ name = "iced_graphics"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "bitflags 2.13.2",
+  "bytemuck",
+@@ -3244,7 +3234,6 @@ dependencies = [
+ [[package]]
+ name = "iced_program"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "iced_graphics",
+  "iced_runtime",
+@@ -3253,7 +3242,6 @@ dependencies = [
+ [[package]]
+ name = "iced_renderer"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "iced_graphics",
+  "iced_tiny_skia",
+@@ -3265,7 +3253,6 @@ dependencies = [
+ [[package]]
+ name = "iced_runtime"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "build_helpers",
+  "bytes",
+@@ -3281,7 +3268,6 @@ dependencies = [
+ [[package]]
+ name = "iced_tiny_skia"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "bytemuck",
+  "cosmic-text",
+@@ -3298,7 +3284,6 @@ dependencies = [
+ [[package]]
+ name = "iced_wgpu"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "as-raw-xcb-connection",
+  "bitflags 2.13.2",
+@@ -3330,7 +3315,6 @@ dependencies = [
+ [[package]]
+ name = "iced_widget"
+ version = "0.14.2"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "build_helpers",
+  "cosmic-client-toolkit",
+@@ -3349,7 +3333,6 @@ dependencies = [
+ [[package]]
+ name = "iced_winit"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "build_helpers",
+  "cosmic-client-toolkit",
+@@ -4495,7 +4478,6 @@ checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
+ [[package]]
+ name = "libcosmic"
+ version = "1.0.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "apply",
+  "ashpd 0.12.3",
+diff --git a/Cargo.toml b/Cargo.toml
+index 40ee00c..4e2462d 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -167,3 +167,24 @@ members = ["cosmic-files-applet", "cosmic-files-thumbnailer"]
+ [workspace.dependencies]
+ image = "0.25"
+ log = "0.4"
++
++# macOS look: window buttons on the left (local libcosmic fork).
++[patch."https://github.com/pop-os/libcosmic.git"]
++build_helpers = { path = "../../libcosmic-mac/iced/build_helpers" }
++cosmic-config = { path = "../../libcosmic-mac/cosmic-config" }
++cosmic-config-derive = { path = "../../libcosmic-mac/cosmic-config-derive" }
++cosmic-theme = { path = "../../libcosmic-mac/cosmic-theme" }
++iced = { path = "../../libcosmic-mac/iced" }
++iced_accessibility = { path = "../../libcosmic-mac/iced/accessibility" }
++iced_core = { path = "../../libcosmic-mac/iced/core" }
++iced_debug = { path = "../../libcosmic-mac/iced/debug" }
++iced_futures = { path = "../../libcosmic-mac/iced/futures" }
++iced_graphics = { path = "../../libcosmic-mac/iced/graphics" }
++iced_program = { path = "../../libcosmic-mac/iced/program" }
++iced_renderer = { path = "../../libcosmic-mac/iced/renderer" }
++iced_runtime = { path = "../../libcosmic-mac/iced/runtime" }
++iced_tiny_skia = { path = "../../libcosmic-mac/iced/tiny_skia" }
++iced_wgpu = { path = "../../libcosmic-mac/iced/wgpu" }
++iced_widget = { path = "../../libcosmic-mac/iced/widget" }
++iced_winit = { path = "../../libcosmic-mac/iced/winit" }
++libcosmic = { path = "../../libcosmic-mac" }
+diff --git a/build.rs b/build.rs
+index 206e897..c8ff9cb 100644
+--- a/build.rs
++++ b/build.rs
+@@ -3,7 +3,7 @@ use std::{env, fs};
+ use xdgen::{App, Context, FluentString};
+ 
+ fn main() {
+-    let id = "com.system76.CosmicFiles";
++    let id = "dev.asw.MacFiles";
+     let ctx = Context::new("i18n", env::var("CARGO_PKG_NAME").unwrap()).unwrap();
+     let app = App::new(FluentString("cosmic-files"))
+         .comment(FluentString("comment"))
+diff --git a/i18n/en/cosmic_files.ftl b/i18n/en/cosmic_files.ftl
+index 4400c08..43df5c3 100644
+--- a/i18n/en/cosmic_files.ftl
++++ b/i18n/en/cosmic_files.ftl
+@@ -382,6 +382,7 @@ zoom-out = Zoom out
+ view = View
+ grid-view = Grid view
+ list-view = List view
++column-view = Column view
+ show-hidden-files = Show hidden files
+ list-directories-first = List directories first
+ gallery-preview = Gallery preview
+diff --git a/res/dev.asw.MacFiles.desktop b/res/dev.asw.MacFiles.desktop
+new file mode 100644
+index 0000000..7f6e076
+--- /dev/null
++++ b/res/dev.asw.MacFiles.desktop
+@@ -0,0 +1,11 @@
++[Desktop Entry]
++Name=COSMIC Files
++Comment=File manager for the COSMIC desktop
++Exec=cosmic-files %U
++Terminal=false
++Type=Application
++StartupNotify=true
++Icon=com.system76.CosmicFiles
++Categories=COSMIC;Utility;FileManager;
++Keywords=Folder;Manager;
++MimeType=inode/directory;
+diff --git a/res/dev.asw.MacFiles.metainfo.xml b/res/dev.asw.MacFiles.metainfo.xml
+new file mode 100644
+index 0000000..0095c42
+--- /dev/null
++++ b/res/dev.asw.MacFiles.metainfo.xml
+@@ -0,0 +1,41 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<component type="desktop-application">
++  <id>com.system76.CosmicFiles</id>
++  <metadata_license>CC0-1.0</metadata_license>
++  <project_license>GPL-3.0-only</project_license>
++  <project_group>COSMIC</project_group>
++  <developer_name>System76</developer_name>
++  <update_contact>jeremy@system76.com</update_contact>
++  <url type="homepage">https://github.com/pop-os/cosmic-files</url>
++  <url type="bugtracker">https://github.com/pop-os/cosmic-files</url>
++  <name>COSMIC Files</name>
++  <summary>File manager for the COSMIC desktop</summary>
++  <description>
++    <p>File manager for the COSMIC desktop</p>
++    <p xml:lang="ar">مدير ملفات لسطح مكتب COSMIC</p>
++    <p xml:lang="cs">Správce souborů pro prostředí COSMIC</p>
++    <p xml:lang="pl">Menedżer plików pulpitu COSMIC</p>
++    <p xml:lang="hu">Fájlkezelő a COSMIC asztali környezethez</p>
++    <p xml:lang="pt_BR">Gerenciador de arquivos do COSMIC</p>
++    <p xml:lang="pt">Gerenciador de arquivos do COSMIC</p>
++    <p xml:lang="sk">Správca súborov pre prostredie COSMIC</p>
++    <p xml:lang="es">Gestor de archivos de COSMIC</p>
++    <p xml:lang="it">File manager di COSMIC</p>
++    <p xml:lang="sv">Filhanterare för skrivbordsmiljön COSMIC</p>
++  </description>
++  <keywords>
++    <keyword>Folder</keyword>
++    <keyword>Manager</keyword>
++  </keywords>
++  <launchable type="desktop-id">com.system76.CosmicFiles.desktop</launchable>
++  <icon type="remote" height="256" width="256">https://raw.githubusercontent.com/pop-os/cosmic-files/master/res/icons/hicolor/256x256/apps/com.system76.CosmicFiles.svg</icon>
++  <provides>
++    <id>com.system76.CosmicApplication</id>
++    <mimetypes>
++      <mimetype>inode/directory</mimetype>
++    </mimetypes>
++    <binaries>
++      <binary>cosmic-files</binary>
++    </binaries>
++  </provides>
++</component>
+diff --git a/src/app.rs b/src/app.rs
+index 77aa67d..a2b963e 100644
+--- a/src/app.rs
++++ b/src/app.rs
+@@ -188,6 +188,7 @@ pub enum Action {
+     TabPrev,
+     TabViewGrid,
+     TabViewList,
++    TabViewColumns,
+     ToggleFoldersFirst,
+     ToggleShowHidden,
+     ToggleSort(HeadingOptions),
+@@ -267,6 +268,7 @@ impl Action {
+             Self::TabPrev => Message::TabPrev,
+             Self::TabViewGrid => Message::TabView(entity_opt, tab::View::Grid),
+             Self::TabViewList => Message::TabView(entity_opt, tab::View::List),
++            Self::TabViewColumns => Message::TabView(entity_opt, tab::View::Columns),
+             Self::ToggleFoldersFirst => Message::ToggleFoldersFirst,
+             Self::ToggleShowHidden => Message::ToggleShowHidden,
+             Self::ToggleSort(sort) => {
+@@ -1740,6 +1742,10 @@ impl App {
+     fn update_nav_model(&mut self) {
+         let mut nav_model = segmented_button::ModelBuilder::default();
+ 
++        // Finder-style section headings; they carry no location, so they are
++        // disabled below and cannot be selected.
++        nav_model = nav_model.insert(|b| b.text("Favorites"));
++
+         if self.config.show_recents {
+             nav_model = nav_model.insert(|b| {
+                 b.text(fl!("recents"))
+@@ -1772,11 +1778,11 @@ impl App {
+             }
+         }
+ 
++        nav_model = nav_model.insert(|b| b.text("Locations").divider_above());
+         nav_model = nav_model.insert(|b| {
+             b.text(fl!("trash"))
+                 .icon(icon::icon(Trash::icon_symbolic(16)))
+                 .data(Location::Trash)
+-                .divider_above()
+         });
+ 
+         if !MOUNTERS.is_empty() {
+@@ -1831,6 +1837,15 @@ impl App {
+         }
+ 
+         self.nav_model = nav_model.build();
++        // Section headings are the entries without a location.
++        let headings: Vec<_> = self
++            .nav_model
++            .iter()
++            .filter(|&entity| self.nav_model.data::<Location>(entity).is_none())
++            .collect();
++        for entity in headings {
++            self.nav_model.enable(entity, false);
++        }
+ 
+         let tab_entity = self.tab_model.active();
+         if let Some(tab) = self.tab_model.data::<Tab>(tab_entity) {
+@@ -2331,7 +2346,7 @@ impl Application for App {
+     type Message = Message;
+ 
+     /// The unique application ID to supply to the window manager.
+-    const APP_ID: &'static str = "com.system76.CosmicFiles";
++    const APP_ID: &'static str = "dev.asw.MacFiles";
+ 
+     fn core(&self) -> &Core {
+         &self.core
+@@ -6430,7 +6445,26 @@ impl Application for App {
+     }
+ 
+     fn header_end(&self) -> Vec<Element<'_, Self::Message>> {
+-        let mut elements = Vec::with_capacity(2);
++        let mut elements = Vec::with_capacity(3);
++
++        // Finder-style view switcher: icons, list, columns.
++        if let Some(tab) = self.tab_model.active_data::<Tab>() {
++            let current = tab.config.view;
++            let mut switcher = widget::row::with_capacity(3).spacing(2);
++            for (view, icon_name) in [
++                (tab::View::Grid, "view-grid-symbolic"),
++                (tab::View::List, "view-list-symbolic"),
++                (tab::View::Columns, "view-column-symbolic"),
++            ] {
++                switcher = switcher.push(
++                    widget::button::icon(icon::from_name(icon_name))
++                        .padding(6)
++                        .selected(current == view)
++                        .on_press(Message::TabView(None, view)),
++                );
++            }
++            elements.push(switcher.into());
++        }
+ 
+         if let Some(term) = self.search_get() {
+             if self.core.is_condensed() {
+diff --git a/src/dialog.rs b/src/dialog.rs
+index d0037d2..60bdf66 100644
+--- a/src/dialog.rs
++++ b/src/dialog.rs
+@@ -998,7 +998,7 @@ impl Application for App {
+     type Message = Message;
+ 
+     /// The unique application ID to supply to the window manager.
+-    const APP_ID: &'static str = "com.system76.CosmicFilesDialog";
++    const APP_ID: &'static str = "dev.asw.MacFilesDialog";
+ 
+     fn core(&self) -> &Core {
+         &self.core
+diff --git a/src/key_bind.rs b/src/key_bind.rs
+index d3ddd59..729f857 100644
+--- a/src/key_bind.rs
++++ b/src/key_bind.rs
+@@ -54,6 +54,7 @@ pub fn key_binds(mode: &tab::Mode) -> HashMap<KeyBind, Action> {
+     // Switch view
+     bind!([Ctrl], Key::Character("1".into()), TabViewList);
+     bind!([Ctrl], Key::Character("2".into()), TabViewGrid);
++    bind!([Ctrl], Key::Character("3".into()), TabViewColumns);
+ 
+     // App-only keys
+     if matches!(mode, tab::Mode::App) {
+diff --git a/src/menu.rs b/src/menu.rs
+index 4caa701..ba6d1ec 100644
+--- a/src/menu.rs
++++ b/src/menu.rs
+@@ -434,6 +434,7 @@ pub fn dialog_menu(
+                 widget::button::icon(widget::icon::from_name(match tab.config.view {
+                     tab::View::Grid => "view-grid-symbolic",
+                     tab::View::List => "view-list-symbolic",
++                    tab::View::Columns => "view-column-symbolic",
+                 }))
+                 // This prevents the button from being shown as insensitive
+                 .on_press(Message::None)
+@@ -454,6 +455,12 @@ pub fn dialog_menu(
+                         matches!(tab.config.view, tab::View::List),
+                         Action::TabViewList,
+                     ),
++                    menu::Item::CheckBox(
++                        fl!("column-view"),
++                        None,
++                        matches!(tab.config.view, tab::View::Columns),
++                        Action::TabViewColumns,
++                    ),
+                 ],
+             ),
+         ),
+@@ -678,6 +685,12 @@ pub fn menu_bar<'a>(
+                             tab_opt.is_some_and(|tab| matches!(tab.config.view, tab::View::List)),
+                             Action::TabViewList,
+                         ),
++                        menu::Item::CheckBox(
++                            fl!("column-view"),
++                            None,
++                            tab_opt.is_some_and(|tab| matches!(tab.config.view, tab::View::Columns)),
++                            Action::TabViewColumns,
++                        ),
+                         menu::Item::Divider,
+                         menu::Item::CheckBox(
+                             fl!("show-hidden-files"),
+diff --git a/src/tab.rs b/src/tab.rs
+index d462c11..3a6dc4a 100644
+--- a/src/tab.rs
++++ b/src/tab.rs
+@@ -1770,6 +1770,10 @@ pub enum Command {
+ 
+ #[derive(Clone, Debug)]
+ pub enum Message {
++    /// Expand or collapse a folder inline in the list view.
++    ToggleExpand(usize),
++    /// Select an entry in the column view, opening a pane for folders.
++    ColumnSelect(usize),
+     AddNetworkDrive,
+     AutoScroll(Option<f32>),
+     Click(Option<usize>),
+@@ -2730,6 +2734,8 @@ impl Item {
+ pub enum View {
+     Grid,
+     List,
++    /// Finder-style columns: one pane per folder level.
++    Columns,
+ }
+ #[derive(Clone, Copy, Debug, Hash, PartialEq, PartialOrd, Ord, Eq, Deserialize, Serialize)]
+ pub enum HeadingOptions {
+@@ -2836,6 +2842,10 @@ pub struct Tab {
+     time_formatter: DateTimeFormatter<fieldsets::T>,
+     window_id: Option<window::Id>,
+     large_image_manager: LargeImageManager,
++    /// Folders expanded inline in the list view's tree.
++    pub(crate) expanded: BTreeSet<PathBuf>,
++    /// Folders opened as panes in the column view, outermost first.
++    pub(crate) column_chain: Vec<PathBuf>,
+ }
+ 
+ async fn calculate_dir_size(path: &Path, controller: Controller) -> Result<u64, OperationError> {
+@@ -2980,6 +2990,8 @@ impl Tab {
+             time_formatter: time_formatter(config.military_time),
+             window_id,
+             large_image_manager: LargeImageManager::new(),
++            expanded: BTreeSet::new(),
++            column_chain: Vec::new(),
+         }
+     }
+ 
+@@ -3011,6 +3023,26 @@ impl Tab {
+                 item.selected = true;
+             }
+         }
++        // Keep folders expanded in the tree list open across rescans.
++        if !self.expanded.is_empty() {
++            let root = self.location.path_opt().cloned();
++            // Only folders strictly below the current one can be open; the
++            // current folder's own entries are already in `items`.
++            self.expanded.retain(|path| {
++                path.is_dir()
++                    && root
++                        .as_ref()
++                        .is_some_and(|r| path != r && path.starts_with(r))
++            });
++            self.column_chain
++                .retain(|path| root.as_ref().is_some_and(|r| path != r && path.starts_with(r)));
++            for path in self.expanded.clone() {
++                items.extend(scan_path(&path, self.config.icon_sizes));
++            }
++            // Never list an entry twice.
++            let mut seen = std::collections::HashSet::new();
++            items.retain(|item| item.path_opt().is_none_or(|p| seen.insert(p.clone())));
++        }
+         self.items_opt = Some(items);
+         if let Some(i) = highlighted
+             .zip(self.items_opt.as_mut())
+@@ -3491,6 +3523,9 @@ impl Tab {
+         self.location_ancestors = self.location.ancestors();
+         self.location_title = self.location.title();
+         self.edit_location = None;
++        // Opened folders belong to the old location's tree and panes.
++        self.expanded.clear();
++        self.column_chain.clear();
+         self.items_opt = None;
+         //TODO: remember scroll by location?
+         self.scroll_opt = None;
+@@ -4431,6 +4466,72 @@ impl Tab {
+                 //TODO: hack for clearing selecting when right clicking empty space
+                 self.last_right_click = click_i_opt;
+             }
++            Message::ColumnSelect(i) => {
++                let target = self.items_opt.as_ref().and_then(|items| items.get(i)).and_then(
++                    |item| item.path_opt().cloned().map(|path| (path, item.metadata.is_dir())),
++                );
++                if let Some((path, is_dir)) = target {
++                    if let Some(items) = self.items_opt.as_mut() {
++                        for (index, item) in items.iter_mut().enumerate() {
++                            item.selected = index == i;
++                        }
++                    }
++                    // Space (Quick Look) previews the focused entry.
++                    self.select_focus = Some(i);
++                    // Keep the panes leading to this entry, then open it if it's a folder.
++                    let parent = path.parent().map(Path::to_path_buf).unwrap_or_default();
++                    self.column_chain.retain(|dir| parent.starts_with(dir));
++                    if is_dir {
++                        self.column_chain.push(path.clone());
++                        if self.expanded.insert(path.clone())
++                            && let Some(items) = self.items_opt.as_mut()
++                        {
++                            items.extend(scan_path(&path, self.config.icon_sizes));
++                        }
++                    }
++                    // Forget folders no longer shown, so memory stays small.
++                    let stale: Vec<PathBuf> = self
++                        .expanded
++                        .iter()
++                        .filter(|dir| !self.column_chain.contains(dir))
++                        .cloned()
++                        .collect();
++                    for dir in stale {
++                        self.expanded.remove(&dir);
++                        if let Some(items) = self.items_opt.as_mut() {
++                            items.retain(|item| {
++                                item.path_opt()
++                                    .is_none_or(|p| p == &dir || !p.starts_with(&dir))
++                            });
++                        }
++                    }
++                }
++            }
++            Message::ToggleExpand(i) => {
++                let path = self
++                    .items_opt
++                    .as_ref()
++                    .and_then(|items| items.get(i))
++                    .and_then(|item| item.path_opt().cloned());
++                if let Some(path) = path {
++                    if self.expanded.remove(&path) {
++                        // Collapse: drop the folder's entries and nested expansions.
++                        self.expanded.retain(|p| !p.starts_with(&path));
++                        if let Some(items) = self.items_opt.as_mut() {
++                            items.retain(|item| {
++                                item.path_opt()
++                                    .is_none_or(|p| p == &path || !p.starts_with(&path))
++                            });
++                        }
++                    } else {
++                        let children = scan_path(&path, self.config.icon_sizes);
++                        self.expanded.insert(path);
++                        if let Some(items) = self.items_opt.as_mut() {
++                            items.extend(children);
++                        }
++                    }
++                }
++            }
+             Message::MiddleClick(click_i) => {
+                 if mod_ctrl || mod_shift {
+                     self.update(Message::Click(Some(click_i)), modifiers);
+@@ -4956,6 +5057,58 @@ impl Tab {
+         }
+     }
+ 
++    /// How deep `item` sits in the list view's tree: 0 for entries of the
++    /// tab's folder, 1 for entries of an expanded subfolder, and so on.
++    pub(crate) fn tree_depth(&self, item: &Item) -> usize {
++        if self.expanded.is_empty() {
++            return 0;
++        }
++        let (Some(root), Some(path)) = (self.location.path_opt(), item.path_opt()) else {
++            return 0;
++        };
++        path.strip_prefix(root)
++            .map(|relative| relative.components().count().saturating_sub(1))
++            .unwrap_or(0)
++    }
++
++    /// Reorder sorted items so each expanded folder's entries follow it,
++    /// keeping the sort order within every folder.
++    fn tree_order<'a>(&self, sorted: Vec<(usize, &'a Item)>) -> Vec<(usize, &'a Item)> {
++        if self.expanded.is_empty() {
++            return sorted;
++        }
++        let Some(root) = self.location.path_opt() else {
++            return sorted;
++        };
++        let mut by_parent: HashMap<PathBuf, Vec<(usize, &'a Item)>> = HashMap::new();
++        for entry in sorted {
++            let parent = entry
++                .1
++                .path_opt()
++                .and_then(|path| path.parent())
++                .map(Path::to_path_buf)
++                .unwrap_or_default();
++            by_parent.entry(parent).or_default().push(entry);
++        }
++        let mut ordered = Vec::new();
++        let mut stack: Vec<(usize, &'a Item)> = by_parent
++            .remove(root)
++            .unwrap_or_default()
++            .into_iter()
++            .rev()
++            .collect();
++        while let Some(entry) = stack.pop() {
++            ordered.push(entry);
++            if let Some(path) = entry.1.path_opt()
++                && self.expanded.contains(path)
++                && let Some(children) = by_parent.remove(path)
++            {
++                stack.extend(children.into_iter().rev());
++            }
++        }
++        ordered
++    }
++
+     fn column_sort(&self) -> Option<Vec<(usize, &Item)>> {
+         let check_reverse = |ord: Ordering, sort: bool| {
+             if sort { ord } else { ord.reverse() }
+@@ -5061,7 +5214,7 @@ impl Tab {
+                 });
+             }
+         }
+-        Some(items)
++        Some(self.tree_order(items))
+     }
+ 
+     fn dnd_dest<'a>(
+@@ -5760,6 +5913,12 @@ impl Tab {
+             let mut hidden = 0;
+             let mut grid_elements = Vec::new();
+             for &(i, item) in &items {
++                // Entries of expanded folders belong to the list view only.
++                if self.tree_depth(item) > 0 {
++                    item.pos_opt.set(None);
++                    item.rect_opt.set(None);
++                    continue;
++                }
+                 if !show_hidden && item.hidden {
+                     item.pos_opt.set(None);
+                     item.rect_opt.set(None);
+@@ -6007,6 +6166,143 @@ impl Tab {
+         (drag_list, mouse_area.into(), true)
+     }
+ 
++    /// Finder-style column view: the tab's folder, then one pane for each
++    /// folder opened from it, then a preview of the selected file.
++    pub fn columns_view(
++        &self,
++    ) -> (
++        Option<Element<'static, Message>>,
++        Element<'_, Message>,
++        bool,
++    ) {
++        const PANE_WIDTH: f32 = 260.0;
++        let cosmic_theme::Spacing { space_xxs, .. } = theme::spacing();
++        let show_hidden = self.config.show_hidden;
++        let Some(root) = self.location.path_opt().cloned() else {
++            return self.list_view();
++        };
++
++        // Group entries by folder, keeping the current sort order.
++        let mut by_parent: HashMap<PathBuf, Vec<(usize, &Item)>> = HashMap::new();
++        let mut selected_file: Option<&Item> = None;
++        if let Some(items) = self.column_sort() {
++            for (i, item) in items {
++                item.pos_opt.set(None);
++                item.rect_opt.set(None);
++                if item.hidden && !show_hidden {
++                    continue;
++                }
++                if item.selected && !item.metadata.is_dir() {
++                    selected_file = Some(item);
++                    // Thumbnails are only made for on-screen items; mark the
++                    // selection as on-screen so the preview gets one.
++                    item.rect_opt
++                        .set(Some(Rectangle::new(Point::ORIGIN, Size::new(1.0, 1.0))));
++                }
++                let parent = item
++                    .path_opt()
++                    .and_then(|path| path.parent())
++                    .map(Path::to_path_buf)
++                    .unwrap_or_default();
++                by_parent.entry(parent).or_default().push((i, item));
++            }
++        }
++
++        let mut panes = widget::row::with_capacity(self.column_chain.len() + 2);
++        let folders = std::iter::once(&root).chain(self.column_chain.iter());
++        for folder in folders {
++            let mut entries = widget::column::with_capacity(16).padding([space_xxs, space_xxs]);
++            for &(i, item) in by_parent.get(folder).map(Vec::as_slice).unwrap_or_default() {
++                let on_chain = item
++                    .path_opt()
++                    .is_some_and(|path| self.column_chain.contains(path));
++                let mut line = widget::row::with_capacity(3)
++                    .spacing(space_xxs)
++                    .align_y(Alignment::Center)
++                    .push(
++                        widget::icon::icon(item.icon_handle_list_condensed.clone())
++                            .content_fit(ContentFit::Contain)
++                            .size(20),
++                    )
++                    .push(
++                        widget::text::body(item.display_name.clone())
++                            .ellipsize(text::Ellipsize::End(text::EllipsizeHeightLimit::Lines(1)))
++                            .width(Length::Fill),
++                    );
++                if item.metadata.is_dir() {
++                    line = line.push(widget::icon::from_name("go-next-symbolic").size(12).icon());
++                }
++                let button = widget::button::custom(line)
++                    .width(Length::Fill)
++                    .padding([2, space_xxs])
++                    .class(button_style(
++                        item.selected || on_chain,
++                        item.highlighted,
++                        item.cut,
++                        item.selected,
++                        true,
++                        false,
++                    ));
++                let entry = crate::mouse_area::MouseArea::new(button)
++                    .on_press(move |_| Message::ColumnSelect(i))
++                    .on_double_click(move |_| Message::DoubleClick(Some(i)))
++                    .on_right_press_no_capture()
++                    .on_right_press(move |point_opt| Message::RightClick(point_opt, Some(i)));
++                entries = entries.push(entry);
++            }
++            panes = panes
++                .push(
++                    widget::scrollable(entries)
++                        .width(Length::Fixed(PANE_WIDTH))
++                        .height(Length::Fill),
++                )
++                .push(widget::divider::vertical::default());
++        }
++
++        // Preview pane for the selected file, like Finder.
++        if let Some(item) = selected_file {
++            let size_text = match &item.metadata {
++                ItemMetadata::Path { metadata, .. } => format_size(metadata.len()),
++                ItemMetadata::SimpleFile { size } => format_size(*size),
++                _ => String::new(),
++            };
++            let modified_text = item
++                .metadata
++                .modified()
++                .map(|time| self.format_time(time).to_string())
++                .unwrap_or_default();
++            // Real image when a thumbnail exists, otherwise the file icon.
++            let preview_image: Element<'_, Message> = match item.thumbnail_opt.as_ref() {
++                Some(ItemThumbnail::Image(handle, _)) => widget::image(handle.clone())
++                    .width(Length::Fixed(PANE_WIDTH - 32.0))
++                    .content_fit(ContentFit::Contain)
++                    .into(),
++                _ => widget::icon::icon(item.icon_handle_grid.clone())
++                    .content_fit(ContentFit::Contain)
++                    .size(128)
++                    .into(),
++            };
++            let preview = widget::column::with_capacity(4)
++                .spacing(space_xxs)
++                .padding(16)
++                .align_x(Alignment::Center)
++                .push(preview_image)
++                .push(widget::text::heading(item.display_name.clone()))
++                .push(widget::text::caption(size_text))
++                .push(widget::text::caption(modified_text));
++            panes = panes.push(
++                widget::container(preview)
++                    .width(Length::Fixed(PANE_WIDTH))
++                    .height(Length::Fill),
++            );
++        }
++
++        let view = widget::scrollable::horizontal(panes)
++            .width(Length::Fill)
++            .height(Length::Fill);
++        (None, view.into(), false)
++    }
++
+     pub fn list_view(
+         &self,
+     ) -> (
+@@ -6219,7 +6515,31 @@ impl Tab {
+                         .align_y(Alignment::Center)
+                         .spacing(space_xxs)
+                     } else {
++                        // Tree: indent nested entries, and let folders expand inline.
++                        let depth = self.tree_depth(item);
++                        let toggle: Element<'_, Message> = match item
++                            .path_opt()
++                            .filter(|_| {
++                                item.metadata.is_dir() && matches!(self.location, Location::Path(_))
++                            }) {
++                            Some(path) => widget::button::icon(widget::icon::from_name(
++                                if self.expanded.contains(path) {
++                                    "pan-down-symbolic"
++                                } else {
++                                    "pan-end-symbolic"
++                                },
++                            ))
++                            .extra_small()
++                            .padding(0)
++                            .on_press(Message::ToggleExpand(i))
++                            .into(),
++                            None => space::horizontal().width(Length::Fixed(16.0)).into(),
++                        };
+                         widget::row::with_children([
++                            space::horizontal()
++                                .width(Length::Fixed(16.0 * depth as f32))
++                                .into(),
++                            toggle,
+                             widget::icon::icon(item.icon_handle_list.clone())
+                                 .content_fit(ContentFit::Contain)
+                                 .size(icon_size)
+@@ -6438,6 +6758,7 @@ impl Tab {
+         let (drag_list, mut item_view, can_scroll) = match self.config.view {
+             View::Grid => self.grid_view(),
+             View::List => self.list_view(),
++            View::Columns => self.columns_view(),
+         };
+         item_view = widget::container(item_view).width(Length::Fill).into();
+         let files = self
+@@ -6478,7 +6799,7 @@ impl Tab {
+                                     f32::from(space_xxs).mul_add(-3.0, -f32::from(space_xxxs)),
+                                     -4. * f32::from(space_xxxs),
+                                 ),
+-                                View::List => Vector::ZERO,
++                                View::List | View::Columns => Vector::ZERO,
+                             },
+                         )
+                     })
+diff --git a/src/zoom.rs b/src/zoom.rs
+index 89ae5b8..6be0571 100644
+--- a/src/zoom.rs
++++ b/src/zoom.rs
+@@ -48,6 +48,6 @@ pub(crate) fn zoom_out_view(view: View, icon_sizes: &mut IconSizes) {
+ const fn select_resized_icon(view: View, icon_sizes: &mut IconSizes) -> &mut NonZeroU16 {
+     match view {
+         View::Grid => &mut icon_sizes.grid,
+-        View::List => &mut icon_sizes.list,
++        View::List | View::Columns => &mut icon_sizes.list,
+     }
+ }

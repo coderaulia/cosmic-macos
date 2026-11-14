@@ -1,0 +1,15 @@
+[package]
+name = "mac-calendar"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+description = "Calendar with month, week and day views and CalDAV sync"
+
+[dependencies]
+base64 = "0.22"
+jiff.workspace = true
+libcosmic.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+ureq = "3"

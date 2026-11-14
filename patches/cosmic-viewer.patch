@@ -1,0 +1,247 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index 1e4dc68..dbb6bee 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -743,7 +743,6 @@ dependencies = [
+ [[package]]
+ name = "build_helpers"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "cfg_aliases",
+ ]
+@@ -1086,7 +1085,6 @@ dependencies = [
+ [[package]]
+ name = "cosmic-config"
+ version = "1.0.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "atomicwrites",
+  "cosmic-config-derive",
+@@ -1107,7 +1105,6 @@ dependencies = [
+ [[package]]
+ name = "cosmic-config-derive"
+ version = "1.0.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "quote",
+  "syn 2.0.119",
+@@ -1176,7 +1173,6 @@ dependencies = [
+ [[package]]
+ name = "cosmic-theme"
+ version = "1.0.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "almost",
+  "configparser",
+@@ -2421,7 +2417,6 @@ dependencies = [
+ [[package]]
+ name = "iced"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "build_helpers",
+  "dnd",
+@@ -2443,7 +2438,6 @@ dependencies = [
+ [[package]]
+ name = "iced_accessibility"
+ version = "0.1.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "accesskit",
+  "accesskit_winit",
+@@ -2452,7 +2446,6 @@ dependencies = [
+ [[package]]
+ name = "iced_core"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "bitflags 2.13.2",
+  "build_helpers",
+@@ -2479,7 +2472,6 @@ dependencies = [
+ [[package]]
+ name = "iced_debug"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "iced_core",
+  "iced_futures",
+@@ -2489,7 +2481,6 @@ dependencies = [
+ [[package]]
+ name = "iced_futures"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "futures",
+  "iced_core",
+@@ -2503,7 +2494,6 @@ dependencies = [
+ [[package]]
+ name = "iced_graphics"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "bitflags 2.13.2",
+  "bytemuck",
+@@ -2524,7 +2514,6 @@ dependencies = [
+ [[package]]
+ name = "iced_program"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "iced_graphics",
+  "iced_runtime",
+@@ -2533,7 +2522,6 @@ dependencies = [
+ [[package]]
+ name = "iced_renderer"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "iced_graphics",
+  "iced_tiny_skia",
+@@ -2545,7 +2533,6 @@ dependencies = [
+ [[package]]
+ name = "iced_runtime"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "build_helpers",
+  "bytes",
+@@ -2562,7 +2549,6 @@ dependencies = [
+ [[package]]
+ name = "iced_tiny_skia"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "bytemuck",
+  "cosmic-text",
+@@ -2579,7 +2565,6 @@ dependencies = [
+ [[package]]
+ name = "iced_wgpu"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "as-raw-xcb-connection",
+  "bitflags 2.13.2",
+@@ -2611,7 +2596,6 @@ dependencies = [
+ [[package]]
+ name = "iced_widget"
+ version = "0.14.2"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "build_helpers",
+  "cosmic-client-toolkit",
+@@ -2631,7 +2615,6 @@ dependencies = [
+ [[package]]
+ name = "iced_winit"
+ version = "0.14.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "build_helpers",
+  "cosmic-client-toolkit",
+@@ -3348,7 +3331,6 @@ checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
+ [[package]]
+ name = "libcosmic"
+ version = "1.0.0"
+-source = "git+https://github.com/pop-os/libcosmic.git#430f3d48a97d8779f9c1985473912e594ccca1ae"
+ dependencies = [
+  "apply",
+  "ashpd 0.12.3",
+diff --git a/Cargo.toml b/Cargo.toml
+index b8ae5de..b038a2b 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -66,3 +66,24 @@ features = [
+   "rfd",
+ ]
+ git = "https://github.com/pop-os/libcosmic.git"
++
++# macOS look: window buttons on the left (local libcosmic fork).
++[patch."https://github.com/pop-os/libcosmic.git"]
++build_helpers = { path = "../../libcosmic-mac/iced/build_helpers" }
++cosmic-config = { path = "../../libcosmic-mac/cosmic-config" }
++cosmic-config-derive = { path = "../../libcosmic-mac/cosmic-config-derive" }
++cosmic-theme = { path = "../../libcosmic-mac/cosmic-theme" }
++iced = { path = "../../libcosmic-mac/iced" }
++iced_accessibility = { path = "../../libcosmic-mac/iced/accessibility" }
++iced_core = { path = "../../libcosmic-mac/iced/core" }
++iced_debug = { path = "../../libcosmic-mac/iced/debug" }
++iced_futures = { path = "../../libcosmic-mac/iced/futures" }
++iced_graphics = { path = "../../libcosmic-mac/iced/graphics" }
++iced_program = { path = "../../libcosmic-mac/iced/program" }
++iced_renderer = { path = "../../libcosmic-mac/iced/renderer" }
++iced_runtime = { path = "../../libcosmic-mac/iced/runtime" }
++iced_tiny_skia = { path = "../../libcosmic-mac/iced/tiny_skia" }
++iced_wgpu = { path = "../../libcosmic-mac/iced/wgpu" }
++iced_widget = { path = "../../libcosmic-mac/iced/widget" }
++iced_winit = { path = "../../libcosmic-mac/iced/winit" }
++libcosmic = { path = "../../libcosmic-mac" }
+diff --git a/cosmic-viewer/src/app.rs b/cosmic-viewer/src/app.rs
+index 9cb0b66..252009f 100644
+--- a/cosmic-viewer/src/app.rs
++++ b/cosmic-viewer/src/app.rs
+@@ -1384,7 +1384,7 @@ impl CosmicViewer {
+ }
+ 
+ impl Application for CosmicViewer {
+-    const APP_ID: &'static str = "com.system76.CosmicViewer";
++    const APP_ID: &'static str = "dev.asw.MacViewer";
+ 
+     type Executor = cosmic::executor::Default;
+     type Flags = Option<PathBuf>;
+@@ -1544,6 +1544,15 @@ impl Application for CosmicViewer {
+         )]
+     }
+ 
++    fn header_end(&self) -> Vec<Element<'_, Self::Message>> {
++        // Preview-style toolbar in the title bar.
++        if self.viewport.image().is_some() {
++            vec![self.build_toolbar()]
++        } else {
++            Vec::new()
++        }
++    }
++
+     fn context_drawer(&self) -> Option<context_drawer::ContextDrawer<'_, Self::Message>> {
+         let page = self.context_page?;
+         let content = match page {
+@@ -1748,13 +1757,22 @@ impl Application for CosmicViewer {
+                 .into()
+         };
+ 
++        // Preview-style: the image sits on a dark backdrop, and the toolbar
++        // lives in the title bar (see `header_end`) instead of floating below.
++        let _ = spacing;
++        let image_area = container(image_area)
++            .width(Length::Fill)
++            .height(Length::Fill)
++            .class(cosmic::theme::Container::custom(|_| {
++                cosmic::iced::widget::container::Style {
++                    background: Some(cosmic::iced::Background::Color(
++                        cosmic::iced::Color::from_rgb(0.11, 0.11, 0.12),
++                    )),
++                    ..Default::default()
++                }
++            }));
+         let main = Column::new()
+             .push(image_area)
+-            .push_maybe(has_image.then(|| {
+-                container(self.build_toolbar())
+-                    .center_x(Length::Fill)
+-                    .padding([spacing.space_xxs, 0, spacing.space_xxs, 0])
+-            }))
+             .width(Length::Fill)
+             .height(Length::Fill);
+ 
+diff --git a/viewer-config/src/lib.rs b/viewer-config/src/lib.rs
+index 5f963ab..190a3f5 100644
+--- a/viewer-config/src/lib.rs
++++ b/viewer-config/src/lib.rs
+@@ -7,7 +7,7 @@ use cosmic::{
+ use serde::{Deserialize, Serialize};
+ use std::fmt;
+ 
+-const APP_ID: &str = "com.system76.CosmicViewer";
++const APP_ID: &str = "dev.asw.MacViewer";
+ pub const COSMIC_THEME_DARK: &str = "COSMIC Dark";
+ pub const COSMIC_THEME_LIGHT: &str = "COSMIC Light";
+ 

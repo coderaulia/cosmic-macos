@@ -1,0 +1,48 @@
+[workspace]
+members = ["mac-calendar", "mac-mail", "mac-theme"]
+resolver = "3"
+
+[workspace.dependencies]
+jiff = "0.2"
+libcosmic = { git = "https://github.com/pop-os/libcosmic", default-features = false, features = [
+    "multi-window",
+    "tokio",
+    "wayland",
+    "winit",
+    "dbus-config",
+] }
+tokio = { version = "1.49.0", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+
+# Fast local builds while iterating.
+[profile.fast]
+inherits = "release"
+lto = "off"
+codegen-units = 16
+incremental = true
+
+# macOS look: window buttons on the left (local libcosmic fork).
+[patch."https://github.com/pop-os/libcosmic"]
+build_helpers = { path = "../../libcosmic-mac/iced/build_helpers" }
+cosmic-config = { path = "../../libcosmic-mac/cosmic-config" }
+cosmic-config-derive = { path = "../../libcosmic-mac/cosmic-config-derive" }
+cosmic-theme = { path = "../../libcosmic-mac/cosmic-theme" }
+iced = { path = "../../libcosmic-mac/iced" }
+iced_accessibility = { path = "../../libcosmic-mac/iced/accessibility" }
+iced_core = { path = "../../libcosmic-mac/iced/core" }
+iced_debug = { path = "../../libcosmic-mac/iced/debug" }
+iced_futures = { path = "../../libcosmic-mac/iced/futures" }
+iced_graphics = { path = "../../libcosmic-mac/iced/graphics" }
+iced_program = { path = "../../libcosmic-mac/iced/program" }
+iced_renderer = { path = "../../libcosmic-mac/iced/renderer" }
+iced_runtime = { path = "../../libcosmic-mac/iced/runtime" }
+iced_tiny_skia = { path = "../../libcosmic-mac/iced/tiny_skia" }
+iced_wgpu = { path = "../../libcosmic-mac/iced/wgpu" }
+iced_widget = { path = "../../libcosmic-mac/iced/widget" }
+iced_winit = { path = "../../libcosmic-mac/iced/winit" }
+libcosmic = { path = "../../libcosmic-mac" }

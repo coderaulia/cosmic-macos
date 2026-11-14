@@ -1,0 +1,90 @@
+--- a/src/widget/header_bar.rs
++++ b/src/widget/header_bar.rs
+@@ -370,12 +370,12 @@
+         let is_ssd = self.is_ssd;
+ 
+         // Take ownership of the regions to be packed.
+-        let start = std::mem::take(&mut self.start);
++        let mut start = std::mem::take(&mut self.start);
+         let center = std::mem::take(&mut self.center);
+-        let mut end = std::mem::take(&mut self.end);
++        let end = std::mem::take(&mut self.end);
+ 
+-        // Also packs the window controls at the very end.
+-        end.push(self.window_controls(space_xxs));
++        // macOS layout: the window controls come first, on the left.
++        start.insert(0, self.window_controls(space_xxs));
+ 
+         let padding = if is_ssd {
+             [2, 8, 2, 8]
+@@ -445,38 +445,40 @@
+     }
+ 
+     /// Creates the widget for window controls.
+-    fn window_controls(&mut self, spacing: u16) -> Element<'a, Message> {
+-        macro_rules! icon {
+-            ($name:expr, $size:expr, $on_press:expr) => {{
+-                widget::icon::from_name($name)
+-                    .apply(widget::button::icon)
+-                    .padding(8)
+-                    .class(theme::Button::HeaderBar)
+-                    .selected(self.focused)
+-                    .icon_size($size)
+-                    .on_press($on_press)
+-            }};
+-        }
++    fn window_controls(&mut self, _spacing: u16) -> Element<'a, Message> {
++        // macOS "traffic lights": red close, yellow minimize, green maximize.
++        // Unfocused windows show them grey, like macOS.
++        let focused = self.focused;
++        let dot = |color: [f32; 3], on_press: Message| {
++            let fill = if focused {
++                iced::Color::from_rgb(color[0], color[1], color[2])
++            } else {
++                iced::Color::from_rgba(0.5, 0.5, 0.5, 0.45)
++            };
++            widget::button::custom(
++                widget::container(widget::space::horizontal().width(iced::Length::Fixed(12.0)))
++                    .height(iced::Length::Fixed(12.0))
++                    .class(theme::Container::custom(move |_| iced::widget::container::Style {
++                        background: Some(iced::Background::Color(fill)),
++                        border: iced::Border {
++                            radius: 6.0.into(),
++                            width: 0.5,
++                            color: iced::Color::from_rgba(0.0, 0.0, 0.0, 0.15),
++                        },
++                        ..Default::default()
++                    })),
++            )
++            .padding(0)
++            .class(theme::Button::Text)
++            .on_press(on_press)
++        };
+ 
+         widget::row::with_capacity(3)
+-            .push_maybe(
+-                self.on_minimize
+-                    .take()
+-                    .map(|m| icon!("window-minimize-symbolic", 16, m)),
+-            )
+-            .push_maybe(self.on_maximize.take().map(|m| {
+-                if self.maximized {
+-                    icon!("window-restore-symbolic", 16, m)
+-                } else {
+-                    icon!("window-maximize-symbolic", 16, m)
+-                }
+-            }))
+-            .push_maybe(
+-                self.on_close
+-                    .take()
+-                    .map(|m| icon!("window-close-symbolic", 16, m)),
+-            )
+-            .spacing(spacing)
++            .push_maybe(self.on_close.take().map(|m| dot([1.0, 0.373, 0.341], m)))
++            .push_maybe(self.on_minimize.take().map(|m| dot([0.996, 0.737, 0.18], m)))
++            .push_maybe(self.on_maximize.take().map(|m| dot([0.157, 0.784, 0.251], m)))
++            .spacing(8)
++            .padding([0, 6])
+             .align_y(iced::Alignment::Center)
+             .into()
+     }

@@ -1,0 +1,103 @@
+# cosmic-macos
+
+A macOS-style desktop for [COSMIC](https://system76.com/cosmic) (Epoch 1.11): a
+magnifying dock, a Spotlight-style launcher, a genie minimize animation, and
+Finder-, Preview-, Notes-, Calendar- and Mail-style apps. Everything installs
+next to the stock COSMIC apps (own app ids, own settings) under `~/.local`, and
+one command switches the look back.
+
+## Install
+
+```bash
+./install.sh --check        # which build tools are missing
+./install.sh all            # everything, or pick pieces:
+./install.sh dock files mail
+cosmic-preset apply macos-glass
+```
+
+Components (`./install.sh --list`):
+
+| Component | What it is |
+|---|---|
+| `preset` | `cosmic-preset`: switch between your original desktop and the macOS preset |
+| `dock` | Magnifying dock: bounce, slide-hide, window previews on hover, drag to reorder (after "Edit Dock…"), right-click menu, trash |
+| `clock` | Panel clock with a calendar that shows your events, now playing, and notifications |
+| `spotlight` | Spotlight-style launcher on the Super key, with result headings and a details pane |
+| `files` | Files with an inline tree, Finder-style columns with preview, Quick Look on Space |
+| `notepad` | Notepad as a searchable Notes app (notes in `~/Documents/Notes`, saved automatically) |
+| `viewer` | Image viewer with a Preview-style toolbar |
+| `calendar` | Calendar (day/week/month) with local events and CalDAV sync |
+| `mail` | Mail for any IMAP/SMTP account; password kept in the keyring |
+| `theme` | macOS blue accent and rounder corners, stored in the preset |
+| `comp` | Compositor with the genie minimize/restore animation (log out and in afterwards) |
+
+Each piece builds on its own. `./install.sh files` fetches only what Files
+needs. A stock-COSMIC app that a piece replaces (Files, Text Editor, Viewer) is
+hidden from the launcher by an override in `~/.local/share/applications`; delete
+that file to bring it back.
+
+### Going back
+
+```bash
+cosmic-preset revert        # original look, original theme, stock dock
+./install.sh --uninstall    # remove everything that was installed
+```
+
+The compositor installs to `~/.local/lib` and is chosen by a launcher in
+`~/.local/bin`. If it crashes twice within 90 seconds the session falls back to
+the stock compositor by itself. `./install-genie-comp.sh --disable` also does it.
+
+## How the repository is organised
+
+Our own code is kept as plain source. Changes to upstream COSMIC projects are
+kept as small patches against the release tag, so the repository stays small and
+the upstream history is not copied.
+
+| Path | Contents |
+|---|---|
+| `apps/mac-suite/` | Calendar, Mail and the theme tool (our own Rust workspace) |
+| `overlays/cosmic-applets/` | The dock and the clock applet (new directories inside `cosmic-applets`) |
+| `patches/*.patch` | Our changes to cosmic-files, cosmic-edit, cosmic-viewer, cosmic-launcher, cosmic-comp, cosmic-applets, and libcosmic |
+| `presets/macos-glass/` | The macOS preset for `cosmic-preset` |
+| `bin/cosmic-preset` | The preset switcher |
+| `setup.sh` | Clones the upstream projects at the tag and applies the patches |
+| `install-*.sh`, `install.sh` | Build and install scripts |
+| `tools/export.sh` | Regenerates `patches/`, `overlays/` and `presets/` from the working copies |
+
+`setup.sh` creates the working copies (`apps/cosmic-*`, `cosmic-comp`,
+`upstream-applets`, `libcosmic-mac`), which are not tracked. Window buttons on the
+left come from a patched copy of libcosmic (`libcosmic-mac`) used only by the
+macOS-style apps.
+
+## Working on it
+
+Edit in the working copies, build with the install scripts, then:
+
+```bash
+./tools/export.sh           # turn the working copies back into patches
+git add -A && git commit
+```
+
+To move to a new COSMIC release, change `TAG` and `LIBCOSMIC_REV` in `setup.sh`,
+run it in a clean directory, and fix the patches that no longer apply.
+
+## Requirements
+
+Rust (via `rustup`), `git`, `rsync`, `libsecret` (`secret-tool`), `clang` and
+`mold` for fast links, `nasm` for the image viewer, and COSMIC 1.11. The preset
+also uses these third-party panel applets: `cosmic-ext-applet-logomenu`,
+`minimon`, and `clippy-land`, and the WhiteSur icon theme. Missing ones are
+reported by `cosmic-preset apply`.
+
+## Limits
+
+- Mail has no browser sign-in for Gmail/Outlook; use an app password.
+- The genie animation covers floating and tiled windows, not fullscreen ones.
+- After a `cosmic-comp` package update, run `./install.sh comp` again.
+- Calendar sync needs a server that accepts a password login (Nextcloud,
+  Radicale, Baikal, Fastmail, iCloud with an app password).
+
+## License
+
+GPL-3.0-only for our code. The patched projects keep their own licenses
+(GPL-3.0 for the COSMIC applications, MPL-2.0 for libcosmic).

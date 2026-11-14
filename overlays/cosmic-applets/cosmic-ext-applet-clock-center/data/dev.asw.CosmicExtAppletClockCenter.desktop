@@ -1,0 +1,15 @@
+[Desktop Entry]
+Name=Clock Center
+Comment=Clock with calendar, now playing and notifications in one popup
+Type=Application
+Exec=cosmic-ext-applet-clock-center
+Terminal=false
+Categories=COSMIC;
+Keywords=COSMIC;Applet;Date;Time;Calendar;Notification;Music;
+Icon=com.system76.CosmicAppletTime-symbolic
+NoDisplay=true
+X-CosmicApplet=true
+X-CosmicShrinkable=true
+X-HostWaylandDisplay=true
+X-NotificationsApplet=true
+X-CosmicHoverPopup=Auto

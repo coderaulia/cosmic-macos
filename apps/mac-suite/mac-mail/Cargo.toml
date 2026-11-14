@@ -1,0 +1,15 @@
+[package]
+name = "mac-mail"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+description = "Three-pane mail client"
+
+[dependencies]
+imap = { version = "3.0.0-alpha.15", default-features = false, features = ["rustls-tls"] }
+lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "rustls-tls", "builder", "hostname"] }
+libcosmic.workspace = true
+mail-parser = "1.0.1"
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
