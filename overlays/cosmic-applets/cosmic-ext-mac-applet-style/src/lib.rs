@@ -6,6 +6,9 @@
 pub mod icons;
 
 use std::borrow::Cow;
+use std::path::PathBuf;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use cosmic::{
     Element,
@@ -25,23 +28,141 @@ use cosmic::{
     },
 };
 
-/// Height of a panel pill in pixels (28px bar minus 3px top & bottom margin).
-pub const PILL_HEIGHT: f32 = 22.0;
+/// Default height of a panel pill in pixels (32px bar minus 3px top & bottom margin).
+pub const PILL_HEIGHT: f32 = 26.0;
 
-/// Corner radius of a panel pill in pixels (`radius_s` minus 2).
-pub const PILL_CORNER_RADIUS: f32 = 6.0;
+/// Default corner radius of a panel pill in pixels.
+pub const PILL_CORNER_RADIUS: f32 = 7.0;
 
 /// Horizontal padding for text and mixed icon+text pills.
-pub const PILL_HORIZONTAL_PADDING_TEXT: u16 = 8;
+pub const PILL_HORIZONTAL_PADDING_TEXT: u16 = 9;
 
 /// Horizontal padding for icon-only pills.
-pub const PILL_HORIZONTAL_PADDING_ICON: u16 = 6;
+pub const PILL_HORIZONTAL_PADDING_ICON: u16 = 7;
 
-/// Panel bar text size in pixels.
-pub const PANEL_TEXT_SIZE: f32 = 13.0;
+/// Default panel bar text size in pixels.
+pub const PANEL_TEXT_SIZE: f32 = 14.5;
 
-/// Panel bar symbolic icon size in pixels.
-pub const PANEL_ICON_SIZE: u16 = 14;
+/// Default panel bar symbolic icon size in pixels.
+pub const PANEL_ICON_SIZE: u16 = 16;
+
+const PANEL_STYLE_CONFIG_DIR: &str = "cosmic/dev.asw.MacPanelStyle/v1";
+const STYLE_CACHE_TTL: Duration = Duration::from_secs(1);
+
+#[derive(Clone, Copy)]
+struct PanelStyleValues {
+    text_size: f32,
+    pill_height: f32,
+    icon_size: u16,
+    corner_radius: f32,
+}
+
+static STYLE_CACHE: Mutex<Option<(Instant, PanelStyleValues)>> = Mutex::new(None);
+
+fn panel_style_dir() -> Option<PathBuf> {
+    std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
+        .map(|dir| dir.join(PANEL_STYLE_CONFIG_DIR))
+}
+
+fn parse_positive_f32(raw: &str, min: f32, max: f32) -> Option<f32> {
+    let val = raw.trim().parse::<f32>().ok()?;
+    val.is_finite().then(|| val.clamp(min, max))
+}
+
+/// Compute proportional pill height for a custom panel text size.
+#[must_use]
+pub fn pill_height_for_text_size(text_size: f32) -> f32 {
+    (PILL_HEIGHT * (text_size / PANEL_TEXT_SIZE))
+        .round()
+        .clamp(18.0, 56.0)
+}
+
+/// Compute proportional symbolic icon size for a custom panel text size.
+#[must_use]
+pub fn icon_size_for_text_size(text_size: f32) -> u16 {
+    (f32::from(PANEL_ICON_SIZE) * (text_size / PANEL_TEXT_SIZE))
+        .round()
+        .clamp(12.0, 32.0) as u16
+}
+
+fn read_style_values() -> PanelStyleValues {
+    let text_size = std::env::var("MAC_PANEL_FONT_SIZE")
+        .ok()
+        .and_then(|s| parse_positive_f32(&s, 10.0, 32.0))
+        .or_else(|| {
+            panel_style_dir()
+                .and_then(|dir| std::fs::read_to_string(dir.join("font_size")).ok())
+                .and_then(|s| parse_positive_f32(&s, 10.0, 32.0))
+        })
+        .unwrap_or(PANEL_TEXT_SIZE);
+
+    let pill_height = std::env::var("MAC_PANEL_PILL_HEIGHT")
+        .ok()
+        .and_then(|s| parse_positive_f32(&s, 18.0, 56.0))
+        .or_else(|| {
+            panel_style_dir()
+                .and_then(|dir| std::fs::read_to_string(dir.join("pill_height")).ok())
+                .and_then(|s| parse_positive_f32(&s, 18.0, 56.0))
+        })
+        .unwrap_or_else(|| pill_height_for_text_size(text_size));
+
+    let icon_size = icon_size_for_text_size(text_size);
+    let corner_radius = (PILL_CORNER_RADIUS * (pill_height / PILL_HEIGHT))
+        .round()
+        .clamp(4.0, 14.0);
+
+    PanelStyleValues {
+        text_size,
+        pill_height,
+        icon_size,
+        corner_radius,
+    }
+}
+
+fn current_style_values() -> PanelStyleValues {
+    if let Ok(mut guard) = STYLE_CACHE.lock() {
+        let now = Instant::now();
+        if let Some((at, vals)) = *guard
+            && now.duration_since(at) < STYLE_CACHE_TTL
+        {
+            return vals;
+        }
+        let vals = read_style_values();
+        *guard = Some((now, vals));
+        return vals;
+    }
+    read_style_values()
+}
+
+/// Active panel text size in pixels, honoring `MAC_PANEL_FONT_SIZE` or
+/// `~/.config/cosmic/dev.asw.MacPanelStyle/v1/font_size` (default `14.5`).
+#[must_use]
+pub fn panel_text_size() -> f32 {
+    current_style_values().text_size
+}
+
+/// Active panel pill height in pixels, honoring `MAC_PANEL_PILL_HEIGHT`,
+/// `~/.config/cosmic/dev.asw.MacPanelStyle/v1/pill_height`, or scaling from
+/// [`panel_text_size`] (default `26.0`).
+#[must_use]
+pub fn pill_height() -> f32 {
+    current_style_values().pill_height
+}
+
+/// Active panel symbolic icon size in pixels, scaled from [`panel_text_size`]
+/// (default `16`).
+#[must_use]
+pub fn panel_icon_size() -> u16 {
+    current_style_values().icon_size
+}
+
+/// Active panel pill corner radius in pixels (default `7.0`).
+#[must_use]
+pub fn pill_corner_radius() -> f32 {
+    current_style_values().corner_radius
+}
 
 /// Gap between the top panel bar and an open popover in pixels.
 pub const POPOVER_GAP: i32 = 6;
@@ -92,11 +213,12 @@ pub fn bold_panel_font() -> Font {
 /// - 6px corner radius
 #[must_use]
 pub fn pill_button_class(is_open: bool) -> theme::Button {
+    let corner_radius = pill_corner_radius();
     theme::Button::Custom {
         active: Box::new(move |_focused, theme| {
             let fg = panel_foreground_color(theme);
             let mut style = button::Style::new();
-            style.border_radius = [PILL_CORNER_RADIUS; 4].into();
+            style.border_radius = [corner_radius; 4].into();
             style.text_color = Some(fg);
             style.icon_color = Some(fg);
             if is_open {
@@ -107,30 +229,30 @@ pub fn pill_button_class(is_open: bool) -> theme::Button {
         hovered: Box::new(move |_focused, theme| {
             let fg = panel_foreground_color(theme);
             let mut style = button::Style::new();
-            style.border_radius = [PILL_CORNER_RADIUS; 4].into();
+            style.border_radius = [corner_radius; 4].into();
             style.text_color = Some(fg);
             style.icon_color = Some(fg);
             let alpha = if is_open { 0.20 } else { 0.12 };
             style.background = Some(Background::Color(Color { a: alpha, ..fg }));
             style
         }),
-        pressed: Box::new(|_focused, theme| {
+        pressed: Box::new(move |_focused, theme| {
             let fg = panel_foreground_color(theme);
             let mut style = button::Style::new();
-            style.border_radius = [PILL_CORNER_RADIUS; 4].into();
+            style.border_radius = [corner_radius; 4].into();
             style.text_color = Some(fg);
             style.icon_color = Some(fg);
             style.background = Some(Background::Color(Color { a: 0.20, ..fg }));
             style
         }),
-        disabled: Box::new(|theme| {
+        disabled: Box::new(move |theme| {
             let fg = panel_foreground_color(theme);
             let muted = Color {
                 a: fg.a * 0.5,
                 ..fg
             };
             let mut style = button::Style::new();
-            style.border_radius = [PILL_CORNER_RADIUS; 4].into();
+            style.border_radius = [corner_radius; 4].into();
             style.text_color = Some(muted);
             style.icon_color = Some(muted);
             style
@@ -138,8 +260,8 @@ pub fn pill_button_class(is_open: bool) -> theme::Button {
     }
 }
 
-/// Build a macOS menu bar pill button (`22px` tall, `6px` corner radius,
-/// `8px` horizontal padding for text/mixed or `6px` for icon-only,
+/// Build a macOS menu bar pill button (default `26px` tall, `7px` corner radius,
+/// `9px` horizontal padding for text/mixed or `7px` for icon-only,
 /// transparent idle, `12%` hover, `20%` active/popover open).
 pub fn mac_pill_button<'a, Message: Clone + 'a>(
     content: impl Into<Element<'a, Message>>,
@@ -151,29 +273,29 @@ pub fn mac_pill_button<'a, Message: Clone + 'a>(
             .center_y(Length::Fill)
             .align_x(Horizontal::Center),
     )
-    .height(Length::Fixed(PILL_HEIGHT))
+    .height(Length::Fixed(pill_height()))
     .padding(pill_padding(variant))
     .selected(is_open)
     .class(pill_button_class(is_open))
 }
 
-/// Convenience helper for an icon-only 14px symbolic [`mac_pill_button`].
+/// Convenience helper for an icon-only symbolic [`mac_pill_button`].
 pub fn mac_icon_pill_button<'a, Message: Clone + 'a>(
     handle: icon::Handle,
     is_open: bool,
 ) -> Button<'a, Message> {
-    let icon_widget = icon::icon(handle).size(PANEL_ICON_SIZE);
+    let icon_widget = icon::icon(handle).size(panel_icon_size());
     mac_pill_button(icon_widget, is_open, PillVariant::IconOnly)
 }
 
-/// Convenience helper for a `13px` text [`mac_pill_button`] (regular or bold 700).
+/// Convenience helper for a text [`mac_pill_button`] (regular or bold 700).
 pub fn mac_text_pill_button<'a, Message: Clone + 'a>(
     label: impl Into<Cow<'a, str>>,
     bold: bool,
     is_open: bool,
 ) -> Button<'a, Message> {
     let label_widget = text(label.into())
-        .size(PANEL_TEXT_SIZE)
+        .size(panel_text_size())
         .font(if bold {
             bold_panel_font()
         } else {
@@ -336,18 +458,29 @@ mod tests {
 
     #[test]
     fn pill_constants_match_spec() {
-        assert_eq!(PILL_HEIGHT, 22.0);
-        assert_eq!(PILL_CORNER_RADIUS, 6.0);
-        assert_eq!(PANEL_TEXT_SIZE, 13.0);
-        assert_eq!(PANEL_ICON_SIZE, 14);
+        assert_eq!(PILL_HEIGHT, 26.0);
+        assert_eq!(PILL_CORNER_RADIUS, 7.0);
+        assert_eq!(PANEL_TEXT_SIZE, 14.5);
+        assert_eq!(PANEL_ICON_SIZE, 16);
         assert_eq!(POPOVER_GAP, 6);
         assert_eq!(POPOVER_CORNER_RADIUS, 12.0);
     }
 
     #[test]
     fn pill_padding_distinguishes_text_and_icon_only() {
-        assert_eq!(pill_padding(PillVariant::Text), [0, 8]);
-        assert_eq!(pill_padding(PillVariant::IconOnly), [0, 6]);
+        assert_eq!(pill_padding(PillVariant::Text), [0, 9]);
+        assert_eq!(pill_padding(PillVariant::IconOnly), [0, 7]);
+    }
+
+    #[test]
+    fn panel_style_scaling_and_parsing() {
+        assert_eq!(pill_height_for_text_size(PANEL_TEXT_SIZE), 26.0);
+        assert_eq!(icon_size_for_text_size(PANEL_TEXT_SIZE), 16);
+        assert_eq!(pill_height_for_text_size(16.0), 29.0);
+        assert_eq!(icon_size_for_text_size(16.0), 18);
+        assert_eq!(parse_positive_f32(" 15.5\n", 10.0, 32.0), Some(15.5));
+        assert_eq!(parse_positive_f32("40.0", 10.0, 32.0), Some(32.0));
+        assert_eq!(parse_positive_f32("not-a-number", 10.0, 32.0), None);
     }
 
     #[test]

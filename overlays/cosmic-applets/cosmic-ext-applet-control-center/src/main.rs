@@ -30,6 +30,7 @@ use cosmic::{
 use cosmic_config::{Config, ConfigSet, CosmicConfigEntry, cosmic_config_derive::CosmicConfigEntry};
 use cosmic_ext_mac_applet_style::{
     PillVariant, icons::control_center_icon, mac_pill_button, mac_popover_container_sized,
+    panel_icon_size,
 };
 use cosmic_notifications_config::NotificationsConfig;
 use cosmic_protocols::workspace::v2::client::zcosmic_workspace_handle_v2::TilingState;
@@ -1027,7 +1028,8 @@ impl cosmic::Application for ControlCenterApplet {
     }
 
     fn view(&self) -> Element<'_, Self::Message> {
-        let icon_size = self.core.applet.suggested_size(true).0.min(14);
+        let max_icon = panel_icon_size();
+        let icon_size = self.core.applet.suggested_size(true).0.min(max_icon);
         let btn = mac_pill_button(
             control_center_icon(icon_size),
             self.popup.is_some(),

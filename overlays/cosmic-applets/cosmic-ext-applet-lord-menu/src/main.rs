@@ -31,10 +31,10 @@ use cosmic::{
     widget::{button, container, icon, scrollable, space, text},
 };
 use cosmic_ext_mac_applet_style::{
-    PANEL_ICON_SIZE, PillVariant, bold_panel_font,
+    PillVariant, bold_panel_font,
     icons::{chevron_left_icon, chevron_right_icon, lord_logo_icon},
     mac_app_popup, mac_bar_item, mac_menu_divider, mac_menu_item, mac_menu_label_row,
-    mac_pill_button, mac_popover_container_sized,
+    mac_pill_button, mac_popover_container_sized, panel_icon_size,
 };
 use serde::{Deserialize, Serialize};
 
@@ -119,6 +119,7 @@ struct LordMenu {
 
 impl LordMenu {
     fn logo_widget(&self) -> cosmic::widget::Icon {
+        let size = panel_icon_size();
         if let Some(name) = self
             .config
             .logo_icon
@@ -127,10 +128,10 @@ impl LordMenu {
         {
             icon::from_name(name)
                 .symbolic(true)
-                .size(PANEL_ICON_SIZE)
+                .size(size)
                 .icon()
         } else {
-            lord_logo_icon(PANEL_ICON_SIZE)
+            lord_logo_icon(size)
         }
     }
 

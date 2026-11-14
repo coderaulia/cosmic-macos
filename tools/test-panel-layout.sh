@@ -73,4 +73,10 @@ diff -u "$ROOT/presets/macos-glass/com.system76.CosmicPanel.Panel/v1/spacing" "$
 diff -u "$ROOT/presets/macos-glass/com.system76.CosmicPanel.Panel/v1/border_width" "$TMP/v1/border_width"
 diff -u "$ROOT/presets/macos-glass/com.system76.CosmicPanel.Panel/v1/autohover_delay_ms" "$TMP/v1/autohover_delay_ms"
 
+# 7. --size customizes panel height and scales font/pill height in style dir
+"$ROOT/tools/panel-layout.sh" --preset "$TMP/v1" --style-dir "$TMP/style" --size 36
+assert_contains "$TMP/v1/size" 'Custom(36)'
+assert_contains "$TMP/style/font_size" '16.3'
+assert_contains "$TMP/style/pill_height" '30'
+
 echo "test-panel-layout.sh: ALL PASSED"

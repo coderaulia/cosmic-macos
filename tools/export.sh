@@ -58,7 +58,7 @@ if [ -d libcosmic-mac ] && command -v git >/dev/null; then
   upstream="$(ls -d "$HOME"/.cargo/git/checkouts/libcosmic-*/430f3d4 2>/dev/null | head -1 || true)"
   if [ -n "$upstream" ]; then
     : >patches/libcosmic.patch
-    (cd "$upstream" && for f in src/widget/header_bar.rs; do
+    (cd "$upstream" && for f in src/widget/header_bar.rs cosmic-theme/src/model/theme.rs; do
       diff -u --label "a/$f" --label "b/$f" "$f" "$ROOT/libcosmic-mac/$f" || true
     done) >patches/libcosmic.patch
     echo "patches/libcosmic.patch  ($(wc -l <patches/libcosmic.patch) lines)"

@@ -319,7 +319,7 @@ index 3eaaac0..65dcdc0 100644
              syntax_theme_light: "COSMIC Light".to_string(),
              tab_width: 4,
 diff --git a/src/main.rs b/src/main.rs
-index 4b9cbba..9ed48b0 100644
+index 4b9cbba..4195845 100644
 --- a/src/main.rs
 +++ b/src/main.rs
 @@ -303,6 +303,94 @@ impl MenuAction for Action {
@@ -438,7 +438,7 @@ index 4b9cbba..9ed48b0 100644
      about: About,
      nav_model: segmented_button::SingleSelectModel,
      tab_model: segmented_button::SingleSelectModel,
-@@ -499,6 +594,65 @@ struct FindField {
+@@ -499,6 +594,116 @@ struct FindField {
  }
  
  impl App {
@@ -463,13 +463,64 @@ index 4b9cbba..9ed48b0 100644
 +            if !note.preview.is_empty() {
 +                text = text.push(widget::text::caption(note.preview.clone()));
 +            }
++            let note_row_style = |selected: bool| widget::button::ButtonClass::Custom {
++                active: Box::new(move |_focused, theme| {
++                    let cosmic = theme.cosmic();
++                    let fg = Color::from(cosmic.on_bg_color());
++                    let accent = Color::from(cosmic.accent_color());
++                    let mut style = button::Style::new();
++                    style.border_radius = cosmic.corner_radii.radius_s.into();
++                    style.text_color = Some(fg);
++                    style.icon_color = Some(fg);
++                    if selected {
++                        style.background = Some(Background::Color(Color { a: 0.18, ..accent }));
++                    }
++                    style
++                }),
++                hovered: Box::new(move |_focused, theme| {
++                    let cosmic = theme.cosmic();
++                    let fg = Color::from(cosmic.on_bg_color());
++                    let accent = Color::from(cosmic.accent_color());
++                    let mut style = button::Style::new();
++                    style.border_radius = cosmic.corner_radii.radius_s.into();
++                    style.text_color = Some(fg);
++                    style.icon_color = Some(fg);
++                    style.background = Some(Background::Color(if selected {
++                        Color { a: 0.24, ..accent }
++                    } else {
++                        Color { a: 0.08, ..fg }
++                    }));
++                    style
++                }),
++                pressed: Box::new(move |_focused, theme| {
++                    let cosmic = theme.cosmic();
++                    let fg = Color::from(cosmic.on_bg_color());
++                    let accent = Color::from(cosmic.accent_color());
++                    let mut style = button::Style::new();
++                    style.border_radius = cosmic.corner_radii.radius_s.into();
++                    style.text_color = Some(fg);
++                    style.icon_color = Some(fg);
++                    style.background = Some(Background::Color(Color { a: 0.28, ..accent }));
++                    style
++                }),
++                disabled: Box::new(|theme| {
++                    let cosmic = theme.cosmic();
++                    let fg = Color::from(cosmic.on_bg_color());
++                    let muted = Color {
++                        a: fg.a * 0.5,
++                        ..fg
++                    };
++                    let mut style = button::Style::new();
++                    style.border_radius = cosmic.corner_radii.radius_s.into();
++                    style.text_color = Some(muted);
++                    style.icon_color = Some(muted);
++                    style
++                }),
++            };
 +            list = list.push(
 +                widget::button::custom(text.width(Length::Fill))
-+                    .class(if selected {
-+                        widget::button::ButtonClass::Suggested
-+                    } else {
-+                        widget::button::ButtonClass::Text
-+                    })
++                    .padding([8, 10])
++                    .class(note_row_style(selected))
 +                    .width(Length::Fill)
 +                    .on_press(action::app(Message::NoteOpen(note.path.clone()))),
 +            );
@@ -504,7 +555,7 @@ index 4b9cbba..9ed48b0 100644
      pub fn active_tab(&self) -> Option<&Tab> {
          self.tab_model.active_data()
      }
-@@ -1391,7 +1545,7 @@ impl Application for App {
+@@ -1391,7 +1596,7 @@ impl Application for App {
      type Message = Message;
  
      /// The unique application ID to supply to the window manager.
@@ -513,7 +564,7 @@ index 4b9cbba..9ed48b0 100644
  
      fn core(&self) -> &Core {
          &self.core
-@@ -1477,6 +1631,8 @@ impl Application for App {
+@@ -1477,6 +1682,8 @@ impl Application for App {
              about,
              nav_model: nav_bar::Model::builder().build(),
              tab_model: segmented_button::Model::builder().build(),
@@ -522,7 +573,7 @@ index 4b9cbba..9ed48b0 100644
              config_handler: flags.config_handler,
              config: flags.config,
              config_state_handler: flags.config_state_handler,
-@@ -1522,9 +1678,19 @@ impl Application for App {
+@@ -1522,9 +1729,19 @@ impl Application for App {
  
          app.update_nav_bar_placeholder();
  
@@ -544,7 +595,7 @@ index 4b9cbba..9ed48b0 100644
          }
  
          //TODO: try update_config here? It breaks loading system theme by default
-@@ -1538,6 +1704,10 @@ impl Application for App {
+@@ -1538,6 +1755,10 @@ impl Application for App {
              return None;
          }
  
@@ -555,7 +606,7 @@ index 4b9cbba..9ed48b0 100644
          let nav_model = self.nav_model()?;
  
          let cosmic_theme::Spacing {
-@@ -2146,8 +2316,26 @@ impl Application for App {
+@@ -2146,8 +2367,26 @@ impl Application for App {
              Message::Modifiers(modifiers) => {
                  self.modifiers = modifiers;
              }
@@ -583,7 +634,7 @@ index 4b9cbba..9ed48b0 100644
                  return self.update_tab();
              }
              Message::NewWindow => {
-@@ -2751,6 +2939,17 @@ impl Application for App {
+@@ -2751,6 +2990,17 @@ impl Application for App {
                  }
              }
              Message::TabChanged(entity) => {

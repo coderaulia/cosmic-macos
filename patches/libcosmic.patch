@@ -88,3 +88,45 @@
              .align_y(iced::Alignment::Center)
              .into()
      }
+--- a/cosmic-theme/src/model/theme.rs
++++ b/cosmic-theme/src/model/theme.rs
+@@ -1442,17 +1442,25 @@
+             ),
+             accent_button: {
+                 let step_array = steps(control_steps_array[5], NonZeroUsize::new(100).unwrap());
+-
+-                Component::colored_button(
+-                    accent,
+-                    control_steps_array[1],
++                // Medium and dark blue accents fall above Oklch L=0.60 in COSMIC's
++                // palette heuristic, which would pick dark text on blue; use crisp
++                // off-white foreground text whenever the accent luminance is dark/medium.
++                let on_accent = if accent.color.relative_luminance().luma < 0.45 {
++                    Srgba::new(0.98, 0.99, 1.0, 1.0)
++                } else {
+                     get_text(
+                         color_index(accent, step_array.len()),
+                         &step_array,
+                         &step_array[0],
+                         text_steps_array.as_deref(),
+                         1., // accent is opaque anyway
+-                    ),
++                    )
++                };
++
++                Component::colored_button(
++                    accent,
++                    control_steps_array[1],
++                    on_accent,
+                     accent,
+                     button_hovered_overlay,
+                     button_pressed_overlay,
+@@ -1532,7 +1540,7 @@
+             text_button: Component::component(
+                 Srgba::new(0.0, 0.0, 0.0, 0.0),
+                 accent,
+-                accent_text.unwrap_or(accent),
++                on_bg_component,
+                 button_hovered_overlay,
+                 button_pressed_overlay,
+                 is_high_contrast,

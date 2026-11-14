@@ -23,6 +23,7 @@ use cosmic::{
 };
 use cosmic_ext_mac_applet_style::{
     PillVariant, icons::clipboard_icon, mac_pill_button, mac_popover_container_sized,
+    panel_icon_size,
 };
 use dbus_client::{ClipboardItemSummary, MacClipboardProxy, Snapshot};
 use std::sync::LazyLock;
@@ -375,7 +376,8 @@ impl cosmic::Application for ClipboardApplet {
     }
 
     fn view(&self) -> Element<'_, Self::Message> {
-        let icon_size = self.core.applet.suggested_size(true).0.min(14);
+        let max_icon = panel_icon_size();
+        let icon_size = self.core.applet.suggested_size(true).0.min(max_icon);
         let btn = mac_pill_button(
             clipboard_icon(self.paused, icon_size),
             self.popup.is_some(),

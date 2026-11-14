@@ -8,7 +8,9 @@ use cosmic::{
     iced::Subscription,
     widget::autosize,
 };
-use cosmic_ext_mac_applet_style::{PillVariant, icons::spotlight_icon, mac_pill_button};
+use cosmic_ext_mac_applet_style::{
+    PillVariant, icons::spotlight_icon, mac_pill_button, panel_icon_size,
+};
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
@@ -111,7 +113,8 @@ impl cosmic::Application for SpotlightApplet {
     }
 
     fn view(&self) -> Element<'_, Self::Message> {
-        let icon_size = self.core.applet.suggested_size(true).0.min(14);
+        let max_icon = panel_icon_size();
+        let icon_size = self.core.applet.suggested_size(true).0.min(max_icon);
         let btn = mac_pill_button(spotlight_icon(icon_size), false, PillVariant::IconOnly)
             .on_press(Message::Launch);
 

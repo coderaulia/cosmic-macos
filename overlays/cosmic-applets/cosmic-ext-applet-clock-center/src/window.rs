@@ -23,7 +23,7 @@ use cosmic::{
     },
 };
 use cosmic_ext_mac_applet_style::{
-    PANEL_TEXT_SIZE, PillVariant, mac_pill_button, mac_popover_container_sized,
+    PillVariant, mac_pill_button, mac_popover_container_sized, panel_text_size,
 };
 use cosmic_notifications_config::NotificationsConfig;
 use cosmic_notifications_util::{ActionId, Notification, markup};
@@ -504,7 +504,7 @@ impl Window {
 
     fn horizontal_layout(&self) -> Element<'_, Message> {
         let formatted_date = format_macos_clock(&self.now, &self.config, &self.locale);
-        text(formatted_date).size(PANEL_TEXT_SIZE).into()
+        text(formatted_date).size(panel_text_size()).into()
     }
 }
 
@@ -1236,12 +1236,106 @@ fn date_button(
     is_today: bool,
     has_events: bool,
 ) -> Button<'static, Message> {
-    let style = if is_day {
-        button::ButtonClass::Suggested
-    } else if is_today {
-        button::ButtonClass::Standard
-    } else {
-        button::ButtonClass::Text
+    let style = button::ButtonClass::Custom {
+        active: Box::new(move |_focused, theme| {
+            let cosmic = theme.cosmic();
+            let accent = cosmic::iced::Color::from(cosmic.accent_color());
+            let fg = cosmic::iced::Color::from(cosmic.on_bg_color());
+            let off_white = cosmic::iced::Color::from_rgb(0.98, 0.99, 1.0);
+            let mut s = button::Style::new();
+            s.border_radius = 22.0.into();
+            if is_today {
+                s.background = Some(cosmic::iced::Background::Color(accent));
+                s.text_color = Some(off_white);
+                s.icon_color = Some(off_white);
+            } else if is_day {
+                s.background = Some(cosmic::iced::Background::Color(cosmic::iced::Color {
+                    a: 0.78,
+                    ..accent
+                }));
+                s.text_color = Some(off_white);
+                s.icon_color = Some(off_white);
+            } else if is_month {
+                let text = cosmic::iced::Color { a: 0.90, ..fg };
+                s.text_color = Some(text);
+                s.icon_color = Some(text);
+            } else {
+                let muted = cosmic::iced::Color { a: 0.35, ..fg };
+                s.text_color = Some(muted);
+                s.icon_color = Some(muted);
+            }
+            s
+        }),
+        hovered: Box::new(move |_focused, theme| {
+            let cosmic = theme.cosmic();
+            let accent = cosmic::iced::Color::from(cosmic.accent_color());
+            let fg = cosmic::iced::Color::from(cosmic.on_bg_color());
+            let off_white = cosmic::iced::Color::from_rgb(0.98, 0.99, 1.0);
+            let mut s = button::Style::new();
+            s.border_radius = 22.0.into();
+            if is_today {
+                s.background = Some(cosmic::iced::Background::Color(cosmic::iced::Color {
+                    a: 0.90,
+                    ..accent
+                }));
+                s.text_color = Some(off_white);
+                s.icon_color = Some(off_white);
+            } else if is_day {
+                s.background = Some(cosmic::iced::Background::Color(cosmic::iced::Color {
+                    a: 0.88,
+                    ..accent
+                }));
+                s.text_color = Some(off_white);
+                s.icon_color = Some(off_white);
+            } else if is_month {
+                s.background = Some(cosmic::iced::Background::Color(cosmic::iced::Color {
+                    a: 0.10,
+                    ..fg
+                }));
+                s.text_color = Some(fg);
+                s.icon_color = Some(fg);
+            } else {
+                let muted = cosmic::iced::Color { a: 0.35, ..fg };
+                s.text_color = Some(muted);
+                s.icon_color = Some(muted);
+            }
+            s
+        }),
+        pressed: Box::new(move |_focused, theme| {
+            let cosmic = theme.cosmic();
+            let accent = cosmic::iced::Color::from(cosmic.accent_color());
+            let fg = cosmic::iced::Color::from(cosmic.on_bg_color());
+            let off_white = cosmic::iced::Color::from_rgb(0.98, 0.99, 1.0);
+            let mut s = button::Style::new();
+            s.border_radius = 22.0.into();
+            if is_today || is_day {
+                s.background = Some(cosmic::iced::Background::Color(accent));
+                s.text_color = Some(off_white);
+                s.icon_color = Some(off_white);
+            } else if is_month {
+                s.background = Some(cosmic::iced::Background::Color(cosmic::iced::Color {
+                    a: 0.18,
+                    ..fg
+                }));
+                s.text_color = Some(fg);
+                s.icon_color = Some(fg);
+            } else {
+                let muted = cosmic::iced::Color { a: 0.35, ..fg };
+                s.text_color = Some(muted);
+                s.icon_color = Some(muted);
+            }
+            s
+        }),
+        disabled: Box::new(move |theme| {
+            let cosmic = theme.cosmic();
+            let fg = cosmic::iced::Color::from(cosmic.on_bg_color());
+            let muted = cosmic::iced::Color { a: 0.35, ..fg };
+            let mut s = button::Style::new();
+            s.border_radius = 22.0.into();
+            s.text_color = Some(muted);
+            s.icon_color = Some(muted);
+            s
+        }),
     };
 
     // A small dot under the number marks days with events.
@@ -1250,11 +1344,14 @@ fn date_button(
             text::body(format!("{day}")),
             container(space::horizontal().width(Length::Fixed(4.0)))
                 .height(Length::Fixed(4.0))
-                .class(theme::Container::custom(|theme| {
+                .class(theme::Container::custom(move |theme| {
+                    let dot_color = if is_today || is_day {
+                        cosmic::iced::Color::from_rgba(0.98, 0.99, 1.0, 0.9)
+                    } else {
+                        theme.cosmic().accent_color().into()
+                    };
                     cosmic::iced::widget::container::Style {
-                        background: Some(cosmic::iced::Background::Color(
-                            theme.cosmic().accent_color().into(),
-                        )),
+                        background: Some(cosmic::iced::Background::Color(dot_color)),
                         border: cosmic::iced::Border {
                             radius: 2.0.into(),
                             ..Default::default()
@@ -1270,9 +1367,9 @@ fn date_button(
         text::body(format!("{day}")).into()
     };
     let button = button::custom(label.apply(container).center(Length::Fill))
-    .class(style)
-    .height(Length::Fixed(44.0))
-    .width(Length::Fixed(44.0));
+        .class(style)
+        .height(Length::Fixed(44.0))
+        .width(Length::Fixed(44.0));
 
     if is_month {
         button.on_press(Message::SelectDay(day))

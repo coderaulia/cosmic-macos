@@ -4,7 +4,10 @@
 
 use cosmic::widget::{Icon, icon};
 
-/// Symbolic LordOS / apple-inspired geometric logo for the top-left system menu (14px).
+/// Default symbolic icon size in pixels for panel bar icons.
+pub const DEFAULT_ICON_SIZE: u16 = 16;
+
+/// Symbolic LordOS / apple-inspired geometric logo for the top-left system menu (16px).
 pub const LORD_LOGO_SVG: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor">
   <path d="M9.6 1.4c.5-.6 1.2-1 2-.9.1.9-.3 1.7-.8 2.3-.5.6-1.2 1-2 .9-.1-.8.3-1.7.8-2.3z"/>
   <path d="M12.6 8.3c0-1.6 1.3-2.4 1.4-2.5-.8-1.1-1.9-1.3-2.3-1.3-1-.1-1.9.6-2.4.6-.5 0-1.3-.6-2.1-.6-1.1 0-2.1.6-2.6 1.6-1.1 2-.3 4.9.8 6.5.5.8 1.2 1.7 2 1.6.8 0 1.1-.5 2.1-.5s1.2.5 2.1.5c.9 0 1.4-.8 1.9-1.6.6-.9.9-1.8.9-1.8-.1 0-1.8-.7-1.8-2.5z"/>
@@ -58,22 +61,22 @@ pub fn svg_icon(bytes: &'static [u8], size: u16) -> Icon {
     icon::from_svg_bytes(bytes).symbolic(true).icon().size(size)
 }
 
-/// Build the 14px symbolic Lord menu logo icon.
+/// Build the 16px symbolic Lord menu logo icon.
 pub fn lord_logo_icon(size: u16) -> Icon {
     svg_icon(LORD_LOGO_SVG, size)
 }
 
-/// Build the 14px symbolic Spotlight icon.
+/// Build the 16px symbolic Spotlight icon.
 pub fn spotlight_icon(size: u16) -> Icon {
     svg_icon(SPOTLIGHT_SVG, size)
 }
 
-/// Build the 14px symbolic Control Center icon.
+/// Build the 16px symbolic Control Center icon.
 pub fn control_center_icon(size: u16) -> Icon {
     svg_icon(CONTROL_CENTER_SVG, size)
 }
 
-/// Build the 14px symbolic Clipboard icon (slashed when paused).
+/// Build the 16px symbolic Clipboard icon (slashed when paused).
 pub fn clipboard_icon(paused: bool, size: u16) -> Icon {
     if paused {
         svg_icon(CLIPBOARD_SLASHED_SVG, size)

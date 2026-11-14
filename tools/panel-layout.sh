@@ -7,9 +7,16 @@
 # install-panel.sh never clobber each other's layout changes.
 set -euo pipefail
 
-PRESET="${XDG_CONFIG_HOME:-$HOME/.config}/cosmic-presets/macos-glass/com.system76.CosmicPanel.Panel/v1"
+CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+DEFAULT_PRESET="$CONFIG_HOME/cosmic-presets/macos-glass/com.system76.CosmicPanel.Panel/v1"
+PRESET="$DEFAULT_PRESET"
+PRESET_OVERRIDDEN=0
+STYLE_DIR="$CONFIG_HOME/cosmic/dev.asw.MacPanelStyle/v1"
+LIVE_PANEL_DIR="$CONFIG_HOME/cosmic/com.system76.CosmicPanel.Panel/v1"
 MODE=""
 GEOM_MODE=""
+SIZE_PX=""
+FONT_SIZE=""
 SETS=()
 
 usage() {
@@ -17,6 +24,7 @@ usage() {
 Usage: tools/panel-layout.sh [--preset <dir>] [--set <slot>=<value>]...
                              [--toolbar | --legacy-wings | --reset]
                              [--geometry | --legacy-geometry]
+                             [--size <px>] [--font-size <px>]
 
 Slots for --set:
   clock=<id>           Center slot (plugins_center)
@@ -26,6 +34,10 @@ Slots for --set:
   spotlight=<id|none>  Spotlight slot in right wing
   control-center=<id|none>  Control Center slot in right wing
   notifications=<id|yes|no|none>  Stock notifications slot in right wing
+
+Customization:
+  --size <px>          Set top panel height (20..=64, default 32) and scale font/pills
+  --font-size <px>     Override panel applet text size (e.g. 14.5, 16)
 EOF
 }
 
@@ -33,6 +45,11 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --preset)
       PRESET="${2:?--preset requires a directory}"
+      PRESET_OVERRIDDEN=1
+      shift 2
+      ;;
+    --style-dir)
+      STYLE_DIR="${2:?--style-dir requires a directory}"
       shift 2
       ;;
     --set)
@@ -58,6 +75,14 @@ while [ $# -gt 0 ]; do
     --legacy-geometry)
       GEOM_MODE="legacy"
       shift
+      ;;
+    --size)
+      SIZE_PX="${2:?--size requires a pixel integer}"
+      shift 2
+      ;;
+    --font-size)
+      FONT_SIZE="${2:?--font-size requires a number}"
+      shift 2
       ;;
     -h|--help)
       usage
@@ -388,7 +413,7 @@ fi
 
 case "$GEOM_MODE" in
   toolbar)
-    printf 'Custom(28)' > "$PRESET/size"
+    printf 'Custom(32)' > "$PRESET/size"
     printf 'ThemeDefault' > "$PRESET/background"
     printf '0.55' > "$PRESET/opacity"
     printf '2' > "$PRESET/spacing"
@@ -404,3 +429,32 @@ case "$GEOM_MODE" in
     printf 'Some(500)' > "$PRESET/autohover_delay_ms"
     ;;
 esac
+
+if [ -n "$SIZE_PX" ]; then
+  if ! [[ "$SIZE_PX" =~ ^[0-9]+$ ]] || [ "$SIZE_PX" -lt 20 ] || [ "$SIZE_PX" -gt 64 ]; then
+    echo "panel-layout.sh: --size must be an integer between 20 and 64 (got '$SIZE_PX')" >&2
+    exit 1
+  fi
+  printf 'Custom(%s)' "$SIZE_PX" > "$PRESET/size"
+  if [ "$PRESET_OVERRIDDEN" = 0 ] && [ -d "$LIVE_PANEL_DIR" ]; then
+    printf 'Custom(%s)' "$SIZE_PX" > "$LIVE_PANEL_DIR/size"
+  fi
+  if [ -z "$FONT_SIZE" ]; then
+    FONT_SIZE="$(awk -v s="$SIZE_PX" 'BEGIN { printf "%.1f", 14.5 * s / 32.0 }')"
+  fi
+  if [ "$PRESET_OVERRIDDEN" = 0 ] || [ "$STYLE_DIR" != "$CONFIG_HOME/cosmic/dev.asw.MacPanelStyle/v1" ]; then
+    mkdir -p "$STYLE_DIR"
+    printf '%s' "$((SIZE_PX - 6))" > "$STYLE_DIR/pill_height"
+  fi
+fi
+
+if [ -n "$FONT_SIZE" ]; then
+  if ! [[ "$FONT_SIZE" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+    echo "panel-layout.sh: --font-size must be a positive number (got '$FONT_SIZE')" >&2
+    exit 1
+  fi
+  if [ "$PRESET_OVERRIDDEN" = 0 ] || [ "$STYLE_DIR" != "$CONFIG_HOME/cosmic/dev.asw.MacPanelStyle/v1" ]; then
+    mkdir -p "$STYLE_DIR"
+    printf '%s' "$FONT_SIZE" > "$STYLE_DIR/font_size"
+  fi
+fi

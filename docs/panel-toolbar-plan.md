@@ -10,7 +10,7 @@ preset, so `cosmic-preset revert` still brings the stock panel back.
 
 | Question | Choice |
 |---|---|
-| Height | 28 px: `size: Custom(28)` (14 px symbolic icons, 7 px padding) instead of `XS` (32 px) |
+| Height | 32 px: `size: Custom(32)` (16 px symbolic icons, 8 px padding) |
 | System menu | Our own applet, `cosmic-ext-applet-lord-menu`, replacing the third-party `cosmic-ext-applet-logomenu` |
 | App name and menu | New applet, `cosmic-ext-applet-app-menu`: bold app name plus an app/window menu built from toplevel info and the `.desktop` file. No File/Edit/View menus (COSMIC has no global-menu protocol) |
 | Status icons | Stock Network, Audio and Battery applets stay as individual icons; Bluetooth, tiling, power and system monitor move out of the bar |
@@ -91,7 +91,7 @@ third-party menu extras. Battery hides itself on desktops (stock behaviour).
 
 | Key | Now | New | Why |
 |---|---|---|---|
-| `size` | `XS` | `Custom(28)` | 28 px bar; `PanelSize::Custom` gives icon `28/2 = 14`, padding `28/4 = 7` |
+| `size` | `XS` | `Custom(32)` | 32 px bar; `PanelSize::Custom` gives icon `32/2 = 16`, padding `32/4 = 8` |
 | `background` | `Dark` | `ThemeDefault` | Light bar in light mode, dark in dark mode, like macOS |
 | `opacity` | `0.65` | `0.55` | More wallpaper through the blur; tune on light and dark wallpapers |
 | `spacing` | `0` | `2` | Small gap between pills |
@@ -294,10 +294,10 @@ only reserves its slot.
 
 - `tools/panel-layout.sh` with named slots; `install-clock-center.sh` moved to
   it.
-- Preset: `Custom(28)`, `ThemeDefault`, opacity, spacing, hover delay,
+- Preset: `Custom(32)`, `ThemeDefault`, opacity, spacing, hover delay,
   `border_width: 1.0`; clock kept in `plugins_center`; Bluetooth, Tiling,
   Power, minimon, Launcher, Workspaces and App buttons out of the layout.
-- Done when: `cosmic-preset apply macos-glass` gives a 28 px bar with the
+- Done when: `cosmic-preset apply macos-glass` gives a 32 px bar with the
   clock in the centre and no layout regressions on reinstalling the clock.
 
 ### Phase 2: Left zone

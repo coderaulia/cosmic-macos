@@ -22,10 +22,10 @@ use cosmic::{
     widget::{button, container, icon, space, text},
 };
 use cosmic_ext_mac_applet_style::{
-    PANEL_TEXT_SIZE, PillVariant, bold_panel_font,
+    PillVariant, bold_panel_font,
     icons::{checkmark_icon, chevron_left_icon, chevron_right_icon},
     mac_app_popup, mac_bar_item, mac_menu_divider, mac_menu_item, mac_menu_label_row,
-    mac_pill_button, mac_popover_container_sized, mac_text_pill_button,
+    mac_pill_button, mac_popover_container_sized, mac_text_pill_button, panel_text_size,
 };
 use cosmic_protocols::toplevel_info::v1::client::zcosmic_toplevel_handle_v1::State as ToplevelState;
 use serde::{Deserialize, Serialize};
@@ -659,7 +659,7 @@ impl cosmic::Application for AppMenu {
         let is_app_open = self.popup.is_some() && self.active_menu == Some(MenuKind::App);
         let is_window_open = self.popup.is_some() && self.active_menu == Some(MenuKind::Window);
 
-        let app_label = text(elided).size(PANEL_TEXT_SIZE).font(bold_panel_font());
+        let app_label = text(elided).size(panel_text_size()).font(bold_panel_font());
         let app_pill = mac_pill_button(
             container(app_label).max_width(MAX_APP_PILL_WIDTH),
             is_app_open,
