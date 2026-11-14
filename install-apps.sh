@@ -21,7 +21,7 @@ app_info() {
     files) echo "cosmic-files|cosmic-files|cosmic-files|dev.asw.MacFiles|Files|com.system76.CosmicFiles|stock:com.system76.CosmicFiles|Browse files and folders" ;;
     notepad) echo "cosmic-edit|cosmic-edit|cosmic-edit|dev.asw.MacNotepad|Notepad|com.system76.CosmicEdit|stock:com.system76.CosmicEdit|Write and edit text" ;;
     viewer) echo "cosmic-viewer|cosmic-viewer|cosmic-viewer|dev.asw.MacViewer|Image Viewer|com.system76.CosmicViewer|stock:com.system76.CosmicViewer|View images" ;;
-    calendar) echo "mac-suite|mac-calendar|mac-calendar|dev.asw.MacCalendar|Calendar|x-office-calendar||Day, week and month calendar" ;;
+    calendar) echo "mac-suite|mac-calendar|mac-calendar|dev.asw.MacCalendar|Calendar|x-office-calendar|text/calendar;application/ics;x-scheme-handler/webcal;x-scheme-handler/webcals;|Day, week and month calendar" ;;
     mail) echo "mac-suite|mac-mail|mac-mail|dev.asw.MacMail|Mail|internet-mail|x-scheme-handler/mailto;|Read and send email" ;;
     *) return 1 ;;
   esac
@@ -85,6 +85,8 @@ StartupWMClass=$id
 Categories=Utility;
 MimeType=$mime
 EOF
+  # Make it the default for the file types it handles.
+  "$ROOT/../tools/set-default-apps.sh" "$id.desktop" "$mime" || true
   echo "    installed $label as mac-$name"
 done
 
