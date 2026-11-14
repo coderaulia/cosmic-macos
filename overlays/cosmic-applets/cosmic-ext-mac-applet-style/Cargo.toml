@@ -1,0 +1,9 @@
+[package]
+name = "cosmic-ext-mac-applet-style"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+description = "Shared macOS-style menu bar pill button, frosted popover container, and symbolic SVG icons for COSMIC applets"
+
+[dependencies]
+libcosmic.workspace = true

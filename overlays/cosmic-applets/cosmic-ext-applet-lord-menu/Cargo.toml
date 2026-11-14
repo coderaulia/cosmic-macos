@@ -1,0 +1,23 @@
+[package]
+name = "cosmic-ext-applet-lord-menu"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+description = "macOS-style LordOS system menu applet for COSMIC"
+
+[dependencies]
+anyhow.workspace = true
+cctk.workspace = true
+cosmic-config.workspace = true
+cosmic-ext-mac-applet-style = { path = "../cosmic-ext-mac-applet-style" }
+cosmic-protocols.workspace = true
+futures.workspace = true
+libcosmic.workspace = true
+logind-zbus = "5.3.2"
+rustix.workspace = true
+serde.workspace = true
+tokio.workspace = true
+tracing-log.workspace = true
+tracing-subscriber.workspace = true
+tracing.workspace = true
+zbus.workspace = true

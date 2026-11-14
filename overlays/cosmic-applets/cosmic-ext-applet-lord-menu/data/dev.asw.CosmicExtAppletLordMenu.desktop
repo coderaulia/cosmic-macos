@@ -1,0 +1,13 @@
+[Desktop Entry]
+Name=Lord Menu
+Comment=System menu for the macOS-style top bar
+Type=Application
+Exec=cosmic-ext-applet-lord-menu
+Terminal=false
+Categories=COSMIC;
+Keywords=COSMIC;Applet;System;About;Force Quit;Power;
+Icon=dev.asw.CosmicExtAppletLordMenu-symbolic
+NoDisplay=true
+X-CosmicApplet=true
+X-HostWaylandDisplay=true
+X-CosmicHoverPopup=Auto

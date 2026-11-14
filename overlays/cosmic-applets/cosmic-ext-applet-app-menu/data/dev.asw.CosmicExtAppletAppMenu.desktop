@@ -1,0 +1,14 @@
+[Desktop Entry]
+Name=App Menu
+Comment=Active application name and app/window menus for the top bar
+Type=Application
+Exec=cosmic-ext-applet-app-menu
+Terminal=false
+Categories=COSMIC;
+Keywords=COSMIC;Applet;Application;Window;Menu;
+Icon=application-x-executable-symbolic
+NoDisplay=true
+X-CosmicApplet=true
+X-CosmicShrinkable=true
+X-HostWaylandDisplay=true
+X-CosmicHoverPopup=Auto
