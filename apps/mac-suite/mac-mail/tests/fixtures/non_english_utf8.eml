@@ -1,0 +1,14 @@
+From: =?UTF-8?Q?Ren=C3=A9e_Dubois?= <renee@example.fr>
+To: =?UTF-8?B?5bGx55Sw?= <yamada@example.jp>
+Subject: =?UTF-8?B?Q2Fmw6kgJiDml6XmnKzoqp7jg6Hjg7zjg6sg8J+TrA==?=
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+<html>
+<body>
+  <h1>Bonjour &amp; =E3=81=93=E3=82=93=E3=81=AB=E3=81=A1=E3=81=AF =F0=9F=93=AC</h1>
+  <p>Caf&eacute; au lait costs &#x20AC;4.50 &mdash; =D0=9F=D1=80=D0=B8=D0=B2=D0=B5=D1=82!</p>
+  <p>See <a href=3D"https://example.fr/caf%C3%A9">menu</a>.</p>
+</body>
+</html>

@@ -1,0 +1,38 @@
+From: Brand Bot <brand@macmail.test>
+To: Alice <alice@macmail.test>
+Subject: Inline CID images report
+MIME-Version: 1.0
+Content-Type: multipart/related; boundary="CID_BOUNDARY"
+
+--CID_BOUNDARY
+Content-Type: text/html; charset=utf-8
+
+<html>
+<body>
+  <h2>Monthly Snapshot</h2>
+  <p>Inline brand logo:</p>
+  <a href="https://macmail.test/dashboard"><img src="cid:brand@macmail.test" alt="Brand Logo"></a>
+  <p>Inline chart below:</p>
+  <img src="cid:chart-01@macmail.test" alt="Metric Chart">
+  <p>Remote optional banner:</p>
+  <img src="https://cdn.macmail.test/footer-banner.png" width="500" height="120" alt="Footer Banner">
+</body>
+</html>
+
+--CID_BOUNDARY
+Content-Type: image/png; name="brand.png"
+Content-Transfer-Encoding: base64
+Content-Disposition: inline; filename="brand.png"
+Content-ID: <brand@macmail.test>
+
+iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAEklEQVR4nGOQq/jwHxkzkC4AAEJXKFFs0rFCAAAAAElFTkSuQmCC
+
+--CID_BOUNDARY
+Content-Type: image/png; name="chart.png"
+Content-Transfer-Encoding: base64
+Content-Disposition: inline; filename="chart.png"
+Content-ID: <chart-01@macmail.test>
+
+iVBORw0KGgoAAAANSUhEUgAAAAIAAAADCAYAAAC56t6BAAAAEUlEQVR4nGPQ2Bf1H4QZMBgAr6cNexhsSuIAAAAASUVORK5CYII=
+
+--CID_BOUNDARY--

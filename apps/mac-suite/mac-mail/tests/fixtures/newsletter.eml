@@ -1,0 +1,66 @@
+From: Weekly Digest <digest@newsletter.example>
+To: Reader <reader@example.com>
+Subject: Weekly Tech & Design Digest
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="NL_BOUNDARY"
+
+--NL_BOUNDARY
+Content-Type: text/plain; charset=utf-8
+
+Weekly Tech & Design Digest
+
+Read our top story at https://newsletter.example/stories/1
+
+--NL_BOUNDARY
+Content-Type: text/html; charset=utf-8
+
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Weekly Tech & Design Digest</title>
+  <style>
+    @import url("https://cdn.tracker.example/fonts.css");
+    body { background-image: url("https://cdn.tracker.example/bg.png"); }
+  </style>
+  <script>console.log("should be stripped");</script>
+</head>
+<body>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0">
+          <tr>
+            <td>
+              <img src="https://cdn.newsletter.example/hero-banner.jpg" width="600" height="220" alt="Hero Banner">
+              <h1>Weekly Tech &amp; Design Digest</h1>
+              <p>Welcome to this week's <strong>curated</strong> edition with <em>highlights</em> and <u>updates</u>.</p>
+              <blockquote style="background-image: url('https://tracker.example/q.png');">
+                <p>Simplicity is about subtracting the obvious and adding the meaningful.</p>
+              </blockquote>
+              <ul>
+                <li>Native HTML mail rendering</li>
+                <li>Privacy-first remote image blocking</li>
+              </ul>
+              <p>Verify link destination: <a href="https://redirect.tracker.example/click?id=42">https://trusted.example.org/security</a></p>
+              <hr>
+              <table>
+                <thead>
+                  <tr><th>Issue</th><th>Topic</th><th>Read Time</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td>#104</td><td>Mail Rework</td><td>4 min</td></tr>
+                  <tr><td>#105</td><td>Wayland Tips</td><td>6 min</td></tr>
+                </tbody>
+              </table>
+              <img src="https://track.newsletter.example/open.gif" width="1" height="1" alt="">
+              <img src="https://www.google-analytics.com/collect?v=1&t=event" style="display: none;" alt="">
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+
+--NL_BOUNDARY--

@@ -1,0 +1,17 @@
+From: Jordan Lee <jordan@example.org>
+To: Dev Team <dev@example.org>
+Subject: Plain text links & quoted reply
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Hi everyone,
+
+Please review the release notes at https://releases.example.org/v2.4/notes_(draft).
+The staging dashboard is at http://staging.example.org:8080/status, and you can reach support via mailto:support@example.org!
+
+> On Nov 12, 2026, Taylor wrote:
+> Remember to check https://wiki.example.org/checklist before tagging.
+> Let me know if anything looks off.
+
+Best,
+Jordan
