@@ -89,9 +89,29 @@ also uses these third-party panel applets: `cosmic-ext-applet-logomenu`,
 `minimon`, and `clippy-land`, and the WhiteSur icon theme. Missing ones are
 reported by `cosmic-preset apply`.
 
+## Roadmap
+
+The next piece of work is a rework of Mail: HTML email, a compose window for
+replies, a cleaner message list and a persistent server connection. See
+[docs/mail-rework-plan.md](docs/mail-rework-plan.md).
+
+## Troubleshooting
+
+- **An installed piece does not change after a rebuild.** A `target-dir` set in
+  `~/.cargo/config.toml` sends build output elsewhere. The install scripts set
+  their own build folder and stop if the binary they would copy is not fresh,
+  but check that setting if you build by hand.
+- **The clock applet is missing after login.** The panel can start before the
+  notification daemon is ready. A login check restarts the panel once; you can
+  also run `cosmic-preset reload`.
+- **Mail says "Invalid credentials" for Gmail or Google Workspace.** Use an app
+  password (2-Step Verification must be on and the admin must allow it), not
+  your normal password.
+
 ## Limits
 
-- Mail has no browser sign-in for Gmail/Outlook; use an app password.
+- Mail has no browser sign-in for Gmail/Outlook; use an app password. HTML mail
+  is shown as plain text until the Mail rework lands.
 - The genie animation covers floating and tiled windows, not fullscreen ones.
 - After a `cosmic-comp` package update, run `./install.sh comp` again.
 - Calendar sync needs a server that accepts a password login (Nextcloud,
