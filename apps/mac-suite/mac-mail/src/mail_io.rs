@@ -166,11 +166,13 @@ pub fn move_message(
     Ok(())
 }
 
-/// An opened message: its text and the names of its attachments.
+/// An opened message: its parsed content, plain-text fallback, and attachment names.
 #[derive(Clone, Debug)]
 pub struct Opened {
+    #[allow(dead_code)]
     pub text: String,
     pub attachments: Vec<String>,
+    pub content: mac_mail::html_mail::MailContent,
 }
 
 /// Fetch the raw message.
@@ -236,20 +238,32 @@ pub fn body(account: &Account, password: &str, folder: &str, uid: u32) -> Result
         .iter()
         .next()
         .and_then(|fetch| fetch.body())
-        .and_then(|raw| MessageParser::new().parse(raw))
-        .map(|message| Opened {
-            text: message
-                .body_text(0)
-                .map(|text| text.into_owned())
-                .unwrap_or_else(|| "(this message has no text)".to_owned()),
-            attachments: message
-                .attachments()
-                .map(|part| part.attachment_name().unwrap_or("attachment").to_owned())
-                .collect(),
+        .map(|raw| {
+            let content = mac_mail::html_mail::MailContent::from_raw_mime(raw);
+            let text = if content.plain_text.is_empty() {
+                "(this message has no text)".to_owned()
+            } else {
+                content.plain_text.clone()
+            };
+            let attachments = MessageParser::new()
+                .parse(raw)
+                .map(|message| {
+                    message
+                        .attachments()
+                        .map(|part| part.attachment_name().unwrap_or("attachment").to_owned())
+                        .collect()
+                })
+                .unwrap_or_default();
+            Opened {
+                text,
+                attachments,
+                content,
+            }
         })
         .unwrap_or_else(|| Opened {
             text: "(this message has no text)".to_owned(),
             attachments: Vec::new(),
+            content: mac_mail::html_mail::MailContent::from_plain_text("(this message has no text)"),
         });
     let _ = session.uid_store(uid.to_string(), "+FLAGS (\\Seen)");
     let _ = session.logout();

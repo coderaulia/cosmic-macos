@@ -17,7 +17,12 @@ use cosmic::{
         self, button, column, container, divider, row, scrollable, text, text_editor,
     },
 };
+use mac_mail::{
+    html_mail::{self, DecodedImage, HtmlMailEvent, MailBodyState, MailContent},
+    sanitizer,
+};
 use mail_io::{Opened, Summary};
+use std::collections::HashMap;
 
 const APP_ID: &str = "dev.asw.MacMail";
 const SIDEBAR_WIDTH: f32 = 220.0;
@@ -61,7 +66,7 @@ enum Msg {
     SelectFolder(String),
     Headers(String, Result<Vec<Summary>, String>),
     SelectMessage(u32),
-    Body(u32, Result<Opened, String>),
+    Body(u32, Box<Result<Opened, String>>),
     SearchText(String),
     RunSearch,
     ClearSearch,
@@ -83,6 +88,8 @@ enum Msg {
     AttachInput(String),
     AddAttachment,
     RemoveAttachment(usize),
+    HtmlMail(HtmlMailEvent),
+    RemoteImagesLoaded(u32, HashMap<String, Result<DecodedImage, String>>),
 }
 
 struct Mail {
@@ -95,7 +102,8 @@ struct Mail {
     folder: String,
     messages: Vec<Summary>,
     selected: Option<u32>,
-    body: Option<String>,
+    body: Option<MailContent>,
+    body_state: MailBodyState,
     attachments: Vec<String>,
     /// Text in the search box, and whether the list shows its results.
     search_text: String,
@@ -315,7 +323,6 @@ impl Mail {
                 .center(Length::Fill)
                 .into();
         };
-        let body = self.body.as_deref().unwrap_or("Loading…");
         let in_trash = {
             let lower = self.folder.to_lowercase();
             lower.contains("trash") || lower.contains("deleted")
@@ -350,6 +357,10 @@ impl Mail {
                 button::standard(name.as_str()).on_press(Msg::SaveAttachment(index)),
             );
         }
+        let body_view: Element<'_, Msg> = match self.body.as_ref() {
+            Some(content) => html_mail::view(content, &self.body_state, Msg::HtmlMail),
+            None => text::body("Loading…").into(),
+        };
         column![
             row![text::title3(message.subject.as_str()).width(Length::Fill), actions]
                 .align_y(Alignment::Center),
@@ -359,7 +370,7 @@ impl Mail {
             ],
             attachments,
             divider::horizontal::default(),
-            scrollable(text::body(body.to_owned())).height(Length::Fill),
+            scrollable(body_view).height(Length::Fill),
         ]
         .spacing(12)
         .padding(20)
@@ -443,6 +454,7 @@ impl cosmic::Application for Mail {
             messages: Vec::new(),
             selected: None,
             body: None,
+            body_state: MailBodyState::default(),
             attachments: Vec::new(),
             search_text: String::new(),
             searching: false,
@@ -526,6 +538,7 @@ impl cosmic::Application for Mail {
                 self.messages.clear();
                 self.selected = None;
                 self.body = None;
+                self.body_state = MailBodyState::default();
                 self.compose = None;
                 self.status = None;
             }
@@ -552,6 +565,7 @@ impl cosmic::Application for Mail {
                 self.messages.clear();
                 self.selected = None;
                 self.body = None;
+                self.body_state = MailBodyState::default();
                 self.compose = None;
                 return self.load_headers(&folder);
             }
@@ -575,6 +589,7 @@ impl cosmic::Application for Mail {
                 self.compose = None;
                 self.selected = Some(uid);
                 self.body = None;
+                self.body_state = MailBodyState::default();
                 self.attachments.clear();
                 if let Some(message) = self.messages.iter_mut().find(|m| m.uid == uid) {
                     message.unread = false;
@@ -586,17 +601,18 @@ impl cosmic::Application for Mail {
                 let folder = self.folder.clone();
                 return run(
                     move || mail_io::body(&account, &password, &folder, uid),
-                    move |result| Msg::Body(uid, result),
+                    move |result| Msg::Body(uid, Box::new(result)),
                 );
             }
             Msg::Body(uid, result) => {
                 if self.selected == Some(uid) {
-                    match result {
+                    self.body_state = MailBodyState::default();
+                    match *result {
                         Ok(opened) => {
-                            self.body = Some(opened.text);
+                            self.body = Some(opened.content);
                             self.attachments = opened.attachments;
                         }
-                        Err(err) => self.body = Some(err),
+                        Err(err) => self.body = Some(MailContent::from_plain_text(&err)),
                     }
                 }
             }
@@ -649,6 +665,7 @@ impl cosmic::Application for Mail {
                         if self.selected == Some(uid) {
                             self.selected = None;
                             self.body = None;
+                            self.body_state = MailBodyState::default();
                             self.attachments.clear();
                         }
                     }
@@ -692,7 +709,8 @@ impl cosmic::Application for Mail {
                 // The original text, quoted line by line.
                 let quoted: String = self
                     .body
-                    .as_deref()
+                    .as_ref()
+                    .map(|c| c.plain_text.as_str())
                     .unwrap_or_default()
                     .lines()
                     .map(|line| format!("> {line}\n"))
@@ -793,6 +811,48 @@ impl cosmic::Application for Mail {
                         self.status = None;
                     }
                     Err(err) => self.status = Some(err),
+                }
+            }
+            Msg::HtmlMail(event) => match event {
+                HtmlMailEvent::OpenLink(url) => {
+                    if let Err(err) = sanitizer::open_external_url(&url) {
+                        self.status = Some(err);
+                    }
+                }
+                HtmlMailEvent::HoverLink(hovered) => {
+                    self.body_state.hovered_link = hovered;
+                }
+                HtmlMailEvent::LoadRemoteImages => {
+                    if let (Some(uid), Some(content)) = (self.selected, self.body.as_ref())
+                        && !self.body_state.loading_remote_images
+                        && !content.remote_image_urls.is_empty()
+                    {
+                        self.body_state.loading_remote_images = true;
+                        let urls = content.remote_image_urls.clone();
+                        return run(
+                            move || html_mail::fetch_remote_images(&urls),
+                            move |results| Msg::RemoteImagesLoaded(uid, results),
+                        );
+                    }
+                }
+                HtmlMailEvent::OpenInBrowser => {
+                    if let Some(content) = self.body.as_ref() {
+                        let doc = sanitizer::prepare_browser_html(
+                            &content.sanitized_html,
+                            &content.inline_images,
+                            self.body_state.remote_images_loaded,
+                        );
+                        if let Err(err) = sanitizer::open_in_browser(&doc) {
+                            self.status = Some(err);
+                        }
+                    }
+                }
+            },
+            Msg::RemoteImagesLoaded(uid, results) => {
+                if self.selected == Some(uid) {
+                    self.body_state.loading_remote_images = false;
+                    self.body_state.remote_images_loaded = true;
+                    self.body_state.remote_images = results;
                 }
             }
         }
