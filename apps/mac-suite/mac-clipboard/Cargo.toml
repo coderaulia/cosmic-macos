@@ -1,0 +1,25 @@
+[package]
+name = "mac-clipboard"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+description = "Clipboard history daemon, CLI, and quick-paste Spotlight overlay"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "bmp", "tiff"] }
+jiff.workspace = true
+libcosmic.workspace = true
+nucleo-matcher = "0.3"
+rustix = { version = "1", features = ["event", "fs"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.11"
+thiserror = "2"
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+url = "2"
+wayland-protocols-misc = { version = "0.3", features = ["client"] }
+wl-clipboard-rs = "0.9"
+zbus = { version = "5", default-features = false, features = ["tokio"] }
