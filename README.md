@@ -57,7 +57,7 @@ the upstream history is not copied.
 
 | Path | Contents |
 |---|---|
-| `apps/mac-suite/` | Calendar, Mail and the theme tool (our own Rust workspace) |
+| `apps/mac-suite/` | Calendar, Mail, Clipboard, and the theme tool (our own Rust workspace) |
 | `overlays/cosmic-applets/` | Our custom applets (`cosmic-ext-dock`, `cosmic-ext-mac-applet-style`, and the panel/clipboard applets) |
 | `patches/*.patch` | Our changes to cosmic-files, cosmic-edit, cosmic-viewer, cosmic-launcher, cosmic-comp, cosmic-applets, and libcosmic |
 | `presets/macos-glass/` | The macOS preset for `cosmic-preset` |
@@ -92,16 +92,19 @@ reported by `cosmic-preset apply`.
 
 ## Roadmap
 
-The Mail and Calendar reworks are complete: Mail now includes sanitized native
-HTML rendering, multi-window compose, conversation threading, multiple accounts
-with a unified inbox, OAuth2 PKCE sign-in, `mailto:` handling, and a persistent
-IMAP connection with local cache and IDLE alerts (see
-[docs/mail-rework-plan.md](docs/mail-rework-plan.md)), while Calendar includes
-rich events (`LOCATION`, `DESCRIPTION`, `VALARM`), `RRULE` recurrence, multiple
-calendars, `.ics` import/export, an event inspector, search, and reminder
-notifications.
-
-Upcoming work covers a native clipboard manager and a macOS-style panel toolbar.
+The Mail, Calendar, Clipboard Manager, and Panel Toolbar work is complete: Mail
+now includes sanitized native HTML rendering, multi-window compose, conversation
+threading, multiple accounts with a unified inbox, OAuth2 PKCE sign-in,
+`mailto:` handling, and a persistent IMAP connection with local cache and IDLE
+alerts (see [docs/mail-rework-plan.md](docs/mail-rework-plan.md)); Calendar
+includes rich events (`LOCATION`, `DESCRIPTION`, `VALARM`), `RRULE` recurrence,
+multiple calendars, `.ics` import/export, an event inspector, search, and
+reminder notifications; Clipboard adds a Wayland history daemon, Spotlight-style
+quick-paste window (`Super+V`), and panel popover (see
+[docs/clipboard-manager-plan.md](docs/clipboard-manager-plan.md)); and the
+Panel Toolbar provides a macOS-style top bar with Lord Menu, App Menu,
+centered Clock Center, Spotlight button, and Control Center (see
+[docs/panel-toolbar-plan.md](docs/panel-toolbar-plan.md)).
 
 ## Troubleshooting
 

@@ -237,7 +237,7 @@ impl LordMenu {
         }
 
         let mut list: Vec<RunningAppGroup> = grouped.into_values().collect();
-        list.sort_by(|a, b| a.display_name.to_lowercase().cmp(&b.display_name.to_lowercase()));
+        list.sort_by_key(|a| a.display_name.to_lowercase());
         self.running_apps = list;
 
         if let Some(sel) = &self.selected_force_quit_app {

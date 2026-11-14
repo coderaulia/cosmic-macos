@@ -77,10 +77,8 @@ pub fn parse_os_release(content: &str) -> String {
         match key.trim() {
             "PRETTY_NAME" => pretty = Some(val),
             "NAME" => name = Some(val),
-            "VERSION" | "VERSION_ID" => {
-                if version.is_none() {
-                    version = Some(val);
-                }
+            "VERSION" | "VERSION_ID" if version.is_none() => {
+                version = Some(val);
             }
             _ => {}
         }
