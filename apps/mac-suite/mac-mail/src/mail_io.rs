@@ -7,9 +7,9 @@ use imap::{Session, types::Flag};
 use lettre::{
     Message, SmtpTransport, Transport, transport::smtp::authentication::Credentials,
 };
-use mail_parser::MessageParser;
+use mail_parser::{AddressList, MessageParser};
 
-use crate::account::Account;
+use crate::{account::Account, ui_helpers};
 
 type Result<T> = std::result::Result<T, String>;
 
@@ -17,14 +17,28 @@ type Result<T> = std::result::Result<T, String>;
 const PAGE: u32 = 60;
 
 #[derive(Clone, Debug)]
+pub struct FolderInfo {
+    pub name: String,
+    pub unread: usize,
+}
+
+#[derive(Clone, Debug)]
 pub struct Summary {
     pub uid: u32,
     pub from: String,
+    pub from_email: String,
     /// Where a reply goes: the Reply-To address, else the sender's.
     pub address: String,
+    pub to: Vec<String>,
+    pub cc: Vec<String>,
     pub subject: String,
     pub date: String,
+    pub timestamp: Option<i64>,
+    pub preview: String,
     pub unread: bool,
+    pub has_attachments: bool,
+    pub message_id: Option<String>,
+    pub references: Vec<String>,
 }
 
 fn connect(account: &Account, password: &str) -> Result<Session<imap::Connection>> {
@@ -36,11 +50,11 @@ fn connect(account: &Account, password: &str) -> Result<Session<imap::Connection
         .map_err(|(err, _)| format!("Sign-in failed: {err}"))
 }
 
-/// Folder names the server offers, with INBOX first.
-pub fn folders(account: &Account, password: &str) -> Result<Vec<String>> {
+/// Folder names and unread counts the server offers, in logical order.
+pub fn folders(account: &Account, password: &str) -> Result<Vec<FolderInfo>> {
     let mut session = connect(account, password)?;
     let names = session.list(None, Some("*")).map_err(|err| err.to_string())?;
-    let mut folders: Vec<String> = names
+    let mut folder_names: Vec<String> = names
         .iter()
         .filter(|name| {
             !name
@@ -51,9 +65,19 @@ pub fn folders(account: &Account, password: &str) -> Result<Vec<String>> {
         })
         .map(|name| name.name().to_owned())
         .collect();
+    ui_helpers::sort_folders(&mut folder_names);
+
+    let mut result = Vec::with_capacity(folder_names.len());
+    for name in folder_names {
+        let unread = session
+            .status(&name, "(UNSEEN)")
+            .ok()
+            .and_then(|mbox| mbox.unseen)
+            .unwrap_or(0) as usize;
+        result.push(FolderInfo { name, unread });
+    }
     let _ = session.logout();
-    folders.sort_by_key(|name| (!name.eq_ignore_ascii_case("INBOX"), name.to_lowercase()));
-    Ok(folders)
+    Ok(result)
 }
 
 /// The newest messages of a folder, newest first.
@@ -66,25 +90,105 @@ pub fn headers(account: &Account, password: &str, folder: &str) -> Result<Vec<Su
     }
     let first = mailbox.exists.saturating_sub(PAGE - 1).max(1);
     let fetched = session
-        .fetch(format!("{first}:{}", mailbox.exists), "(UID FLAGS RFC822.HEADER)")
+        .fetch(
+            format!("{first}:{}", mailbox.exists),
+            "(UID FLAGS BODYSTRUCTURE BODY.PEEK[HEADER] BODY.PEEK[TEXT]<0.2048>)",
+        )
         .map_err(|err| err.to_string())?;
     let mut summaries = summarize(&fetched);
     let _ = session.logout();
-    summaries.sort_by(|a, b| b.uid.cmp(&a.uid));
+    summaries.sort_by_key(|s| std::cmp::Reverse(s.uid));
     Ok(summaries)
 }
 
-/// Turn fetched headers into list entries.
+fn format_address_list(list: Option<AddressList<'_>>) -> Vec<String> {
+    let Some(list) = list else {
+        return Vec::new();
+    };
+    list.mailboxes()
+        .filter_map(|addr| {
+            let email = addr.address()?.trim();
+            if email.is_empty() {
+                return None;
+            }
+            match addr.name().map(str::trim).filter(|n| !n.is_empty()) {
+                Some(name) => Some(format!("{name} <{email}>")),
+                None => Some(email.to_owned()),
+            }
+        })
+        .collect()
+}
+
+fn bodystructure_has_attachment(bs: &imap_proto::types::BodyStructure<'_>) -> bool {
+    use imap_proto::types::BodyStructure;
+    match bs {
+        BodyStructure::Basic { common, .. } => {
+            if let Some(disp) = &common.disposition
+                && disp.ty.eq_ignore_ascii_case("attachment")
+            {
+                return true;
+            }
+            // Non-inline non-text binary parts with a filename are attachments.
+            let is_inline = common
+                .disposition
+                .as_ref()
+                .is_some_and(|d| d.ty.eq_ignore_ascii_case("inline"));
+            let has_filename = common
+                .disposition
+                .as_ref()
+                .and_then(|d| d.params.as_ref())
+                .is_some_and(|p| p.iter().any(|(k, _)| k.eq_ignore_ascii_case("filename")))
+                || common
+                    .ty
+                    .params
+                    .as_ref()
+                    .is_some_and(|p| p.iter().any(|(k, _)| k.eq_ignore_ascii_case("name")));
+            !is_inline && has_filename
+        }
+        BodyStructure::Text { common, .. } => common
+            .disposition
+            .as_ref()
+            .is_some_and(|d| d.ty.eq_ignore_ascii_case("attachment")),
+        BodyStructure::Message { common, body, .. } => {
+            common
+                .disposition
+                .as_ref()
+                .is_some_and(|d| d.ty.eq_ignore_ascii_case("attachment"))
+                || bodystructure_has_attachment(body)
+        }
+        BodyStructure::Multipart { bodies, .. } => {
+            bodies.iter().any(bodystructure_has_attachment)
+        }
+    }
+}
+
+/// Turn fetched headers (and optional body prefix) into list entries.
 fn summarize(fetched: &imap::types::Fetches) -> Vec<Summary> {
     let parser = MessageParser::new();
     fetched
         .iter()
         .filter_map(|fetch| {
             let uid = fetch.uid?;
-            let message = parser.parse(fetch.header()?)?;
-            let from = message
-                .from()
-                .and_then(|list| list.first())
+            let header = fetch.header()?;
+            let parsed_full;
+            let combined: Vec<u8>;
+            let message = if let Some(text_bytes) = fetch.text() {
+                let mut buf = Vec::with_capacity(header.len() + 2 + text_bytes.len());
+                buf.extend_from_slice(header);
+                if !header.ends_with(b"\r\n\r\n") && !header.ends_with(b"\n\n") {
+                    buf.extend_from_slice(b"\r\n");
+                }
+                buf.extend_from_slice(text_bytes);
+                combined = buf;
+                parsed_full = parser.parse(&combined);
+                parsed_full.as_ref()?
+            } else {
+                parsed_full = parser.parse(header);
+                parsed_full.as_ref()?
+            };
+
+            let from_mailbox = message.from().and_then(|list| list.first());
+            let from = from_mailbox
                 .map(|mailbox| {
                     mailbox
                         .name()
@@ -94,6 +198,10 @@ fn summarize(fetched: &imap::types::Fetches) -> Vec<Summary> {
                         .to_owned()
                 })
                 .unwrap_or_default();
+            let from_email = from_mailbox
+                .and_then(|mailbox| mailbox.address())
+                .unwrap_or_default()
+                .to_owned();
             let address = message
                 .reply_to()
                 .or_else(|| message.from())
@@ -101,17 +209,47 @@ fn summarize(fetched: &imap::types::Fetches) -> Vec<Summary> {
                 .and_then(|mailbox| mailbox.address())
                 .unwrap_or_default()
                 .to_owned();
-            let date = message
-                .date()
-                .map(|d| format!("{:04}-{:02}-{:02} {:02}:{:02}", d.year, d.month, d.day, d.hour, d.minute))
+            let to = format_address_list(message.to());
+            let cc = format_address_list(message.cc());
+            let parsed_date = message.date();
+            let timestamp = parsed_date.map(|d| d.to_timestamp());
+            let date = parsed_date
+                .map(|d| {
+                    format!(
+                        "{:04}-{:02}-{:02} {:02}:{:02}",
+                        d.year, d.month, d.day, d.hour, d.minute
+                    )
+                })
                 .unwrap_or_default();
+            let preview = ui_helpers::extract_preview_snippet(
+                message.body_text(0).as_deref(),
+                message.body_html(0).as_deref(),
+                120,
+            );
+            let has_attachments = fetch
+                .bodystructure()
+                .is_some_and(bodystructure_has_attachment);
+            let message_id = message.message_id().map(str::to_owned);
+            let references = message
+                .references()
+                .map(|refs| refs.iter().map(str::to_owned).collect())
+                .unwrap_or_default();
+
             Some(Summary {
                 uid,
                 from,
+                from_email,
                 address,
+                to,
+                cc,
                 subject: message.subject().unwrap_or("(no subject)").to_owned(),
                 date,
+                timestamp,
+                preview,
                 unread: !fetch.flags().iter().any(|flag| matches!(flag, Flag::Seen)),
+                has_attachments,
+                message_id,
+                references,
             })
         })
         .collect()
@@ -135,12 +273,37 @@ pub fn search(account: &Account, password: &str, folder: &str, query: &str) -> R
     uids.truncate(PAGE as usize);
     let set = uids.iter().map(u32::to_string).collect::<Vec<_>>().join(",");
     let fetched = session
-        .uid_fetch(set, "(UID FLAGS RFC822.HEADER)")
+        .uid_fetch(
+            set,
+            "(UID FLAGS BODYSTRUCTURE BODY.PEEK[HEADER] BODY.PEEK[TEXT]<0.2048>)",
+        )
         .map_err(|err| err.to_string())?;
     let mut summaries = summarize(&fetched);
     let _ = session.logout();
-    summaries.sort_by(|a, b| b.uid.cmp(&a.uid));
+    summaries.sort_by_key(|s| std::cmp::Reverse(s.uid));
     Ok(summaries)
+}
+
+/// Mark a message read or unread on the server.
+pub fn set_unread(
+    account: &Account,
+    password: &str,
+    folder: &str,
+    uid: u32,
+    unread: bool,
+) -> Result<()> {
+    let mut session = connect(account, password)?;
+    session.select(folder).map_err(|err| err.to_string())?;
+    let flag_cmd = if unread {
+        "-FLAGS (\\Seen)"
+    } else {
+        "+FLAGS (\\Seen)"
+    };
+    session
+        .uid_store(uid.to_string(), flag_cmd)
+        .map_err(|err| err.to_string())?;
+    let _ = session.logout();
+    Ok(())
 }
 
 /// Move a message to `target`, or delete it for good when there is none.
