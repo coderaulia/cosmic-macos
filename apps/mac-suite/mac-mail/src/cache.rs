@@ -98,6 +98,9 @@ pub struct MessageSummary {
     /// `Message-ID` header value (without angle brackets or preserved as parsed).
     #[serde(default)]
     pub message_id: Option<String>,
+    /// `In-Reply-To` header value (first message ID) for conversation threading.
+    #[serde(default)]
+    pub in_reply_to: Option<String>,
     /// `References` header values for reply threading.
     #[serde(default)]
     pub references: Vec<String>,
@@ -934,6 +937,7 @@ mod tests {
                 has_attachments: true,
                 preview: "Hello there".to_owned(),
                 message_id: Some("<102@example.com>".to_owned()),
+                in_reply_to: None,
                 references: vec![],
             },
             MessageSummary {
@@ -950,6 +954,7 @@ mod tests {
                 has_attachments: false,
                 preview: String::new(),
                 message_id: None,
+                in_reply_to: None,
                 references: vec![],
             },
         ];
@@ -1004,6 +1009,7 @@ mod tests {
                     has_attachments: false,
                     preview: String::new(),
                     message_id: None,
+                    in_reply_to: None,
                     references: vec![],
                 }],
                 true,
@@ -1093,6 +1099,7 @@ mod tests {
                         has_attachments: false,
                         preview: "See attached spreadsheet".to_owned(),
                         message_id: None,
+                        in_reply_to: None,
                         references: vec![],
                     },
                     MessageSummary {
@@ -1109,6 +1116,7 @@ mod tests {
                         has_attachments: false,
                         preview: "Tacos at noon?".to_owned(),
                         message_id: None,
+                        in_reply_to: None,
                         references: vec![],
                     },
                 ],
@@ -1140,6 +1148,7 @@ mod tests {
             has_attachments: false,
             preview: String::new(),
             message_id: None,
+            in_reply_to: None,
             references: vec![],
         };
 

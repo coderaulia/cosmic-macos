@@ -25,7 +25,10 @@ use imap::{
 };
 use mail_parser::MessageParser;
 
-use crate::account::Account;
+use crate::{
+    account::{self, Account, AccountCredential},
+    oauth::XOAuth2Authenticator,
+};
 
 /// How long a pooled connection can sit idle before a `NOOP` health check is sent.
 const KEEPALIVE_CHECK_AFTER: Duration = Duration::from_secs(45);
@@ -45,6 +48,7 @@ pub struct ServerCapabilities {
 /// Information passed when new mail arrives in `INBOX`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NewMailNotification {
+    pub account_email: String,
     pub folder: String,
     pub uid: Option<u32>,
     pub from: String,
@@ -54,7 +58,7 @@ pub struct NewMailNotification {
 
 struct PoolState {
     account: Account,
-    password: String,
+    credential: AccountCredential,
     session: Option<Session<imap::Connection>>,
     selected_folder: Option<String>,
     last_mailbox: Option<Mailbox>,
@@ -69,11 +73,11 @@ pub struct ImapPool {
 }
 
 impl ImapPool {
-    pub fn new(account: Account, password: String) -> Self {
+    pub fn new(account: Account, credential: AccountCredential) -> Self {
         Self {
             inner: Arc::new(Mutex::new(PoolState {
                 account,
-                password,
+                credential,
                 session: None,
                 selected_folder: None,
                 last_mailbox: None,
@@ -91,22 +95,22 @@ impl ImapPool {
             .clone()
     }
 
-    pub fn password(&self) -> String {
+    pub fn credential(&self) -> AccountCredential {
         self.inner
             .lock()
             .expect("imap pool mutex poisoned")
-            .password
+            .credential
             .clone()
     }
 
     /// Replace credentials and drop any active connection so the next operation re-authenticates.
-    pub fn set_credentials(&self, account: Account, password: String) {
+    pub fn set_credentials(&self, account: Account, credential: AccountCredential) {
         let mut guard = self.inner.lock().expect("imap pool mutex poisoned");
         if let Some(mut session) = guard.session.take() {
             let _ = session.logout();
         }
         guard.account = account;
-        guard.password = password;
+        guard.credential = credential;
         guard.selected_folder = None;
         guard.last_mailbox = None;
         guard.capabilities = ServerCapabilities::default();
@@ -234,7 +238,8 @@ fn ensure_connected(guard: &mut PoolState) -> Result<(), String> {
         }
     }
 
-    let (session, caps) = connect_and_probe(&guard.account, &guard.password)?;
+    account::ensure_fresh_credential(&guard.account, &mut guard.credential)?;
+    let (session, caps) = connect_and_probe(&guard.account, &guard.credential)?;
     guard.session = Some(session);
     guard.selected_folder = None;
     guard.last_mailbox = None;
@@ -251,22 +256,32 @@ fn drop_dead_session(guard: &mut PoolState) {
 
 pub(crate) fn connect_session(
     account: &Account,
-    password: &str,
+    credential: &AccountCredential,
 ) -> Result<Session<imap::Connection>, String> {
     let client = imap::ClientBuilder::new(account.imap_host.as_str(), account.imap_port)
         .connect()
         .map_err(|err| format!("Could not reach {}: {err}", account.imap_host))?;
-    let session = client
-        .login(&account.email, password)
-        .map_err(|(err, _)| format!("Sign-in failed: {err}"))?;
-    Ok(session)
+    match credential {
+        AccountCredential::Password(password) => client
+            .login(&account.email, password)
+            .map_err(|(err, _)| format!("Sign-in failed: {err}")),
+        AccountCredential::OAuth2(tokens) => {
+            let auth = XOAuth2Authenticator {
+                user: account.email.clone(),
+                access_token: tokens.access_token.clone(),
+            };
+            client
+                .authenticate("XOAUTH2", &auth)
+                .map_err(|(err, _)| format!("XOAUTH2 sign-in failed: {err}"))
+        }
+    }
 }
 
 fn connect_and_probe(
     account: &Account,
-    password: &str,
+    credential: &AccountCredential,
 ) -> Result<(Session<imap::Connection>, ServerCapabilities), String> {
-    let mut session = connect_session(account, password)?;
+    let mut session = connect_session(account, credential)?;
     let caps = match session.capabilities() {
         Ok(c) => ServerCapabilities {
             has_idle: c.has_str("IDLE"),
@@ -337,7 +352,7 @@ impl IdleWatcher {
     /// Start watching `INBOX` on a dedicated connection.
     ///
     /// Calls `on_new_mail` and emits a desktop notification whenever new messages arrive.
-    pub fn start<F>(account: Account, password: String, on_new_mail: F) -> Self
+    pub fn start<F>(account: Account, credential: AccountCredential, on_new_mail: F) -> Self
     where
         F: Fn(NewMailNotification) + Send + Sync + 'static,
     {
@@ -346,7 +361,7 @@ impl IdleWatcher {
         let handle = thread::Builder::new()
             .name("mac-mail-idle".to_owned())
             .spawn(move || {
-                run_idle_loop(&account, &password, &stop_flag, &on_new_mail);
+                run_idle_loop(&account, credential, &stop_flag, &on_new_mail);
             })
             .ok();
         Self { stop, handle }
@@ -370,7 +385,7 @@ impl Drop for IdleWatcher {
 
 fn run_idle_loop<F>(
     account: &Account,
-    password: &str,
+    mut credential: AccountCredential,
     stop: &AtomicBool,
     on_new_mail: &F,
 ) where
@@ -379,7 +394,12 @@ fn run_idle_loop<F>(
     let mut backoff_secs = 2u64;
 
     while !stop.load(Ordering::Relaxed) {
-        let Ok((mut session, caps)) = connect_and_probe(account, password) else {
+        if account::ensure_fresh_credential(account, &mut credential).is_err() {
+            sleep_interruptible(Duration::from_secs(backoff_secs), stop);
+            backoff_secs = (backoff_secs * 2).min(60);
+            continue;
+        }
+        let Ok((mut session, caps)) = connect_and_probe(account, &credential) else {
             sleep_interruptible(Duration::from_secs(backoff_secs), stop);
             backoff_secs = (backoff_secs * 2).min(60);
             continue;
@@ -421,7 +441,7 @@ fn run_idle_loop<F>(
                 match outcome {
                     Ok(WaitOutcome::MailboxChanged) => {
                         if let Some(notif) =
-                            check_inbox_new_messages(&mut session, &mut known_exists)
+                            check_inbox_new_messages(&account.email, &mut session, &mut known_exists)
                         {
                             send_desktop_notification(&notif.from, &notif.subject);
                             on_new_mail(notif);
@@ -430,7 +450,7 @@ fn run_idle_loop<F>(
                     Ok(WaitOutcome::TimedOut) => {
                         // Also check if exists changed silently during IDLE cycle.
                         if let Some(notif) =
-                            check_inbox_new_messages(&mut session, &mut known_exists)
+                            check_inbox_new_messages(&account.email, &mut session, &mut known_exists)
                         {
                             send_desktop_notification(&notif.from, &notif.subject);
                             on_new_mail(notif);
@@ -449,7 +469,7 @@ fn run_idle_loop<F>(
                 match session.noop() {
                     Ok(()) => {
                         if let Some(notif) =
-                            check_inbox_new_messages(&mut session, &mut known_exists)
+                            check_inbox_new_messages(&account.email, &mut session, &mut known_exists)
                         {
                             send_desktop_notification(&notif.from, &notif.subject);
                             on_new_mail(notif);
@@ -465,6 +485,7 @@ fn run_idle_loop<F>(
 }
 
 fn check_inbox_new_messages(
+    account_email: &str,
     session: &mut Session<imap::Connection>,
     known_exists: &mut u32,
 ) -> Option<NewMailNotification> {
@@ -502,6 +523,7 @@ fn check_inbox_new_messages(
         .to_owned();
 
     Some(NewMailNotification {
+        account_email: account_email.to_owned(),
         folder: "INBOX".to_owned(),
         uid,
         from,
@@ -564,8 +586,9 @@ mod tests {
                 imap_port: 993,
                 smtp_host: "smtp.example.com".to_owned(),
                 smtp_port: 465,
+                ..Default::default()
             },
-            "secret".to_owned(),
+            AccountCredential::Password("secret".to_owned()),
         );
         assert!(!pool.is_connected());
         assert_eq!(pool.account().email, "alice@example.com");
@@ -577,8 +600,9 @@ mod tests {
                 imap_port: 993,
                 smtp_host: "smtp.example.com".to_owned(),
                 smtp_port: 465,
+                ..Default::default()
             },
-            "secret2".to_owned(),
+            AccountCredential::Password("secret2".to_owned()),
         );
         assert_eq!(pool.account().email, "bob@example.com");
         assert!(!pool.is_connected());

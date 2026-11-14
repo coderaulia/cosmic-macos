@@ -13,12 +13,12 @@ use imap::types::Flag;
 use lettre::{
     Message, SmtpTransport, Transport,
     address::Envelope,
-    transport::smtp::authentication::Credentials,
+    transport::smtp::authentication::{Credentials, Mechanism},
 };
 use mail_parser::{AddressList, MessageParser};
 
 use crate::{
-    account::Account,
+    account::{self, Account, AccountCredential},
     cache::{
         CachedFolderHeaders, FolderInfo, FolderKind, KnownContact, MailCache, MessageSummary,
         classify_folder, extract_email_addresses, find_special_folder, select_older_uid_page,
@@ -70,6 +70,7 @@ pub struct OpenedMessage {
     pub cc: Vec<String>,
     pub date: String,
     pub message_id: Option<String>,
+    pub in_reply_to: Option<String>,
     pub references: Vec<String>,
     pub text: String,
     pub html: Option<String>,
@@ -88,20 +89,20 @@ pub struct MailBackend {
 
 impl MailBackend {
     /// Create a backend for `account` using the default `$XDG_CACHE_HOME/mac-mail` cache.
-    pub fn new(account: Account, password: String) -> Self {
+    pub fn new(account: Account, credential: AccountCredential) -> Self {
         let cache = MailCache::new(&account.email);
-        let pool = ImapPool::new(account, password);
+        let pool = ImapPool::new(account, credential);
         Self { pool, cache }
     }
 
     /// Create a backend with a custom cache root directory (primarily for tests).
     pub fn with_cache_root(
         account: Account,
-        password: String,
+        credential: AccountCredential,
         cache_root: impl AsRef<Path>,
     ) -> Self {
         let cache = MailCache::with_root(cache_root, &account.email);
-        let pool = ImapPool::new(account, password);
+        let pool = ImapPool::new(account, credential);
         Self { pool, cache }
     }
 
@@ -130,7 +131,7 @@ impl MailBackend {
     where
         F: Fn(NewMailNotification) + Send + Sync + 'static,
     {
-        IdleWatcher::start(self.pool.account(), self.pool.password(), on_new_mail)
+        IdleWatcher::start(self.pool.account(), self.pool.credential(), on_new_mail)
     }
 
     // -------------------------------------------------------------------------
@@ -652,8 +653,12 @@ impl MailBackend {
         delete_draft_uid: Option<u32>,
     ) -> Result<(), String> {
         let account = self.pool.account();
-        let password = self.pool.password();
-        let transport = build_smtp_transport(&account, &password)?;
+        let mut credential = self.pool.credential();
+        account::ensure_fresh_credential(&account, &mut credential)?;
+        if credential.is_oauth2() {
+            self.pool.set_credentials(account.clone(), credential.clone());
+        }
+        let transport = build_smtp_transport(&account, &credential)?;
         transport
             .send(message)
             .map_err(|err| format!("Could not send: {err}"))?;
@@ -674,7 +679,11 @@ impl MailBackend {
         delete_draft_uid: Option<u32>,
     ) -> Result<(), String> {
         let account = self.pool.account();
-        let password = self.pool.password();
+        let mut credential = self.pool.credential();
+        account::ensure_fresh_credential(&account, &mut credential)?;
+        if credential.is_oauth2() {
+            self.pool.set_credentials(account.clone(), credential.clone());
+        }
         let from_addr = from
             .parse()
             .map_err(|_| "Your address is not valid".to_owned())?;
@@ -689,7 +698,7 @@ impl MailBackend {
         let envelope = Envelope::new(Some(from_addr), to_addrs)
             .map_err(|err| format!("Invalid envelope: {err}"))?;
 
-        let transport = build_smtp_transport(&account, &password)?;
+        let transport = build_smtp_transport(&account, &credential)?;
         transport
             .send_raw(&envelope, raw_rfc822)
             .map_err(|err| format!("Could not send: {err}"))?;
@@ -788,17 +797,24 @@ fn folder_looks_like_trash(folder: &str) -> bool {
     lower.contains("trash") || lower.contains("deleted") || lower.ends_with("bin")
 }
 
-fn build_smtp_transport(account: &Account, password: &str) -> Result<SmtpTransport, String> {
+fn build_smtp_transport(
+    account: &Account,
+    credential: &AccountCredential,
+) -> Result<SmtpTransport, String> {
     let builder = if account.smtp_port == 465 {
         SmtpTransport::relay(&account.smtp_host)
     } else {
         SmtpTransport::starttls_relay(&account.smtp_host)
     }
     .map_err(|err| err.to_string())?;
-    Ok(builder
-        .port(account.smtp_port)
-        .credentials(Credentials::new(account.email.clone(), password.to_owned()))
-        .build())
+    let mut configured = builder.port(account.smtp_port).credentials(Credentials::new(
+        account.email.clone(),
+        credential.secret_for_imap().to_owned(),
+    ));
+    if credential.is_oauth2() {
+        configured = configured.authentication(vec![Mechanism::Xoauth2]);
+    }
+    Ok(configured.build())
 }
 
 fn summarize_fetches(fetched: &imap::types::Fetches) -> Vec<MessageSummary> {
@@ -868,6 +884,12 @@ fn summarize_fetches(fetched: &imap::types::Fetches) -> Vec<MessageSummary> {
                 String::new()
             };
             let message_id = message.message_id().map(str::to_owned);
+            let in_reply_to = message
+                .in_reply_to()
+                .and_then(|list| list.first())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_owned);
             let references = message
                 .references()
                 .map(|list| list.iter().map(str::to_owned).collect())
@@ -887,6 +909,7 @@ fn summarize_fetches(fetched: &imap::types::Fetches) -> Vec<MessageSummary> {
                 has_attachments,
                 preview,
                 message_id,
+                in_reply_to,
                 references,
             })
         })
@@ -974,6 +997,12 @@ pub fn parse_raw_message(
         })
         .unwrap_or_default();
     let message_id = message.message_id().map(str::to_owned);
+    let in_reply_to = message
+        .in_reply_to()
+        .and_then(|list| list.first())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned);
     let references = message
         .references()
         .map(|list| list.iter().map(str::to_owned).collect())
@@ -1034,6 +1063,7 @@ pub fn parse_raw_message(
         cc,
         date,
         message_id,
+        in_reply_to,
         references,
         text,
         html,
@@ -1239,8 +1269,13 @@ mod tests {
             imap_port: 1, // unreachable offline port
             smtp_host: "127.0.0.1".to_owned(),
             smtp_port: 1,
+            ..Default::default()
         };
-        let backend = MailBackend::with_cache_root(account, "pw".to_owned(), &dir);
+        let backend = MailBackend::with_cache_root(
+            account,
+            AccountCredential::Password("pw".to_owned()),
+            &dir,
+        );
 
         let raw = concat!(
             "From: Bob <bob@example.com>\r\n",

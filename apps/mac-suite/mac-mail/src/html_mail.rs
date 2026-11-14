@@ -145,6 +145,8 @@ pub struct MailBodyState {
     pub loading_remote_images: bool,
     pub remote_images: HashMap<String, Result<DecodedImage, String>>,
     pub hovered_link: Option<String>,
+    /// Sender email address for the "Always load images from <sender>" option.
+    pub sender_address: String,
 }
 
 /// Interactive events emitted by the native mail body renderer.
@@ -153,6 +155,7 @@ pub enum HtmlMailEvent {
     OpenLink(String),
     HoverLink(Option<String>),
     LoadRemoteImages,
+    AlwaysLoadFromSender,
     OpenInBrowser,
 }
 
@@ -1250,6 +1253,16 @@ pub fn view<'a, M: Clone + 'static>(
                 load_btn = load_btn.on_press(map(HtmlMailEvent::LoadRemoteImages));
             }
             bar = bar.push(load_btn);
+            if !state.sender_address.trim().is_empty() {
+                let mut always_btn = button::text(format!(
+                    "Always load images from {}",
+                    state.sender_address.trim()
+                ));
+                if !state.loading_remote_images {
+                    always_btn = always_btn.on_press(map(HtmlMailEvent::AlwaysLoadFromSender));
+                }
+                bar = bar.push(always_btn);
+            }
         }
 
         if content.blocked_tracker_count > 0 {

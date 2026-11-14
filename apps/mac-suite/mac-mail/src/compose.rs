@@ -17,6 +17,7 @@
 
 pub mod contacts;
 pub mod format;
+pub mod mailto;
 pub mod mime;
 pub mod recipients;
 
@@ -24,6 +25,7 @@ use std::{
     collections::HashMap,
     path::PathBuf,
     sync::Arc,
+    time::{Duration, Instant},
 };
 
 use cosmic::{
@@ -37,6 +39,8 @@ use cosmic::{
 pub use contacts::AddressBook;
 #[allow(unused_imports)]
 pub use format::{QuotedOriginal, build_email_html, build_email_plain, plain_to_html_fragment};
+#[allow(unused_imports)]
+pub use mailto::{MailtoUri, extract_mailto_from_args, parse_mailto_uri};
 #[allow(unused_imports)]
 pub use mime::{
     AttachmentData, BuiltMessage, OutgoingMessage, build_mime_message, format_byte_size,
@@ -183,10 +187,26 @@ pub struct ComposeWindowState {
     pub status: Option<String>,
     pub error: Option<String>,
     pub dirty: bool,
+    pub last_edited_at: Option<Instant>,
+    pub close_after_save: bool,
     pub existing_draft: Option<(String, u32)>,
 }
 
 impl ComposeWindowState {
+    pub fn mark_dirty(&mut self) {
+        self.dirty = true;
+        self.last_edited_at = Some(Instant::now());
+    }
+
+    pub fn has_meaningful_content(&self) -> bool {
+        !self.to.trim().is_empty()
+            || !self.cc.trim().is_empty()
+            || !self.bcc.trim().is_empty()
+            || !self.subject.trim().is_empty()
+            || !self.body.text().trim().is_empty()
+            || !self.attachments.is_empty()
+    }
+
     pub fn window_title(&self) -> String {
         let trimmed = self.subject.trim();
         if !trimmed.is_empty() {
@@ -229,6 +249,14 @@ impl ComposeWindowState {
         })
     }
 }
+
+/// Payload tuple returned by [`ComposeManager::auto_save_candidates`].
+pub type AutoSaveCandidate = (
+    window::Id,
+    OutgoingMessage,
+    BuiltMessage,
+    Option<(String, u32)>,
+);
 
 /// Manages all open compose windows and the shared autocomplete address book.
 pub struct ComposeManager {
@@ -302,6 +330,56 @@ impl ComposeManager {
             references: None,
             existing_draft: None,
         })
+    }
+
+    /// Open a pre-filled Compose window from a parsed `mailto:` URI.
+    pub fn open_mailto(
+        &mut self,
+        from_email: &str,
+        mailto: &MailtoUri,
+    ) -> (window::Id, app::Task<ComposeMessage>, String) {
+        self.spawn_window(ComposeWindowInit {
+            kind: ComposeKind::New,
+            from: from_email.to_owned(),
+            to: mailto.to.clone(),
+            cc: mailto.cc.clone(),
+            bcc: mailto.bcc.clone(),
+            subject: mailto.subject.clone(),
+            body_text: mailto.body.clone(),
+            quote: None,
+            in_reply_to: None,
+            references: None,
+            existing_draft: None,
+        })
+    }
+
+    /// Whether any open compose window has unsaved edits eligible for auto-draft saving.
+    pub fn has_dirty_windows(&self) -> bool {
+        self.windows
+            .values()
+            .any(|w| w.dirty && !w.saving_draft && !w.sending && w.has_meaningful_content())
+    }
+
+    /// Candidate draft ready for background auto-save.
+    pub fn auto_save_candidates(&mut self, min_idle: Duration) -> Vec<AutoSaveCandidate> {
+        let mut out = Vec::new();
+        for (&id, w) in &mut self.windows {
+            if !w.dirty || w.saving_draft || w.sending || !w.has_meaningful_content() {
+                continue;
+            }
+            if w.last_edited_at.is_some_and(|t| t.elapsed() < min_idle) {
+                continue;
+            }
+            if let Ok(payload) = w.build_outgoing_payload(true)
+                && let Ok(built) = build_mime_message(&payload)
+            {
+                w.saving_draft = true;
+                w.error = None;
+                w.status = Some("Auto-saving draft…".to_owned());
+                out.push((id, payload, built, w.existing_draft.clone()));
+            }
+        }
+        out
     }
 
     /// Open a Reply compose window above a collapsed quote of `original`.
@@ -463,6 +541,8 @@ impl ComposeManager {
             status: None,
             error: None,
             dirty: false,
+            last_edited_at: None,
+            close_after_save: false,
             existing_draft: init.existing_draft,
         };
         let title = state.window_title();
@@ -493,7 +573,8 @@ impl ComposeManager {
         &mut self,
         id: window::Id,
         result: Result<Option<(String, u32)>, String>,
-    ) {
+    ) -> app::Task<ComposeMessage> {
+        let mut should_close = false;
         if let Some(w) = self.windows.get_mut(&id) {
             w.saving_draft = false;
             match result {
@@ -504,11 +585,21 @@ impl ComposeManager {
                     w.dirty = false;
                     w.error = None;
                     w.status = Some("Saved to Drafts".to_owned());
+                    if w.close_after_save {
+                        should_close = true;
+                    }
                 }
                 Err(err) => {
+                    w.close_after_save = false;
                     w.error = Some(err);
                 }
             }
+        }
+        if should_close {
+            self.windows.remove(&id);
+            window::close(id)
+        } else {
+            Task::none()
         }
     }
 
@@ -516,7 +607,29 @@ impl ComposeManager {
     pub fn update(&mut self, msg: ComposeMessage) -> ComposeAction {
         match msg {
             ComposeMessage::WindowOpened(_id) => ComposeAction::None,
-            ComposeMessage::CloseRequested(id) => ComposeAction::Task(window::close(id)),
+            ComposeMessage::CloseRequested(id) => {
+                if let Some(w) = self.windows.get_mut(&id)
+                    && w.dirty
+                    && !w.saving_draft
+                    && !w.sending
+                    && w.error.is_none()
+                    && w.has_meaningful_content()
+                    && let Ok(payload) = w.build_outgoing_payload(true)
+                    && let Ok(built) = build_mime_message(&payload)
+                {
+                    w.saving_draft = true;
+                    w.close_after_save = true;
+                    w.status = Some("Saving draft…".to_owned());
+                    let existing_draft = w.existing_draft.clone();
+                    return ComposeAction::SaveDraft {
+                        window_id: id,
+                        payload,
+                        built,
+                        existing_draft,
+                    };
+                }
+                ComposeAction::Task(window::close(id))
+            }
             ComposeMessage::WindowClosed(id) => {
                 self.windows.remove(&id);
                 ComposeAction::Closed(id)
@@ -527,7 +640,7 @@ impl ComposeManager {
             ComposeMessage::FromChanged(id, val) => {
                 if let Some(w) = self.windows.get_mut(&id) {
                     w.from = val;
-                    w.dirty = true;
+                    w.mark_dirty();
                 }
                 ComposeAction::None
             }
@@ -537,7 +650,7 @@ impl ComposeManager {
                     w.to = val;
                     w.active_recipient_field = (!suggestions.is_empty()).then_some(RecipientField::To);
                     w.suggestions = suggestions;
-                    w.dirty = true;
+                    w.mark_dirty();
                     w.error = None;
                 }
                 ComposeAction::None
@@ -548,7 +661,7 @@ impl ComposeManager {
                     w.cc = val;
                     w.active_recipient_field = (!suggestions.is_empty()).then_some(RecipientField::Cc);
                     w.suggestions = suggestions;
-                    w.dirty = true;
+                    w.mark_dirty();
                     w.error = None;
                 }
                 ComposeAction::None
@@ -559,7 +672,7 @@ impl ComposeManager {
                     w.bcc = val;
                     w.active_recipient_field = (!suggestions.is_empty()).then_some(RecipientField::Bcc);
                     w.suggestions = suggestions;
-                    w.dirty = true;
+                    w.mark_dirty();
                     w.error = None;
                 }
                 ComposeAction::None
@@ -589,21 +702,21 @@ impl ComposeManager {
                     }
                     w.active_recipient_field = None;
                     w.suggestions.clear();
-                    w.dirty = true;
+                    w.mark_dirty();
                 }
                 ComposeAction::None
             }
             ComposeMessage::SubjectChanged(id, val) => {
                 if let Some(w) = self.windows.get_mut(&id) {
                     w.subject = val;
-                    w.dirty = true;
+                    w.mark_dirty();
                 }
                 ComposeAction::None
             }
             ComposeMessage::BodyAction(id, action) => {
                 if let Some(w) = self.windows.get_mut(&id) {
                     if action.is_edit() {
-                        w.dirty = true;
+                        w.mark_dirty();
                         w.status = None;
                     }
                     w.body.perform(action);
@@ -613,7 +726,7 @@ impl ComposeManager {
             ComposeMessage::ApplyFormat(id, fmt) => {
                 if let Some(w) = self.windows.get_mut(&id) {
                     apply_format_to_editor(&mut w.body, fmt);
-                    w.dirty = true;
+                    w.mark_dirty();
                 }
                 ComposeAction::None
             }
@@ -676,7 +789,7 @@ impl ComposeManager {
                     && index < w.attachments.len()
                 {
                     w.attachments.remove(index);
-                    w.dirty = true;
+                    w.mark_dirty();
                 }
                 ComposeAction::None
             }
@@ -1064,7 +1177,7 @@ fn attach_paths(w: &mut ComposeWindowState, paths: Vec<PathBuf>) {
         match AttachmentItem::from_path(path) {
             Ok(item) => {
                 w.attachments.push(item);
-                w.dirty = true;
+                w.mark_dirty();
             }
             Err(err) => errors.push(err),
         }
