@@ -1600,8 +1600,6 @@ struct RichMailText<'a, Message> {
     size: Pixels,
     line_height: LineHeight,
     width: Length,
-    hovered_link: Option<usize>,
-    cursor_position: Point,
     on_link_click: Option<Box<dyn Fn(String) -> Message + 'a>>,
     on_link_hover: Option<Box<dyn Fn(Option<String>) -> Message + 'a>>,
 }
@@ -1613,8 +1611,6 @@ impl<'a, Message> RichMailText<'a, Message> {
             size: Pixels(14.0),
             line_height: LineHeight::Relative(1.45),
             width: Length::Fill,
-            hovered_link: None,
-            cursor_position: Point::ORIGIN,
             on_link_click: None,
             on_link_hover: None,
         }
@@ -1643,6 +1639,8 @@ impl<'a, Message> RichMailText<'a, Message> {
 
 struct RichState<P: adv_text::Paragraph> {
     spans: Vec<Span<'static, String, P::Font>>,
+    hovered_link: Option<usize>,
+    cursor_position: Point,
     span_pressed: Option<usize>,
     paragraph: P,
     last_reported_hover: Option<String>,
@@ -1659,6 +1657,8 @@ where
     fn state(&self) -> tree::State {
         tree::State::new(RichState {
             spans: Vec::new(),
+            hovered_link: None,
+            cursor_position: Point::ORIGIN,
             span_pressed: None,
             paragraph: <cosmic::Renderer as adv_text::Renderer>::Paragraph::default(),
             last_reported_hover: None,
@@ -1700,6 +1700,8 @@ where
                 state.paragraph =
                     <cosmic::Renderer as adv_text::Renderer>::Paragraph::with_spans(make_text());
                 state.spans = self.spans.iter().cloned().map(Span::to_static).collect();
+                state.hovered_link = None;
+                state.span_pressed = None;
             } else {
                 match state.paragraph.compare(adv_text::Text {
                     content: (),
@@ -1747,7 +1749,7 @@ where
         let text_style = <Theme as iced_text::Catalog>::style(theme, &<Theme as iced_text::Catalog>::default());
 
         for (index, span) in self.spans.iter().enumerate() {
-            let is_hovered = Some(index) == self.hovered_link;
+            let is_hovered = state.hovered_link == Some(index) && span.link.is_some();
             if span.highlight.is_some() || span.underline || span.strikethrough || is_hovered {
                 let translation = layout.position() - Point::ORIGIN;
                 let regions = state.paragraph.span_bounds(index);
@@ -1843,21 +1845,21 @@ where
             .state
             .downcast_mut::<RichState<<cosmic::Renderer as adv_text::Renderer>::Paragraph>>();
 
-        let prev_hovered = self.hovered_link;
+        let prev_hovered = state.hovered_link;
         if let Some(pos) = cursor.position_in(layout.bounds()) {
-            self.cursor_position = cursor.position().unwrap_or(Point::ORIGIN);
-            self.hovered_link = state.paragraph.hit_span(pos).and_then(|idx| {
+            state.cursor_position = cursor.position().unwrap_or(Point::ORIGIN);
+            state.hovered_link = state.paragraph.hit_span(pos).and_then(|idx| {
                 self.spans.get(idx)?.link.as_ref().map(|_| idx)
             });
         } else {
-            self.hovered_link = None;
+            state.hovered_link = None;
         }
 
-        if prev_hovered != self.hovered_link {
+        if prev_hovered != state.hovered_link {
             shell.request_redraw();
         }
 
-        let current_hover_label = self.hovered_link.and_then(|idx| {
+        let current_hover_label = state.hovered_link.and_then(|idx| {
             let span = self.spans.get(idx)?;
             let url = span.link.as_deref()?;
             Some(format_hover_url(url, Some(span.text.as_ref())))
@@ -1872,14 +1874,14 @@ where
 
         match event {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
-                if self.hovered_link.is_some() {
-                    state.span_pressed = self.hovered_link;
+                if state.hovered_link.is_some() {
+                    state.span_pressed = state.hovered_link;
                     shell.capture_event();
                 }
             }
             Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
                 if let Some(pressed) = state.span_pressed
-                    && Some(pressed) == self.hovered_link
+                    && Some(pressed) == state.hovered_link
                     && let Some(url) = self.spans.get(pressed).and_then(|s| s.link.clone())
                     && let Some(on_click) = &self.on_link_click
                 {
@@ -1893,13 +1895,20 @@ where
 
     fn mouse_interaction(
         &self,
-        _tree: &Tree,
+        tree: &Tree,
         _layout: Layout<'_>,
         _cursor: mouse::Cursor,
         _viewport: &Rectangle,
         _renderer: &cosmic::Renderer,
     ) -> mouse::Interaction {
-        if self.hovered_link.is_some() {
+        let state = tree
+            .state
+            .downcast_ref::<RichState<<cosmic::Renderer as adv_text::Renderer>::Paragraph>>();
+        if state
+            .hovered_link
+            .and_then(|idx| self.spans.get(idx)?.link.as_ref())
+            .is_some()
+        {
             mouse::Interaction::Pointer
         } else {
             mouse::Interaction::None
@@ -1908,19 +1917,22 @@ where
 
     fn overlay<'b>(
         &'b mut self,
-        _tree: &'b mut Tree,
+        tree: &'b mut Tree,
         _layout: Layout<'b>,
         _renderer: &cosmic::Renderer,
         _viewport: &Rectangle,
         translation: Vector,
     ) -> Option<overlay::Element<'b, Message, Theme, cosmic::Renderer>> {
-        let idx = self.hovered_link?;
+        let state = tree
+            .state
+            .downcast_ref::<RichState<<cosmic::Renderer as adv_text::Renderer>::Paragraph>>();
+        let idx = state.hovered_link?;
         let span = self.spans.get(idx)?;
         let url = span.link.as_deref()?;
         let label = format_hover_url(url, Some(span.text.as_ref()));
         Some(overlay::Element::new(Box::new(LinkTooltipOverlay {
             label,
-            anchor: self.cursor_position + translation,
+            anchor: state.cursor_position + translation,
             paragraph: <cosmic::Renderer as adv_text::Renderer>::Paragraph::default(),
         })))
     }
@@ -2209,5 +2221,38 @@ mod tests {
             content.remote_image_urls,
             vec!["https://cdn.example.com/banner.png".to_owned()]
         );
+    }
+
+    #[test]
+    fn rich_mail_text_preserves_hover_state_in_tree_across_rebuilds() {
+        let make_widget = || -> Element<'static, ()> {
+            RichMailText::new(vec![
+                Span::new("See "),
+                Span::new("Click here").link("https://example.com/actual".to_owned()),
+            ])
+            .into()
+        };
+
+        let first = make_widget();
+        let mut tree = Tree::new(&first);
+        {
+            let state = tree
+                .state
+                .downcast_mut::<RichState<<cosmic::Renderer as adv_text::Renderer>::Paragraph>>();
+            assert_eq!(state.hovered_link, None);
+            assert_eq!(state.cursor_position, Point::ORIGIN);
+            state.hovered_link = Some(1);
+            state.cursor_position = Point::new(42.0, 24.0);
+        }
+
+        // Simulate `Mail::view()` rebuilding the widget tree on `HoverLink`.
+        let rebuilt = make_widget();
+        tree.diff(rebuilt);
+
+        let state = tree
+            .state
+            .downcast_ref::<RichState<<cosmic::Renderer as adv_text::Renderer>::Paragraph>>();
+        assert_eq!(state.hovered_link, Some(1));
+        assert_eq!(state.cursor_position, Point::new(42.0, 24.0));
     }
 }
