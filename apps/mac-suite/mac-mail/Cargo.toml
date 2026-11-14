@@ -7,9 +7,12 @@ description = "Three-pane mail client"
 
 [dependencies]
 imap = { version = "3.0.0-alpha.15", default-features = false, features = ["rustls-tls"] }
+jiff.workspace = true
 lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "rustls-tls", "builder", "hostname"] }
 libcosmic.workspace = true
 mail-parser = "1.0.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true

@@ -3027,9 +3027,12 @@ name = "mac-mail"
 version = "0.1.0"
 dependencies = [
  "imap",
+ "jiff",
  "lettre",
  "libcosmic",
  "mail-parser",
+ "serde",
+ "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber",

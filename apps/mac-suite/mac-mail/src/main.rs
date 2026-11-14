@@ -7,6 +7,12 @@
 //! keyring; server settings in `~/.config/mac-mail/account.conf`.
 
 mod account;
+#[allow(dead_code)]
+mod backend;
+#[allow(dead_code)]
+mod cache;
+#[allow(dead_code)]
+mod imap_pool;
 mod mail_io;
 
 use account::Account;
