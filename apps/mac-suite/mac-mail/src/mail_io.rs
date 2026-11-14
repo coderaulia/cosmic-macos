@@ -9,7 +9,10 @@ use lettre::{
 };
 use mail_parser::MessageParser;
 
-use crate::account::Account;
+use crate::{
+    account::Account,
+    compose::{self, BuiltMessage, EmailAddress, OriginalMessage},
+};
 
 type Result<T> = std::result::Result<T, String>;
 
@@ -57,21 +60,65 @@ pub fn folders(account: &Account, password: &str) -> Result<Vec<String>> {
 }
 
 /// The newest messages of a folder, newest first.
+#[allow(dead_code)]
 pub fn headers(account: &Account, password: &str, folder: &str) -> Result<Vec<Summary>> {
+    headers_with_contacts(account, password, folder).map(|(summaries, _)| summaries)
+}
+
+/// The newest messages of a folder, newest first, along with contacts extracted
+/// from their headers for compose autocomplete.
+pub fn headers_with_contacts(
+    account: &Account,
+    password: &str,
+    folder: &str,
+) -> Result<(Vec<Summary>, Vec<EmailAddress>)> {
     let mut session = connect(account, password)?;
     let mailbox = session.select(folder).map_err(|err| err.to_string())?;
     if mailbox.exists == 0 {
         let _ = session.logout();
-        return Ok(Vec::new());
+        return Ok((Vec::new(), Vec::new()));
     }
     let first = mailbox.exists.saturating_sub(PAGE - 1).max(1);
     let fetched = session
         .fetch(format!("{first}:{}", mailbox.exists), "(UID FLAGS RFC822.HEADER)")
         .map_err(|err| err.to_string())?;
     let mut summaries = summarize(&fetched);
+    let contacts = extract_contacts(&fetched);
     let _ = session.logout();
-    summaries.sort_by(|a, b| b.uid.cmp(&a.uid));
-    Ok(summaries)
+    summaries.sort_by_key(|a| std::cmp::Reverse(a.uid));
+    Ok((summaries, contacts))
+}
+
+fn extract_contacts(fetched: &imap::types::Fetches) -> Vec<EmailAddress> {
+    let parser = MessageParser::new();
+    let mut contacts = Vec::new();
+    for fetch in fetched.iter() {
+        let Some(header) = fetch.header() else {
+            continue;
+        };
+        let Some(message) = parser.parse(header) else {
+            continue;
+        };
+        for addr_list in [
+            message.from(),
+            message.reply_to(),
+            message.to(),
+            message.cc(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            for mailbox in addr_list.mailboxes() {
+                if let Some(email) = mailbox.address().map(str::trim).filter(|e| !e.is_empty()) {
+                    contacts.push(EmailAddress::new(
+                        mailbox.name().map(str::to_owned),
+                        email,
+                    ));
+                }
+            }
+        }
+    }
+    contacts
 }
 
 /// Turn fetched headers into list entries.
@@ -139,7 +186,7 @@ pub fn search(account: &Account, password: &str, folder: &str, query: &str) -> R
         .map_err(|err| err.to_string())?;
     let mut summaries = summarize(&fetched);
     let _ = session.logout();
-    summaries.sort_by(|a, b| b.uid.cmp(&a.uid));
+    summaries.sort_by_key(|a| std::cmp::Reverse(a.uid));
     Ok(summaries)
 }
 
@@ -226,36 +273,136 @@ pub fn save_attachment(
 }
 
 /// The text of one message; also marks it read.
+#[allow(dead_code)]
 pub fn body(account: &Account, password: &str, folder: &str, uid: u32) -> Result<Opened> {
+    body_with_context(account, password, folder, uid).map(|(opened, _)| opened)
+}
+
+/// The text of one message plus full reply/forward context; also marks it read.
+pub fn body_with_context(
+    account: &Account,
+    password: &str,
+    folder: &str,
+    uid: u32,
+) -> Result<(Opened, Option<OriginalMessage>)> {
     let mut session = connect(account, password)?;
     session.select(folder).map_err(|err| err.to_string())?;
     let fetched = session
         .uid_fetch(uid.to_string(), "BODY.PEEK[]")
         .map_err(|err| err.to_string())?;
-    let opened = fetched
+    let parsed = fetched
         .iter()
         .next()
         .and_then(|fetch| fetch.body())
-        .and_then(|raw| MessageParser::new().parse(raw))
-        .map(|message| Opened {
-            text: message
-                .body_text(0)
-                .map(|text| text.into_owned())
-                .unwrap_or_else(|| "(this message has no text)".to_owned()),
-            attachments: message
-                .attachments()
-                .map(|part| part.attachment_name().unwrap_or("attachment").to_owned())
-                .collect(),
-        })
-        .unwrap_or_else(|| Opened {
-            text: "(this message has no text)".to_owned(),
-            attachments: Vec::new(),
-        });
+        .and_then(|raw| MessageParser::new().parse(raw));
+    let (opened, original) = match parsed {
+        Some(message) => {
+            let opened = Opened {
+                text: message
+                    .body_text(0)
+                    .map(|text| text.into_owned())
+                    .unwrap_or_else(|| "(this message has no text)".to_owned()),
+                attachments: message
+                    .attachments()
+                    .map(|part| part.attachment_name().unwrap_or("attachment").to_owned())
+                    .collect(),
+            };
+            let orig = compose::original_from_parsed(uid, &message, "(no subject)", "");
+            (opened, Some(orig))
+        }
+        None => (
+            Opened {
+                text: "(this message has no text)".to_owned(),
+                attachments: Vec::new(),
+            },
+            None,
+        ),
+    };
     let _ = session.uid_store(uid.to_string(), "+FLAGS (\\Seen)");
     let _ = session.logout();
-    Ok(opened)
+    Ok((opened, original))
 }
 
+/// Send a pre-built MIME message over SMTP and copy it to `sent_folder` via
+/// IMAP `APPEND` when the server does not auto-save sent mail.
+pub fn send_built(
+    account: &Account,
+    password: &str,
+    built: &BuiltMessage,
+    sent_folder: Option<&str>,
+) -> Result<()> {
+    let message = built
+        .message
+        .as_ref()
+        .ok_or_else(|| "Add at least one recipient before sending.".to_owned())?;
+    let builder = if account.smtp_port == 465 {
+        SmtpTransport::relay(&account.smtp_host)
+    } else {
+        SmtpTransport::starttls_relay(&account.smtp_host)
+    }
+    .map_err(|err| err.to_string())?;
+    builder
+        .port(account.smtp_port)
+        .credentials(Credentials::new(account.email.clone(), password.to_owned()))
+        .build()
+        .send(message)
+        .map_err(|err| format!("Could not send: {err}"))?;
+
+    if let Some(sent_mailbox) = sent_folder
+        && !compose::server_auto_saves_sent(&account.imap_host)
+    {
+        let mut session = connect(account, password)?;
+        session
+            .append(sent_mailbox, &built.raw_rfc822)
+            .flag(Flag::Seen)
+            .finish()
+            .map_err(|err| format!("Sent, but could not copy to {sent_mailbox}: {err}"))?;
+        let _ = session.logout();
+    }
+    Ok(())
+}
+
+/// Save a draft RFC 5322 message to the Drafts folder, optionally deleting a
+/// previous draft UID if updating an existing draft.
+pub fn save_draft(
+    account: &Account,
+    password: &str,
+    drafts_folder: &str,
+    raw_rfc822: &[u8],
+    message_id: &str,
+    replace_draft: Option<(&str, u32)>,
+) -> Result<Option<(String, u32)>> {
+    let mut session = connect(account, password)?;
+
+    if let Some((old_folder, old_uid)) = replace_draft
+        && session.select(old_folder).is_ok()
+    {
+        let _ = session.uid_store(old_uid.to_string(), "+FLAGS (\\Deleted)");
+        let _ = session.expunge();
+    }
+
+    session
+        .append(drafts_folder, raw_rfc822)
+        .flags([Flag::Seen, Flag::Draft])
+        .finish()
+        .map_err(|err| format!("Could not save draft: {err}"))?;
+
+    // Look up the newly appended draft UID so subsequent saves replace it cleanly.
+    let new_uid = if session.select(drafts_folder).is_ok() {
+        let escaped_id = message_id.replace(['"', '\\'], "");
+        session
+            .uid_search(format!("HEADER Message-ID \"{escaped_id}\""))
+            .ok()
+            .and_then(|uids| uids.into_iter().max())
+    } else {
+        None
+    };
+
+    let _ = session.logout();
+    Ok(new_uid.map(|uid| (drafts_folder.to_owned(), uid)))
+}
+
+#[allow(dead_code)]
 pub fn send(
     account: &Account,
     password: &str,

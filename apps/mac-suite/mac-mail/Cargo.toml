@@ -8,7 +8,7 @@ description = "Three-pane mail client"
 [dependencies]
 imap = { version = "3.0.0-alpha.15", default-features = false, features = ["rustls-tls"] }
 lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "rustls-tls", "builder", "hostname"] }
-libcosmic.workspace = true
+libcosmic = { workspace = true, features = ["rfd"] }
 mail-parser = "1.0.1"
 tokio.workspace = true
 tracing.workspace = true
