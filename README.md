@@ -26,8 +26,8 @@ Components (`./install.sh --list`):
 | `files` | Files with an inline tree, Finder-style columns with preview, Quick Look on Space |
 | `notepad` | Notepad as a searchable Notes app (notes in `~/Documents/Notes`, saved automatically) |
 | `viewer` | Image viewer with a Preview-style toolbar |
-| `calendar` | Calendar (day/week/month) with local events and CalDAV sync |
-| `mail` | Mail for any IMAP/SMTP account; password kept in the keyring |
+| `calendar` | Calendar (day/week/month) with multiple calendars, recurring events, `.ics` import/export, search, reminders and CalDAV sync |
+| `mail` | Mail with native HTML rendering, multi-window compose, conversation threading, multiple accounts, OAuth2/password sign-in (secrets in the keyring), local cache and IMAP IDLE |
 | `theme` | macOS blue accent and rounder corners, stored in the preset |
 | `comp` | Compositor with the genie minimize/restore animation (log out and in afterwards) |
 
@@ -91,9 +91,16 @@ reported by `cosmic-preset apply`.
 
 ## Roadmap
 
-The next piece of work is a rework of Mail: HTML email, a compose window for
-replies, a cleaner message list and a persistent server connection. See
-[docs/mail-rework-plan.md](docs/mail-rework-plan.md).
+The Mail and Calendar reworks are complete: Mail now includes sanitized native
+HTML rendering, multi-window compose, conversation threading, multiple accounts
+with a unified inbox, OAuth2 PKCE sign-in, `mailto:` handling, and a persistent
+IMAP connection with local cache and IDLE alerts (see
+[docs/mail-rework-plan.md](docs/mail-rework-plan.md)), while Calendar includes
+rich events (`LOCATION`, `DESCRIPTION`, `VALARM`), `RRULE` recurrence, multiple
+calendars, `.ics` import/export, an event inspector, search, and reminder
+notifications.
+
+Upcoming work covers a native clipboard manager and a macOS-style panel toolbar.
 
 ## Troubleshooting
 
@@ -104,14 +111,18 @@ replies, a cleaner message list and a persistent server connection. See
 - **The clock applet is missing after login.** The panel can start before the
   notification daemon is ready. A login check restarts the panel once; you can
   also run `cosmic-preset reload`.
-- **Mail says "Invalid credentials" for Gmail or Google Workspace.** Use an app
-  password (2-Step Verification must be on and the admin must allow it), not
-  your normal password.
+- **Mail says "Invalid credentials" for Gmail or Google Workspace.** Use browser
+  OAuth2 sign-in (with an OAuth client ID) or an app password (2-Step
+  Verification must be on and the admin must allow it), not your normal
+  password.
 
 ## Limits
 
-- Mail has no browser sign-in for Gmail/Outlook; use an app password. HTML mail
-  is shown as plain text until the Mail rework lands.
+- Browser OAuth2 sign-in for Gmail and Outlook/Microsoft 365 requires providing
+  your own OAuth client ID in the sign-in screen (or via environment variable);
+  otherwise use an app password.
+- Heavy marketing HTML emails render simplified in Mail's native view; use
+  "Open in browser" for complex layouts.
 - The genie animation covers floating and tiled windows, not fullscreen ones.
 - After a `cosmic-comp` package update, run `./install.sh comp` again.
 - Calendar sync needs a server that accepts a password login (Nextcloud,
