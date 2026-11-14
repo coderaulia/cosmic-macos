@@ -3027,7 +3027,6 @@ name = "mac-mail"
 version = "0.1.0"
 dependencies = [
  "imap",
- "imap-proto",
  "jiff",
  "lettre",
  "libcosmic",

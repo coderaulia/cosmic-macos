@@ -11,24 +11,22 @@ mod account;
 mod backend;
 #[allow(dead_code)]
 mod cache;
+mod compose;
 #[allow(dead_code)]
 mod imap_pool;
 mod ui_helpers;
 
-use std::collections::HashSet;
-
 use account::Account;
 use backend::{AttachmentInfo, DEFAULT_PAGE_SIZE, FolderPage, MailBackend, OpenedMessage};
 use cache::{FolderInfo, FolderKind, MessageSummary};
+use compose::{ComposeAction, ComposeManager, ComposeMessage, EmailAddress, OriginalMessage};
 use cosmic::{
-    Apply, Element, Task, app,
+    ApplicationExt, Apply, Element, Task, app,
     iced::{
-        Alignment, Background, Border, Color, Event, Length, Subscription, event, keyboard,
+        Alignment, Background, Border, Color, Event, Length, Subscription, event, keyboard, window,
     },
     theme,
-    widget::{
-        self, button, column, container, divider, row, scrollable, text, text_editor,
-    },
+    widget::{self, button, column, container, divider, row, scrollable, text},
 };
 use imap_pool::{IdleWatcher, NewMailNotification};
 
@@ -49,16 +47,6 @@ struct Setup {
     password: String,
     imap_host: String,
     smtp_host: String,
-}
-
-struct Compose {
-    to: String,
-    subject: String,
-    body: text_editor::Content<cosmic::Renderer>,
-    /// Files to send along, by path.
-    attachments: Vec<String>,
-    /// Text in the "add attachment" box.
-    attach_input: String,
 }
 
 #[derive(Debug, Clone)]
@@ -94,18 +82,14 @@ enum Msg {
     Refresh,
     NewMail(NewMailNotification),
     Compose,
-    ComposeTo(String),
-    ComposeSubject(String),
-    ComposeBody(text_editor::Action),
-    Send,
-    Sent(Result<(), String>),
-    CancelCompose,
     Reply,
     ReplyAll,
     Forward,
-    AttachInput(String),
-    AddAttachment,
-    RemoveAttachment(usize),
+    EditDraft,
+    ComposeEvent(ComposeMessage),
+    ComposeSent(window::Id, Result<(), String>),
+    ComposeDraftSaved(window::Id, Result<Option<(String, u32)>, String>),
+    TaskPanicked(String),
 }
 
 struct Mail {
@@ -130,7 +114,7 @@ struct Mail {
     searching: bool,
     status: Option<String>,
     busy: bool,
-    compose: Option<Compose>,
+    compose: ComposeManager,
 }
 
 /// Run blocking network work on a worker thread and turn its result into a message.
@@ -148,7 +132,7 @@ fn run<T: Send + 'static>(
 
 /// A worker that panicked is reported like any other failure.
 fn done_error(message: String) -> Msg {
-    Msg::Sent(Err(message))
+    Msg::TaskPanicked(message)
 }
 
 /// Empty space that takes up the remaining width.
@@ -292,8 +276,100 @@ impl Mail {
             }
     }
 
+    fn current_folder_is_drafts(&self) -> bool {
+        self.folders
+            .iter()
+            .find(|f| f.raw_name == self.folder)
+            .is_some_and(|f| f.kind == FolderKind::Drafts)
+            || self.folder.to_ascii_lowercase().contains("draft")
+    }
+
     fn has_archive_folder(&self) -> bool {
         self.folders.iter().any(|f| f.kind == FolderKind::Archive)
+    }
+
+    fn sync_compose_contacts(&mut self) {
+        if let Some(backend) = self.backend.as_ref() {
+            let pairs = backend
+                .known_contacts()
+                .into_iter()
+                .map(|c| (c.name, c.email));
+            self.compose.merge_contact_pairs(pairs);
+        }
+    }
+
+    fn current_original_message(&self) -> Option<OriginalMessage> {
+        let uid = self.selected?;
+        if let Some(opened) = self.opened.as_ref()
+            && opened.uid == uid
+        {
+            if let Some(parsed) = mail_parser::MessageParser::default().parse(&opened.raw) {
+                return Some(compose::original_from_parsed(
+                    opened.uid,
+                    &parsed,
+                    &opened.subject,
+                    &opened.date,
+                ));
+            }
+            let parse_addrs = |items: &[String]| -> Vec<EmailAddress> {
+                items
+                    .iter()
+                    .filter_map(|raw| {
+                        let addr = extract_email_addr(raw);
+                        if addr.is_empty() {
+                            return None;
+                        }
+                        let name = raw
+                            .find('<')
+                            .map(|i| raw[..i].trim().trim_matches('"').to_owned())
+                            .filter(|s| !s.is_empty());
+                        Some(EmailAddress::new(name, addr))
+                    })
+                    .collect()
+            };
+            return Some(OriginalMessage {
+                uid: opened.uid,
+                message_id: opened.message_id.clone(),
+                in_reply_to: None,
+                references: opened.references.clone(),
+                from: vec![EmailAddress::new(
+                    (!opened.from.is_empty()).then(|| opened.from.clone()),
+                    if opened.from_address.is_empty() {
+                        extract_email_addr(&opened.from)
+                    } else {
+                        opened.from_address.clone()
+                    },
+                )],
+                reply_to: opened
+                    .reply_to
+                    .as_ref()
+                    .map(std::slice::from_ref)
+                    .map(parse_addrs)
+                    .unwrap_or_default(),
+                to: parse_addrs(&opened.to),
+                cc: parse_addrs(&opened.cc),
+                subject: opened.subject.clone(),
+                date: opened.date.clone(),
+                body_text: opened.text.clone(),
+            });
+        }
+        let summary = self.messages.iter().find(|m| m.uid == uid)?;
+        Some(OriginalMessage {
+            uid: summary.uid,
+            message_id: None,
+            in_reply_to: None,
+            references: Vec::new(),
+            from: vec![EmailAddress::new(
+                (!summary.from.is_empty()).then(|| summary.from.clone()),
+                summary.from_address.clone(),
+            )],
+            reply_to: Vec::new(),
+            to: Vec::new(),
+            cc: Vec::new(),
+            subject: summary.subject.clone(),
+            date: summary.date.clone(),
+            body_text: summary.preview.clone(),
+        })
     }
 
     fn adjust_folder_unread(&mut self, folder: &str, delta: isize) {
@@ -307,7 +383,6 @@ impl Mail {
     }
 
     fn select_message_by_uid(&mut self, uid: u32) -> app::Task<Msg> {
-        self.compose = None;
         self.selected = Some(uid);
         self.opened = None;
         self.body_error = None;
@@ -538,29 +613,6 @@ impl Mail {
     }
 
     fn reading_pane(&self) -> Element<'_, Msg> {
-        if let Some(compose) = self.compose.as_ref() {
-            return column![
-                text::title3("New Message"),
-                widget::text_input("To", compose.to.as_str()).on_input(Msg::ComposeTo),
-                widget::text_input("Subject", compose.subject.as_str())
-                    .on_input(Msg::ComposeSubject),
-                text_editor::text_editor(&compose.body)
-                    .on_action(Msg::ComposeBody)
-                    .height(Length::Fill),
-                self.attachment_bar(compose),
-                row![
-                    button::suggested("Send").on_press(Msg::Send),
-                    button::text("Cancel").on_press(Msg::CancelCompose),
-                ]
-                .spacing(8),
-            ]
-            .spacing(12)
-            .padding(20)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into();
-        }
-
         let Some(message) = self
             .selected
             .and_then(|uid| self.messages.iter().find(|m| m.uid == uid))
@@ -582,6 +634,9 @@ impl Mail {
         let in_trash = self.current_folder_is_trash();
 
         let mut actions = row![space_fill()].spacing(4).align_y(Alignment::Center);
+        if self.current_folder_is_drafts() {
+            actions = actions.push(button::standard("Edit Draft").on_press(Msg::EditDraft));
+        }
         actions = actions
             .push(
                 button::icon(widget::icon::from_name("mail-reply-sender-symbolic"))
@@ -769,33 +824,6 @@ impl Mail {
             .into()
     }
 
-    /// The files attached to the message being written, and a box to add more.
-    fn attachment_bar<'a>(&self, compose: &'a Compose) -> Element<'a, Msg> {
-        let mut files = row![].spacing(8).align_y(Alignment::Center);
-        for (index, path) in compose.attachments.iter().enumerate() {
-            let name = std::path::Path::new(path)
-                .file_name()
-                .map_or_else(|| path.clone(), |n| n.to_string_lossy().into_owned());
-            files = files.push(
-                button::standard(format!("{name} ✕")).on_press(Msg::RemoveAttachment(index)),
-            );
-        }
-        column![
-            files,
-            row![
-                widget::text_input("Attach a file: type its path, like ~/Documents/report.pdf", compose.attach_input.as_str())
-                    .on_input(Msg::AttachInput)
-                    .on_submit(|_| Msg::AddAttachment)
-                    .width(Length::Fill),
-                button::standard("Attach").on_press(Msg::AddAttachment),
-            ]
-            .spacing(8)
-            .align_y(Alignment::Center),
-        ]
-        .spacing(8)
-        .into()
-    }
-
     fn setup_view(&self) -> Element<'_, Msg> {
         let form = column![
             text::title2("Add a mail account"),
@@ -854,7 +882,7 @@ impl cosmic::Application for Mail {
             searching: false,
             status: None,
             busy: false,
-            compose: None,
+            compose: ComposeManager::new(),
         };
 
         // A saved account with a stored password signs in by itself and shows cached mail immediately.
@@ -880,12 +908,21 @@ impl cosmic::Application for Mail {
                 mail.account = Some(account);
                 mail.password = password;
                 mail.backend = Some(backend.clone());
+                mail.sync_compose_contacts();
                 mail.busy = true;
                 run(move || backend.sync_folders(), Msg::Folders)
             }
             None => Task::none(),
         };
         (mail, task)
+    }
+
+    fn on_close_requested(&self, id: window::Id) -> Option<Msg> {
+        if self.compose.has_window(id) {
+            Some(Msg::ComposeEvent(ComposeMessage::WindowClosed(id)))
+        } else {
+            None
+        }
     }
 
     fn subscription(&self) -> Subscription<Msg> {
@@ -905,7 +942,35 @@ impl cosmic::Application for Mail {
             ));
         }
 
-        if self.account.is_some() && self.compose.is_none() {
+        subs.push(event::listen_with(|ev, _status, id| {
+            let Event::Window(win_event) = ev else {
+                return None;
+            };
+            match win_event {
+                window::Event::CloseRequested => {
+                    Some(Msg::ComposeEvent(ComposeMessage::CloseRequested(id)))
+                }
+                window::Event::Closed => {
+                    Some(Msg::ComposeEvent(ComposeMessage::WindowClosed(id)))
+                }
+                window::Event::FileHovered(_) => {
+                    Some(Msg::ComposeEvent(ComposeMessage::FilesHovered(id)))
+                }
+                window::Event::FilesHoveredLeft => {
+                    Some(Msg::ComposeEvent(ComposeMessage::FilesHoveredLeft(id)))
+                }
+                window::Event::FileDropped(paths) => {
+                    Some(Msg::ComposeEvent(ComposeMessage::FilesDropped(id, paths)))
+                }
+                _ => None,
+            }
+        }));
+
+        let main_id = self.core().main_window_id();
+        if self.account.is_some()
+            && main_id.is_some()
+            && self.core().focused_window() == main_id
+        {
             subs.push(event::listen_with(|ev, status, _id| {
                 if status != event::Status::Ignored {
                     return None;
@@ -920,7 +985,9 @@ impl cosmic::Application for Mail {
                     return None;
                 }
                 match key {
-                    keyboard::Key::Named(keyboard::key::Named::ArrowDown) => Some(Msg::SelectNext),
+                    keyboard::Key::Named(keyboard::key::Named::ArrowDown) => {
+                        Some(Msg::SelectNext)
+                    }
                     keyboard::Key::Named(keyboard::key::Named::ArrowUp) => Some(Msg::SelectPrev),
                     keyboard::Key::Named(keyboard::key::Named::Delete) => Some(Msg::Delete),
                     keyboard::Key::Character(c) if c.eq_ignore_ascii_case("r") => Some(Msg::Reply),
@@ -996,7 +1063,6 @@ impl cosmic::Application for Mail {
                 self.body_error = None;
                 self.attachments.clear();
                 self.show_recipients = false;
-                self.compose = None;
                 self.status = None;
             }
             Msg::Folders(result) => match result {
@@ -1035,7 +1101,6 @@ impl cosmic::Application for Mail {
                 self.body_error = None;
                 self.attachments.clear();
                 self.show_recipients = false;
-                self.compose = None;
                 self.searching = false;
                 return self.load_headers(&folder);
             }
@@ -1052,6 +1117,7 @@ impl cosmic::Application for Mail {
                                     self.folders = updated_folders;
                                 }
                             }
+                            self.sync_compose_contacts();
                             self.status = None;
                         }
                         Err(err) => {
@@ -1289,197 +1355,150 @@ impl cosmic::Application for Mail {
                 });
             }
             Msg::Compose => {
-                self.compose = Some(Compose {
-                    to: String::new(),
-                    subject: String::new(),
-                    body: text_editor::Content::new(),
-                    attachments: Vec::new(),
-                    attach_input: String::new(),
-                });
-            }
-            Msg::Reply | Msg::ReplyAll | Msg::Forward => {
-                let is_reply_all = matches!(message, Msg::ReplyAll);
-                let reply = matches!(message, Msg::Reply | Msg::ReplyAll);
-                let Some(original) = self
-                    .selected
-                    .and_then(|uid| self.messages.iter().find(|m| m.uid == uid))
-                else {
-                    return Task::none();
-                };
-                // The original text, quoted line by line.
-                let quoted: String = self
-                    .opened
+                let from = self
+                    .account
                     .as_ref()
-                    .map(|o| o.text.as_str())
-                    .unwrap_or_default()
-                    .lines()
-                    .map(|line| format!("> {line}\n"))
-                    .collect();
-                let intro = if reply {
-                    format!("\n\nOn {}, {} wrote:\n", original.date, original.from)
-                } else {
-                    format!(
-                        "\n\n---------- Forwarded message ----------\nFrom: {}\nDate: {}\nSubject: {}\n\n",
-                        original.from, original.date, original.subject
-                    )
-                };
-                let prefix = if reply { "Re: " } else { "Fwd: " };
-                let subject = if original.subject.to_lowercase().starts_with(&prefix.to_lowercase()) {
-                    original.subject.clone()
-                } else {
-                    format!("{prefix}{}", original.subject)
-                };
-                let to = if is_reply_all {
-                    let my_email = self
-                        .account
-                        .as_ref()
-                        .map(|a| a.email.trim().to_lowercase())
-                        .unwrap_or_default();
-                    let mut seen = HashSet::new();
-                    let mut recipients = Vec::new();
-                    let to_list = self
-                        .opened
-                        .as_ref()
-                        .filter(|o| !o.to.is_empty())
-                        .map_or(original.to.as_slice(), |o| o.to.as_slice());
-                    let cc_list = self
-                        .opened
-                        .as_ref()
-                        .filter(|o| !o.cc.is_empty())
-                        .map_or(original.cc.as_slice(), |o| o.cc.as_slice());
-                    for raw in std::iter::once(original.address.as_str())
-                        .chain(to_list.iter().map(String::as_str))
-                        .chain(cc_list.iter().map(String::as_str))
-                    {
-                        let addr = extract_email_addr(raw);
-                        let lower = addr.to_lowercase();
-                        if !addr.is_empty() && lower != my_email && seen.insert(lower) {
-                            recipients.push(addr);
-                        }
-                    }
-                    recipients.join(", ")
-                } else if reply {
-                    original.address.clone()
-                } else {
-                    String::new()
-                };
-                self.compose = Some(Compose {
-                    to,
-                    subject,
-                    body: text_editor::Content::with_text(&format!("{intro}{quoted}")),
-                    attachments: Vec::new(),
-                    attach_input: String::new(),
-                });
+                    .map(|a| a.email.clone())
+                    .unwrap_or_default();
+                let (id, task, title) = self.compose.open_new(&from);
+                let title_task = self.set_window_title(title, id);
+                return Task::batch([task.map(|a| a.map(Msg::ComposeEvent)), title_task]);
             }
-            Msg::AttachInput(value) => {
-                if let Some(compose) = self.compose.as_mut() {
-                    compose.attach_input = value;
-                }
-            }
-            Msg::AddAttachment => {
-                if let Some(compose) = self.compose.as_mut() {
-                    let path = compose.attach_input.trim().trim_matches('\'').trim_matches('"');
-                    // A leading ~ means the home folder.
-                    let path = match (path.strip_prefix("~/"), std::env::var("HOME")) {
-                        (Some(rest), Ok(home)) => format!("{home}/{rest}"),
-                        _ => path.to_owned(),
-                    };
-                    if std::path::Path::new(&path).is_file() {
-                        compose.attachments.push(path);
-                        compose.attach_input.clear();
-                        self.status = None;
-                    } else {
-                        self.status = Some(format!("No such file: {path}"));
-                    }
-                }
-            }
-            Msg::RemoveAttachment(index) => {
-                if let Some(compose) = self.compose.as_mut()
-                    && index < compose.attachments.len()
-                {
-                    compose.attachments.remove(index);
-                }
-            }
-            Msg::ComposeTo(value) => {
-                if let Some(compose) = self.compose.as_mut() {
-                    compose.to = value;
-                }
-            }
-            Msg::ComposeSubject(value) => {
-                if let Some(compose) = self.compose.as_mut() {
-                    compose.subject = value;
-                }
-            }
-            Msg::ComposeBody(action) => {
-                if let Some(compose) = self.compose.as_mut() {
-                    compose.body.perform(action);
-                }
-            }
-            Msg::CancelCompose => self.compose = None,
-            Msg::Send => {
-                let (Some(backend), Some(account), Some(compose)) = (
-                    self.backend.clone(),
-                    self.account.clone(),
-                    self.compose.as_ref(),
-                ) else {
+            Msg::Reply => {
+                let Some(original) = self.current_original_message() else {
                     return Task::none();
                 };
-                let (to, subject, body, attachments) = (
-                    compose.to.clone(),
-                    compose.subject.clone(),
-                    compose.body.text(),
-                    compose.attachments.clone(),
-                );
-                self.busy = true;
-                return run(
-                    move || {
-                        use lettre::message::{
-                            Attachment, MultiPart, SinglePart, header::ContentType,
-                        };
-                        let builder = lettre::Message::builder()
-                            .from(
-                                account
-                                    .email
-                                    .parse()
-                                    .map_err(|_| "Your address is not valid".to_owned())?,
-                            )
-                            .to(to
-                                .parse()
-                                .map_err(|_| "The recipient address is not valid".to_owned())?)
-                            .subject(subject);
-                        let msg = if attachments.is_empty() {
-                            builder.body(body)
-                        } else {
-                            let mut parts =
-                                MultiPart::mixed().singlepart(SinglePart::plain(body));
-                            for path in &attachments {
-                                let data = std::fs::read(path)
-                                    .map_err(|err| format!("Could not read {path}: {err}"))?;
-                                let name = std::path::Path::new(path).file_name().map_or_else(
-                                    || "attachment".to_owned(),
-                                    |n| n.to_string_lossy().into_owned(),
-                                );
-                                let ct = ContentType::parse("application/octet-stream")
-                                    .map_err(|err| err.to_string())?;
-                                parts = parts.singlepart(Attachment::new(name).body(data, ct));
-                            }
-                            builder.multipart(parts)
-                        }
-                        .map_err(|err| err.to_string())?;
-                        backend.send_message(&msg, None)
-                    },
-                    Msg::Sent,
-                );
+                let from = self
+                    .account
+                    .as_ref()
+                    .map(|a| a.email.clone())
+                    .unwrap_or_default();
+                let (id, task, title) = self.compose.open_reply(&from, &original);
+                let title_task = self.set_window_title(title, id);
+                return Task::batch([task.map(|a| a.map(Msg::ComposeEvent)), title_task]);
             }
-            Msg::Sent(result) => {
-                self.busy = false;
-                match result {
-                    Ok(()) => {
-                        self.compose = None;
-                        self.status = None;
+            Msg::ReplyAll => {
+                let Some(original) = self.current_original_message() else {
+                    return Task::none();
+                };
+                let from = self
+                    .account
+                    .as_ref()
+                    .map(|a| a.email.clone())
+                    .unwrap_or_default();
+                let (id, task, title) = self.compose.open_reply_all(&from, &original);
+                let title_task = self.set_window_title(title, id);
+                return Task::batch([task.map(|a| a.map(Msg::ComposeEvent)), title_task]);
+            }
+            Msg::Forward => {
+                let Some(original) = self.current_original_message() else {
+                    return Task::none();
+                };
+                let from = self
+                    .account
+                    .as_ref()
+                    .map(|a| a.email.clone())
+                    .unwrap_or_default();
+                let (id, task, title) = self.compose.open_forward(&from, &original);
+                let title_task = self.set_window_title(title, id);
+                return Task::batch([task.map(|a| a.map(Msg::ComposeEvent)), title_task]);
+            }
+            Msg::EditDraft => {
+                let Some(original) = self.current_original_message() else {
+                    return Task::none();
+                };
+                let from = self
+                    .account
+                    .as_ref()
+                    .map(|a| a.email.clone())
+                    .unwrap_or_default();
+                let folder = self.folder.clone();
+                let uid = original.uid;
+                let (id, task, title) = self.compose.open_draft(&from, folder, uid, &original);
+                let title_task = self.set_window_title(title, id);
+                return Task::batch([task.map(|a| a.map(Msg::ComposeEvent)), title_task]);
+            }
+            Msg::ComposeEvent(compose_msg) => {
+                let draft_uid = match &compose_msg {
+                    ComposeMessage::Send(id) => self.compose.existing_draft_uid(*id),
+                    _ => None,
+                };
+                match self.compose.update(compose_msg) {
+                    ComposeAction::None | ComposeAction::Closed(_) => {}
+                    ComposeAction::Task(task) => return task.map(|a| a.map(Msg::ComposeEvent)),
+                    ComposeAction::Send {
+                        window_id,
+                        payload,
+                        built,
+                    } => {
+                        let Some(backend) = self.backend.clone() else {
+                            let task = self
+                                .compose
+                                .mark_sent(window_id, Err("Not signed in.".to_owned()));
+                            return task.map(|a| a.map(Msg::ComposeEvent));
+                        };
+                        let recipients: Vec<String> = payload
+                            .to
+                            .iter()
+                            .chain(payload.cc.iter())
+                            .chain(payload.bcc.iter())
+                            .map(|a| a.address.clone())
+                            .collect();
+                        let from = payload.from;
+                        return run(
+                            move || {
+                                backend.send_raw_message(
+                                    &built.raw_rfc822,
+                                    &from,
+                                    &recipients,
+                                    draft_uid,
+                                )
+                            },
+                            move |res| Msg::ComposeSent(window_id, res),
+                        );
                     }
-                    Err(err) => self.status = Some(err),
+                    ComposeAction::SaveDraft {
+                        window_id,
+                        payload: _,
+                        built,
+                        existing_draft,
+                    } => {
+                        let Some(backend) = self.backend.clone() else {
+                            self.compose
+                                .mark_draft_saved(window_id, Err("Not signed in.".to_owned()));
+                            return Task::none();
+                        };
+                        let drafts_folder = backend
+                            .find_special_folder(FolderKind::Drafts)
+                            .map(|f| f.raw_name)
+                            .unwrap_or_else(|| "Drafts".to_owned());
+                        let old_uid = existing_draft.map(|(_, uid)| uid);
+                        return run(
+                            move || {
+                                backend
+                                    .save_draft(&built.raw_rfc822, old_uid)
+                                    .map(|opt_uid| opt_uid.map(|uid| (drafts_folder, uid)))
+                            },
+                            move |res| Msg::ComposeDraftSaved(window_id, res),
+                        );
+                    }
                 }
+            }
+            Msg::ComposeSent(window_id, result) => {
+                let is_ok = result.is_ok();
+                let task = self.compose.mark_sent(window_id, result);
+                if is_ok {
+                    self.sync_compose_contacts();
+                    self.status = Some("Message sent".to_owned());
+                }
+                return task.map(|a| a.map(Msg::ComposeEvent));
+            }
+            Msg::ComposeDraftSaved(window_id, result) => {
+                self.compose.mark_draft_saved(window_id, result);
+            }
+            Msg::TaskPanicked(err) => {
+                self.busy = false;
+                self.status = Some(err);
             }
         }
         Task::none()
@@ -1501,5 +1520,10 @@ impl cosmic::Application for Mail {
             main = main.push(text::caption(status.as_str()).apply(container).padding([4, 12]));
         }
         main.height(Length::Fill).into()
+    }
+
+    fn view_window(&self, id: window::Id) -> Element<'_, Msg> {
+        let focused = self.core().focused_window().is_some_and(|f| f == id);
+        self.compose.view_window(id, focused).map(Msg::ComposeEvent)
     }
 }
