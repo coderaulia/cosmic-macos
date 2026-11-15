@@ -17,7 +17,7 @@ mod compose;
 #[allow(dead_code)]
 mod imap_pool;
 #[allow(dead_code)]
-mod oauth;
+use mac_oauth as oauth;
 #[allow(dead_code)]
 mod threading;
 mod ui_helpers;

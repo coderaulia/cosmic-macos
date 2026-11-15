@@ -3257,6 +3257,8 @@ dependencies = [
  "base64 0.22.1",
  "jiff",
  "libcosmic",
+ "mac-oauth",
+ "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -3298,6 +3300,7 @@ dependencies = [
  "jiff",
  "lettre",
  "libcosmic",
+ "mac-oauth",
  "mail-parser",
  "open",
  "scraper",
@@ -3307,6 +3310,19 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "ureq",
+ "url",
+]
+
+[[package]]
+name = "mac-oauth"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "imap",
+ "open",
+ "serde",
+ "serde_json",
  "ureq",
  "url",
 ]

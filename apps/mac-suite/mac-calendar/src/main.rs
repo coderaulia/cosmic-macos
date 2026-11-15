@@ -149,6 +149,9 @@ enum Message {
     SyncUrl(String),
     SyncUser(String),
     SyncPassword(String),
+    SyncGoogleId(String),
+    SignInGoogle,
+    GoogleSignedIn(Result<(String, String), String>),
     SaveSync,
     CancelSync,
     Synced(Result<Vec<Event>, String>),
@@ -159,6 +162,8 @@ struct SyncForm {
     url: String,
     user: String,
     password: String,
+    /// Google OAuth client ID; empty uses the password instead.
+    google_id: String,
 }
 
 /// The event inspector's fields; edits an existing event or makes a new one.
@@ -602,12 +607,28 @@ impl Calendar {
 
     /// Sync with the server on a worker thread.
     fn start_sync(&mut self, server: caldav::Server) -> app::Task<Message> {
+        if !server.google_client_id.is_empty() {
+            self.syncing = true;
+            self.status = Some("Syncing…".to_owned());
+            let (local, deleted, edited) =
+                (self.events.clone(), self.deleted.clone(), self.edited.clone());
+            return cosmic::task::future(async move {
+                let result = tokio::task::spawn_blocking(move || {
+                    let token = caldav::google_access_token(&server)?;
+                    caldav::sync(&server, &token, local, deleted, &edited)
+                })
+                .await
+                .unwrap_or_else(|err| Err(err.to_string()));
+                Message::Synced(result)
+            });
+        }
         let Some(password) = caldav::load_password(&server.user) else {
             self.status = Some("Enter the server password again.".to_owned());
             self.sync_form = Some(SyncForm {
                 url: server.url,
                 user: server.user,
                 password: String::new(),
+                google_id: server.google_client_id,
             });
             return Task::none();
         };
@@ -1492,6 +1513,7 @@ impl cosmic::Application for Calendar {
                             url: server.url,
                             user: server.user,
                             password: String::new(),
+                            google_id: server.google_client_id,
                         });
                     }
                 }
@@ -1511,6 +1533,43 @@ impl cosmic::Application for Calendar {
                     form.password = value;
                 }
             }
+            Message::SyncGoogleId(value) => {
+                if let Some(form) = self.sync_form.as_mut() {
+                    form.google_id = value;
+                }
+            }
+            Message::SignInGoogle => {
+                let id = self
+                    .sync_form
+                    .as_ref()
+                    .map(|form| form.google_id.trim().to_owned())
+                    .unwrap_or_default();
+                self.status = Some("Finish signing in with Google in your browser…".to_owned());
+                return cosmic::task::future(async move {
+                    let result = tokio::task::spawn_blocking(move || {
+                        caldav::google_sign_in(&id).map(|email| (email, id))
+                    })
+                    .await
+                    .unwrap_or_else(|err| Err(err.to_string()));
+                    Message::GoogleSignedIn(result)
+                });
+            }
+            Message::GoogleSignedIn(result) => match result {
+                Ok((email, client_id)) => {
+                    self.sync_form = None;
+                    let server = caldav::Server {
+                        url: caldav::google_calendar_url(&email),
+                        user: email,
+                        google_client_id: client_id,
+                    };
+                    if let Err(err) = caldav::save_server(&server) {
+                        self.status = Some(err.to_string());
+                        return Task::none();
+                    }
+                    return self.start_sync(server);
+                }
+                Err(err) => self.status = Some(err),
+            },
             Message::CancelSync => self.sync_form = None,
             Message::SaveSync => {
                 let Some(form) = self.sync_form.take() else {
@@ -1519,6 +1578,7 @@ impl cosmic::Application for Calendar {
                 let server = caldav::Server {
                     url: form.url.trim().to_owned(),
                     user: form.user.trim().to_owned(),
+                    google_client_id: String::new(),
                 };
                 let saved = caldav::store_password(&server.user, &form.password)
                     .and_then(|()| caldav::save_server(&server).map_err(|e| e.to_string()));
@@ -1576,6 +1636,10 @@ impl cosmic::Application for Calendar {
                         .on_input(Message::SyncPassword)
                         .width(Length::Fixed(140.0)),
                     button::suggested("Connect").on_press(Message::SaveSync),
+                    widget::text_input("Google client ID", form.google_id.as_str())
+                        .on_input(Message::SyncGoogleId)
+                        .width(Length::Fixed(160.0)),
+                    button::standard("Sign in with Google").on_press(Message::SignInGoogle),
                     button::text("Cancel").on_press(Message::CancelSync),
                 ]
                 .spacing(8)

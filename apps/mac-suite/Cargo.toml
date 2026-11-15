@@ -1,5 +1,5 @@
 [workspace]
-members = ["mac-calendar", "mac-clipboard", "mac-mail", "mac-theme"]
+members = ["mac-calendar", "mac-clipboard", "mac-mail", "mac-oauth", "mac-theme"]
 resolver = "3"
 
 [workspace.dependencies]

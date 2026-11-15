@@ -14,6 +14,7 @@ imap = { version = "3.0.0-alpha.15", default-features = false, features = ["rust
 jiff.workspace = true
 lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "rustls-tls", "builder", "hostname"] }
 libcosmic = { workspace = true, features = ["rfd"] }
+mac-oauth = { path = "../mac-oauth", features = ["imap"] }
 mail-parser = "1.0.1"
 open = "5"
 scraper = { version = "0.29", default-features = false }

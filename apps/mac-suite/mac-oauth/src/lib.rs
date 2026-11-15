@@ -207,11 +207,32 @@ pub fn build_authorization_url(
     state: &str,
     login_hint: Option<&str>,
 ) -> Result<String, String> {
+    build_authorization_url_scoped(
+        provider,
+        provider.scopes(),
+        client_id,
+        redirect_uri,
+        pkce,
+        state,
+        login_hint,
+    )
+}
+
+/// Like [`build_authorization_url`] but asks for `scopes` instead of the provider's mail scopes.
+pub fn build_authorization_url_scoped(
+    provider: OAuthProvider,
+    scopes: &str,
+    client_id: &str,
+    redirect_uri: &str,
+    pkce: &PkceChallenge,
+    state: &str,
+    login_hint: Option<&str>,
+) -> Result<String, String> {
     let mut params = vec![
         ("client_id", client_id),
         ("redirect_uri", redirect_uri),
         ("response_type", "code"),
-        ("scope", provider.scopes()),
+        ("scope", scopes),
         ("code_challenge", pkce.challenge.as_str()),
         ("code_challenge_method", pkce.method),
         ("state", state),
@@ -296,6 +317,16 @@ pub fn run_pkce_browser_flow(
     explicit_client_id: Option<&str>,
     login_hint: Option<&str>,
 ) -> Result<OAuthSignInResult, String> {
+    run_pkce_browser_flow_scoped(provider, provider.scopes(), explicit_client_id, login_hint)
+}
+
+/// Like [`run_pkce_browser_flow`] but asks for `scopes` (e.g. a calendar scope).
+pub fn run_pkce_browser_flow_scoped(
+    provider: OAuthProvider,
+    scopes: &str,
+    explicit_client_id: Option<&str>,
+    login_hint: Option<&str>,
+) -> Result<OAuthSignInResult, String> {
     let client_id = resolve_client_id(provider, explicit_client_id)?;
     let client_secret = resolve_client_secret(provider);
     let pkce = generate_pkce();
@@ -309,8 +340,9 @@ pub fn run_pkce_browser_flow(
         .port();
     let redirect_uri = format!("http://127.0.0.1:{port}/callback");
 
-    let auth_url = build_authorization_url(
+    let auth_url = build_authorization_url_scoped(
         provider,
+        scopes,
         &client_id,
         &redirect_uri,
         &pkce,
@@ -553,13 +585,16 @@ pub fn format_xoauth2_sasl(user: &str, access_token: &str) -> String {
     format!("user={user}\x01auth=Bearer {access_token}\x01\x01")
 }
 
+#[cfg(feature = "imap")]
 /// `imap::Authenticator` implementation for `AUTHENTICATE XOAUTH2`.
+#[cfg(feature = "imap")]
 #[derive(Clone, Debug)]
 pub struct XOAuth2Authenticator {
     pub user: String,
     pub access_token: String,
 }
 
+#[cfg(feature = "imap")]
 impl imap::Authenticator for XOAuth2Authenticator {
     type Response = String;
 
@@ -789,6 +824,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "imap")]
     #[test]
     fn xoauth2_sasl_payload_matches_spec() {
         use imap::Authenticator;

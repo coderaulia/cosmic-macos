@@ -25,6 +25,47 @@ type Result<T> = std::result::Result<T, String>;
 pub struct Server {
     pub url: String,
     pub user: String,
+    /// Set when the account signs in with Google (OAuth) instead of a password.
+    pub google_client_id: String,
+}
+
+const GOOGLE_SCOPES: &str = "https://www.googleapis.com/auth/calendar openid email";
+
+/// The CalDAV address of a Google account's main calendar.
+pub fn google_calendar_url(email: &str) -> String {
+    format!("https://apidata.googleusercontent.com/caldav/v2/{email}/events/")
+}
+
+/// Open the browser, let the user sign in, keep the tokens in the keyring.
+/// Returns the account's email address.
+pub fn google_sign_in(client_id: &str) -> Result<String> {
+    use mac_oauth::{OAuthProvider, run_pkce_browser_flow_scoped};
+    let result = run_pkce_browser_flow_scoped(OAuthProvider::Gmail, GOOGLE_SCOPES, Some(client_id), None)?;
+    let email = result
+        .email
+        .ok_or("Google did not return the account's email address.")?;
+    store_password(&token_key(&email), &serde_json::to_string(&result.tokens).map_err(|e| e.to_string())?)?;
+    Ok(email)
+}
+
+fn token_key(user: &str) -> String {
+    format!("oauth:{user}")
+}
+
+/// A valid access token for the signed-in Google account, refreshed when old.
+pub fn google_access_token(server: &Server) -> Result<String> {
+    use mac_oauth::{OAuthProvider, OAuthTokens, current_unix_secs, refresh_access_token, resolve_client_secret};
+    let key = token_key(&server.user);
+    let stored = load_password(&key).ok_or("Sign in with Google again.")?;
+    let tokens: OAuthTokens = serde_json::from_str(&stored).map_err(|_| "Sign in with Google again.".to_owned())?;
+    if !tokens.is_expired_soon(current_unix_secs()) {
+        return Ok(tokens.access_token);
+    }
+    let refresh = tokens.refresh_token.as_deref().ok_or("Sign in with Google again.")?;
+    let secret = resolve_client_secret(OAuthProvider::Gmail);
+    let fresh = refresh_access_token(OAuthProvider::Gmail, &server.google_client_id, secret.as_deref(), refresh)?;
+    store_password(&key, &serde_json::to_string(&fresh).map_err(|e| e.to_string())?)?;
+    Ok(fresh.access_token)
 }
 
 fn config_path() -> Option<PathBuf> {
@@ -41,6 +82,7 @@ pub fn load_server() -> Option<Server> {
         match line.split_once('=')? {
             ("url", value) => server.url = value.to_owned(),
             ("user", value) => server.user = value.to_owned(),
+            ("google_client_id", value) => server.google_client_id = value.to_owned(),
             _ => {}
         }
     }
@@ -52,7 +94,10 @@ pub fn save_server(server: &Server) -> std::io::Result<()> {
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;
     }
-    fs::write(path, format!("url={}\nuser={}\n", server.url, server.user))
+    fs::write(path, format!(
+            "url={}\nuser={}\ngoogle_client_id={}\n",
+            server.url, server.user, server.google_client_id
+        ))
 }
 
 /// The password lives in the desktop keyring, not on disk.
@@ -104,12 +149,18 @@ fn request(
     {
         return Err("Use an https:// address: the password must not be sent unencrypted.".to_owned());
     }
-    let credentials =
-        base64::engine::general_purpose::STANDARD.encode(format!("{}:{password}", server.user));
+    let authorization = if server.google_client_id.is_empty() {
+        let credentials =
+            base64::engine::general_purpose::STANDARD.encode(format!("{}:{password}", server.user));
+        format!("Basic {credentials}")
+    } else {
+        // For Google accounts `password` is the OAuth access token.
+        format!("Bearer {password}")
+    };
     let mut builder = ureq::http::Request::builder()
         .method(method)
         .uri(url)
-        .header("Authorization", format!("Basic {credentials}"));
+        .header("Authorization", authorization);
     for (name, value) in headers {
         builder = builder.header(*name, *value);
     }

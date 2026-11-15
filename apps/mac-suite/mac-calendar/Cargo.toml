@@ -9,6 +9,8 @@ description = "Calendar with month, week and day views and CalDAV sync"
 base64 = "0.22"
 jiff.workspace = true
 libcosmic.workspace = true
+mac-oauth = { path = "../mac-oauth" }
+serde_json = "1.0"
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
