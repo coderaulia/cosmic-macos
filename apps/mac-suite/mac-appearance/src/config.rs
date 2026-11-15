@@ -3,6 +3,7 @@
 //! `~/.config/mac-suite/appearance.conf` and `location.conf` (key=value files).
 
 use std::{
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
 };
@@ -79,6 +80,34 @@ impl WallpaperMode {
     }
 }
 
+/// Per-output wallpaper overrides inside `[output.<connector>]`.
+/// Any `None` or empty field falls back to the global `Settings` value.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct OutputWallpaper {
+    pub wallpaper: Option<WallpaperMode>,
+    pub wallpaper_light: Option<String>,
+    pub wallpaper_dark: Option<String>,
+    pub dynamic_dir: Option<String>,
+}
+
+impl OutputWallpaper {
+    pub fn is_empty(&self) -> bool {
+        self.wallpaper.is_none()
+            && self.wallpaper_light.as_deref().is_none_or(|s| s.trim().is_empty())
+            && self.wallpaper_dark.as_deref().is_none_or(|s| s.trim().is_empty())
+            && self.dynamic_dir.as_deref().is_none_or(|s| s.trim().is_empty())
+    }
+}
+
+/// Effective wallpaper settings for a scope (global or a specific output).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WallpaperSpec {
+    pub mode: WallpaperMode,
+    pub wallpaper_light: String,
+    pub wallpaper_dark: String,
+    pub dynamic_dir: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Settings {
     pub mode: Mode,
@@ -89,6 +118,7 @@ pub struct Settings {
     pub wallpaper_light: String,
     pub wallpaper_dark: String,
     pub dynamic_dir: String,
+    pub outputs: BTreeMap<String, OutputWallpaper>,
 }
 
 impl Default for Settings {
@@ -101,6 +131,7 @@ impl Default for Settings {
             wallpaper_light: String::new(),
             wallpaper_dark: String::new(),
             dynamic_dir: String::new(),
+            outputs: BTreeMap::new(),
         }
     }
 }
@@ -135,26 +166,71 @@ fn pairs(text: &str) -> impl Iterator<Item = (&str, &str)> {
     })
 }
 
+enum Section {
+    Global,
+    Output(String),
+    Unknown,
+}
+
 impl Settings {
     pub fn parse(text: &str) -> Self {
         let mut s = Self::default();
-        for (k, v) in pairs(text) {
-            match k {
-                "mode" => s.mode = Mode::parse(v).unwrap_or(s.mode),
-                "light_at" => s.light_at = parse_hhmm(v).unwrap_or(s.light_at),
-                "dark_at" => s.dark_at = parse_hhmm(v).unwrap_or(s.dark_at),
-                "wallpaper" => s.wallpaper = WallpaperMode::parse(v).unwrap_or(s.wallpaper),
-                "wallpaper_light" => s.wallpaper_light = v.to_owned(),
-                "wallpaper_dark" => s.wallpaper_dark = v.to_owned(),
-                "dynamic_dir" => s.dynamic_dir = v.to_owned(),
-                _ => {}
+        let mut section = Section::Global;
+        for raw in text.lines() {
+            let line = raw.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            if line.starts_with('[') && line.ends_with(']') {
+                let header = line[1..line.len() - 1].trim();
+                section = match header.strip_prefix("output.") {
+                    Some(conn) if !conn.trim().is_empty() => {
+                        Section::Output(conn.trim().to_owned())
+                    }
+                    _ => Section::Unknown,
+                };
+                continue;
+            }
+            let Some((k, v)) = line.split_once('=') else {
+                continue;
+            };
+            let (k, v) = (k.trim(), v.trim());
+            match &section {
+                Section::Global => match k {
+                    "mode" => s.mode = Mode::parse(v).unwrap_or(s.mode),
+                    "light_at" => s.light_at = parse_hhmm(v).unwrap_or(s.light_at),
+                    "dark_at" => s.dark_at = parse_hhmm(v).unwrap_or(s.dark_at),
+                    "wallpaper" => s.wallpaper = WallpaperMode::parse(v).unwrap_or(s.wallpaper),
+                    "wallpaper_light" => s.wallpaper_light = v.to_owned(),
+                    "wallpaper_dark" => s.wallpaper_dark = v.to_owned(),
+                    "dynamic_dir" => s.dynamic_dir = v.to_owned(),
+                    _ => {}
+                },
+                Section::Output(conn) => {
+                    let entry = s.outputs.entry(conn.clone()).or_default();
+                    match k {
+                        "wallpaper" => entry.wallpaper = WallpaperMode::parse(v).or(entry.wallpaper),
+                        "wallpaper_light" if !v.is_empty() => {
+                            entry.wallpaper_light = Some(v.to_owned());
+                        }
+                        "wallpaper_dark" if !v.is_empty() => {
+                            entry.wallpaper_dark = Some(v.to_owned());
+                        }
+                        "dynamic_dir" if !v.is_empty() => {
+                            entry.dynamic_dir = Some(v.to_owned());
+                        }
+                        _ => {}
+                    }
+                }
+                Section::Unknown => {}
             }
         }
+        s.outputs.retain(|_, o| !o.is_empty());
         s
     }
 
     pub fn serialize(&self) -> String {
-        format!(
+        let mut out = format!(
             "mode={}\nlight_at={}\ndark_at={}\nwallpaper={}\nwallpaper_light={}\nwallpaper_dark={}\ndynamic_dir={}\n",
             self.mode.as_str(),
             format_hhmm(self.light_at),
@@ -163,7 +239,87 @@ impl Settings {
             one_line(&self.wallpaper_light),
             one_line(&self.wallpaper_dark),
             one_line(&self.dynamic_dir),
-        )
+        );
+        for (conn, entry) in &self.outputs {
+            if entry.is_empty() {
+                continue;
+            }
+            let conn = one_line(conn).replace(['[', ']'], "");
+            let conn = conn.trim();
+            if conn.is_empty() {
+                continue;
+            }
+            out.push_str(&format!("\n[output.{conn}]\n"));
+            if let Some(w) = entry.wallpaper {
+                out.push_str(&format!("wallpaper={}\n", w.as_str()));
+            }
+            if let Some(p) = &entry.wallpaper_light
+                && !p.trim().is_empty()
+            {
+                out.push_str(&format!("wallpaper_light={}\n", one_line(p.trim())));
+            }
+            if let Some(p) = &entry.wallpaper_dark
+                && !p.trim().is_empty()
+            {
+                out.push_str(&format!("wallpaper_dark={}\n", one_line(p.trim())));
+            }
+            if let Some(d) = &entry.dynamic_dir
+                && !d.trim().is_empty()
+            {
+                out.push_str(&format!("dynamic_dir={}\n", one_line(d.trim())));
+            }
+        }
+        out
+    }
+
+    /// Global wallpaper settings (the "All screens" baseline).
+    pub fn global_wallpaper(&self) -> WallpaperSpec {
+        WallpaperSpec {
+            mode: self.wallpaper,
+            wallpaper_light: self.wallpaper_light.clone(),
+            wallpaper_dark: self.wallpaper_dark.clone(),
+            dynamic_dir: self.dynamic_dir.clone(),
+        }
+    }
+
+    /// Effective wallpaper settings for `output`, falling back per-key to global.
+    pub fn wallpaper_for_output(&self, output: &str) -> WallpaperSpec {
+        let Some(entry) = self.outputs.get(output) else {
+            return self.global_wallpaper();
+        };
+        WallpaperSpec {
+            mode: entry.wallpaper.unwrap_or(self.wallpaper),
+            wallpaper_light: entry
+                .wallpaper_light
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .unwrap_or(&self.wallpaper_light)
+                .to_owned(),
+            wallpaper_dark: entry
+                .wallpaper_dark
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .unwrap_or(&self.wallpaper_dark)
+                .to_owned(),
+            dynamic_dir: entry
+                .dynamic_dir
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .unwrap_or(&self.dynamic_dir)
+                .to_owned(),
+        }
+    }
+
+    /// Connectors with non-empty per-output wallpaper settings.
+    pub fn configured_outputs(&self) -> Vec<&str> {
+        self.outputs
+            .iter()
+            .filter(|(_, o)| !o.is_empty())
+            .map(|(k, _)| k.as_str())
+            .collect()
     }
 }
 
@@ -247,6 +403,25 @@ mod tests {
 
     #[test]
     fn settings_round_trip() {
+        let mut outputs = BTreeMap::new();
+        outputs.insert(
+            "DP-2".into(),
+            OutputWallpaper {
+                wallpaper: Some(WallpaperMode::Pair),
+                wallpaper_light: Some("/dp2/l.jpg".into()),
+                wallpaper_dark: None,
+                dynamic_dir: None,
+            },
+        );
+        outputs.insert(
+            "HDMI-A-2".into(),
+            OutputWallpaper {
+                wallpaper: Some(WallpaperMode::Dynamic),
+                wallpaper_light: None,
+                wallpaper_dark: None,
+                dynamic_dir: Some("/hdmi/dyn".into()),
+            },
+        );
         let s = Settings {
             mode: Mode::Schedule,
             light_at: 6 * 60 + 30,
@@ -255,8 +430,69 @@ mod tests {
             wallpaper_light: "/a/l.jpg".into(),
             wallpaper_dark: "/a/d.jpg".into(),
             dynamic_dir: "/a/dyn".into(),
+            outputs,
         };
         assert_eq!(Settings::parse(&s.serialize()), s);
+    }
+
+    #[test]
+    fn output_sections_and_fallback_order() {
+        let text = "\
+mode=auto
+wallpaper=pair
+wallpaper_light=/global/light.jpg
+wallpaper_dark=/global/dark.jpg
+dynamic_dir=/global/dyn
+
+[output.DP-2]
+wallpaper_light=/dp2/light.jpg
+
+[output.HDMI-A-2]
+wallpaper=dynamic
+dynamic_dir=/hdmi/dyn
+
+[output.DVI-D-1]
+wallpaper=none
+
+[output.EMPTY]
+wallpaper_light=
+
+[unknown]
+wallpaper=none
+wallpaper_light=/bogus.jpg
+";
+        let s = Settings::parse(text);
+        assert_eq!(s.wallpaper, WallpaperMode::Pair);
+        assert_eq!(s.wallpaper_light, "/global/light.jpg");
+        assert_eq!(s.configured_outputs(), vec!["DP-2", "DVI-D-1", "HDMI-A-2"]);
+
+        // DP-2 overrides only wallpaper_light; mode, dark, dynamic_dir fall back to global.
+        assert_eq!(
+            s.wallpaper_for_output("DP-2"),
+            WallpaperSpec {
+                mode: WallpaperMode::Pair,
+                wallpaper_light: "/dp2/light.jpg".into(),
+                wallpaper_dark: "/global/dark.jpg".into(),
+                dynamic_dir: "/global/dyn".into(),
+            }
+        );
+
+        // HDMI-A-2 overrides mode and dynamic_dir; pair paths fall back to global.
+        assert_eq!(
+            s.wallpaper_for_output("HDMI-A-2"),
+            WallpaperSpec {
+                mode: WallpaperMode::Dynamic,
+                wallpaper_light: "/global/light.jpg".into(),
+                wallpaper_dark: "/global/dark.jpg".into(),
+                dynamic_dir: "/hdmi/dyn".into(),
+            }
+        );
+
+        // DVI-D-1 explicitly overrides mode to None.
+        assert_eq!(s.wallpaper_for_output("DVI-D-1").mode, WallpaperMode::None);
+
+        // Unconfigured output falls back completely to global.
+        assert_eq!(s.wallpaper_for_output("DP-1"), s.global_wallpaper());
     }
 
     #[test]

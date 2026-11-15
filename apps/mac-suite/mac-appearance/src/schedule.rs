@@ -11,7 +11,9 @@ use jiff::{
 };
 
 use crate::{
-    config::{DEFAULT_DARK_AT, DEFAULT_LIGHT_AT, Location, Mode, Settings, WallpaperMode},
+    config::{
+        DEFAULT_DARK_AT, DEFAULT_LIGHT_AT, Location, Mode, Settings, WallpaperMode, WallpaperSpec,
+    },
     solar,
 };
 
@@ -115,7 +117,12 @@ pub fn plan(settings: &Settings, location: Option<&Location>, now: i64, tz: &Tim
     };
     let phase = phase.unwrap_or(if dark { Phase::Night } else { Phase::Day });
     let next_dark = matches!(settings.mode, Mode::Auto | Mode::Schedule).then_some(next_dark).flatten();
-    let next_phase = (settings.wallpaper == WallpaperMode::Dynamic).then_some(next_phase).flatten();
+    let any_dynamic = settings.wallpaper == WallpaperMode::Dynamic
+        || settings
+            .outputs
+            .values()
+            .any(|o| o.wallpaper == Some(WallpaperMode::Dynamic));
+    let next_phase = any_dynamic.then_some(next_phase).flatten();
     let next = [next_dark, next_phase].into_iter().flatten().min();
     Plan { dark, phase, next }
 }
@@ -140,17 +147,27 @@ pub fn dynamic_image(dir: &str, phase: Phase) -> Option<PathBuf> {
     found.into_iter().next()
 }
 
-/// The wallpaper the settings ask for under `plan`, if any.
-pub fn wallpaper_for(settings: &Settings, plan: &Plan) -> Option<PathBuf> {
-    match settings.wallpaper {
+/// The wallpaper a [`WallpaperSpec`] asks for under `plan`, if any.
+pub fn wallpaper_for_spec(spec: &WallpaperSpec, plan: &Plan) -> Option<PathBuf> {
+    match spec.mode {
         WallpaperMode::None => None,
         WallpaperMode::Pair => {
-            let p = if plan.dark { &settings.wallpaper_dark } else { &settings.wallpaper_light };
+            let p = if plan.dark { &spec.wallpaper_dark } else { &spec.wallpaper_light };
             let p = p.trim();
             (!p.is_empty()).then(|| PathBuf::from(p))
         }
-        WallpaperMode::Dynamic => dynamic_image(settings.dynamic_dir.trim(), plan.phase),
+        WallpaperMode::Dynamic => dynamic_image(spec.dynamic_dir.trim(), plan.phase),
     }
+}
+
+/// The global ("All screens") wallpaper the settings ask for under `plan`, if any.
+pub fn wallpaper_for(settings: &Settings, plan: &Plan) -> Option<PathBuf> {
+    wallpaper_for_spec(&settings.global_wallpaper(), plan)
+}
+
+/// The effective wallpaper for `output` under `plan`, falling back to global settings.
+pub fn wallpaper_for_output(settings: &Settings, output: &str, plan: &Plan) -> Option<PathBuf> {
+    wallpaper_for_spec(&settings.wallpaper_for_output(output), plan)
 }
 
 #[cfg(test)]

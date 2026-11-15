@@ -94,20 +94,36 @@ fn mtime(path: &PathBuf) -> Option<SystemTime> {
 struct Applied {
     dark: bool,
     wallpaper: Option<PathBuf>,
+    output_wallpapers: Vec<(String, PathBuf)>,
+}
+
+fn desired_wallpapers(settings: &Settings, plan: &Plan) -> (Option<PathBuf>, Vec<(String, PathBuf)>) {
+    let global = schedule::wallpaper_for(settings, plan);
+    let mut outputs = Vec::new();
+    for conn in settings.configured_outputs() {
+        if let Some(path) = schedule::wallpaper_for_output(settings, conn, plan) {
+            outputs.push((conn.to_owned(), path));
+        }
+    }
+    (global, outputs)
 }
 
 /// Apply the desired state; only reports and returns what changed.
 fn apply_plan(settings: &Settings, plan: &Plan) -> Applied {
-    let wallpaper = schedule::wallpaper_for(settings, plan);
+    let (wallpaper, output_wallpapers) = desired_wallpapers(settings, plan);
     if let Err(err) = apply::set_dark(plan.dark) {
         eprintln!("mac-appearance: setting dark mode failed: {err}");
     }
-    if let Some(path) = &wallpaper
-        && let Err(err) = apply::set_wallpaper(path)
-    {
-        eprintln!("mac-appearance: setting wallpaper failed: {err}");
+    if wallpaper.is_some() || !output_wallpapers.is_empty() {
+        let refs: Vec<(&str, &std::path::Path)> = output_wallpapers
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_path()))
+            .collect();
+        if let Err(err) = apply::set_wallpapers(wallpaper.as_deref(), &refs) {
+            eprintln!("mac-appearance: setting wallpaper failed: {err}");
+        }
     }
-    Applied { dark: plan.dark, wallpaper }
+    Applied { dark: plan.dark, wallpaper, output_wallpapers }
 }
 
 fn compute(settings: &Settings, location: Option<&Location>) -> Plan {
@@ -130,7 +146,8 @@ fn main() {
     let mut location = config::load_location();
     loop {
         let plan = compute(&settings, location.as_ref());
-        let want = Applied { dark: plan.dark, wallpaper: schedule::wallpaper_for(&settings, &plan) };
+        let (wallpaper, output_wallpapers) = desired_wallpapers(&settings, &plan);
+        let want = Applied { dark: plan.dark, wallpaper, output_wallpapers };
         // Only touch the desktop when the wanted state changed, so manual
         // changes in between are not overwritten every minute.
         if applied.as_ref() != Some(&want) {

@@ -82,33 +82,93 @@ fn replace_source(text: &str, new_value: &str) -> Option<String> {
     Some(format!("{} {}{}", &text[..start], new_value, &text[end..]))
 }
 
-fn new_background(path: &str) -> String {
+fn new_background(output: &str, path: &str) -> String {
     format!(
-        "(\n    output: \"all\",\n    source: Path({}),\n    filter_by_theme: false,\n    rotation_frequency: 300,\n    filter_method: Lanczos,\n    scaling_mode: Zoom,\n    sampling_method: Alphanumeric,\n)",
-        ron_string(path)
+        "(\n    output: {},\n    source: Path({}),\n    filter_by_theme: false,\n    rotation_frequency: 300,\n    filter_method: Lanczos,\n    scaling_mode: Zoom,\n    sampling_method: Alphanumeric,\n)",
+        ron_string(output),
+        ron_string(path),
     )
+}
+
+fn format_backgrounds(outputs: &[(&str, &Path)]) -> String {
+    if outputs.is_empty() {
+        return "[]".to_owned();
+    }
+    let mut out = String::from("[\n");
+    for (conn, _) in outputs {
+        out.push_str("    ");
+        out.push_str(&ron_string(conn));
+        out.push_str(",\n");
+    }
+    out.push(']');
+    out
+}
+
+fn write_entry(dir: &Path, file_name: &str, output: &str, image: &Path) -> io::Result<()> {
+    let image = image.to_string_lossy();
+    let source = format!("Path({})", ron_string(&image));
+    let file = dir.join(file_name);
+    let text = match fs::read_to_string(&file) {
+        Ok(old) => replace_source(&old, &source).unwrap_or_else(|| new_background(output, &image)),
+        Err(_) => new_background(output, &image),
+    };
+    write_if_changed(&file, &text)?;
+    Ok(())
 }
 
 /// Point the cosmic-bg "all outputs" wallpaper at an image, keeping its other settings.
 pub fn set_wallpaper(image: &Path) -> io::Result<()> {
-    set_wallpaper_in(&cosmic_dir(), image)
+    set_wallpapers_in(&cosmic_dir(), Some(image), &[])
 }
 
-fn set_wallpaper_in(cosmic: &Path, image: &Path) -> io::Result<()> {
-    if !image.is_file() {
-        return Err(io::Error::new(io::ErrorKind::NotFound, format!("{} is not a file", image.display())));
+/// Write the `all` wallpaper (for shared/future outputs) and any per-output
+/// entries into `com.system76.CosmicBackground/v1`.
+///
+/// Sets `same-on-all` to `false` only when `outputs` is non-empty, and `true`
+/// otherwise.
+pub fn set_wallpapers(all: Option<&Path>, outputs: &[(&str, &Path)]) -> io::Result<()> {
+    set_wallpapers_in(&cosmic_dir(), all, outputs)
+}
+
+fn set_wallpapers_in(
+    cosmic: &Path,
+    all: Option<&Path>,
+    outputs: &[(&str, &Path)],
+) -> io::Result<()> {
+    if let Some(image) = all
+        && !image.is_file()
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("{} is not a file", image.display()),
+        ));
     }
-    let image = image.to_string_lossy();
+    for (_, image) in outputs {
+        if !image.is_file() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("{} is not a file", image.display()),
+            ));
+        }
+    }
+
     let dir = cosmic.join("com.system76.CosmicBackground/v1");
-    let source = format!("Path({})", ron_string(&image));
-    let file = dir.join("all");
-    let text = match fs::read_to_string(&file) {
-        Ok(old) => replace_source(&old, &source).unwrap_or_else(|| new_background(&image)),
-        Err(_) => new_background(&image),
-    };
-    write_if_changed(&file, &text)?;
-    // Make cosmic-bg use one wallpaper for every output.
-    write_if_changed(&dir.join("same-on-all"), "true")?;
+    if let Some(image) = all {
+        write_entry(&dir, "all", "all", image)?;
+    }
+
+    if outputs.is_empty() {
+        write_if_changed(&dir.join("same-on-all"), "true")?;
+        if dir.join("backgrounds").exists() {
+            write_if_changed(&dir.join("backgrounds"), "[]")?;
+        }
+    } else {
+        for (conn, image) in outputs {
+            write_entry(&dir, &format!("output.{conn}"), conn, image)?;
+        }
+        write_if_changed(&dir.join("same-on-all"), "false")?;
+        write_if_changed(&dir.join("backgrounds"), &format_backgrounds(outputs))?;
+    }
     Ok(())
 }
 
@@ -154,11 +214,65 @@ mod tests {
         let bg = root.join("com.system76.CosmicBackground/v1");
         fs::create_dir_all(&bg).unwrap();
         fs::write(bg.join("all"), SAMPLE).unwrap();
-        set_wallpaper_in(&root, &img).unwrap();
+        set_wallpapers_in(&root, Some(&img), &[]).unwrap();
         let text = fs::read_to_string(bg.join("all")).unwrap();
         assert!(text.contains(&format!("source: Path(\"{}\"),", img.display())));
         assert!(text.contains("rotation_frequency: 300"));
-        assert!(set_wallpaper_in(&root, &root.join("missing.jpg")).is_err());
+        assert_eq!(fs::read_to_string(bg.join("same-on-all")).unwrap(), "true");
+        assert!(set_wallpapers_in(&root, Some(&root.join("missing.jpg")), &[]).is_err());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn per_screen_cosmic_bg_golden() {
+        let root = tmp("per-screen");
+        let img_all = root.join("all.jpg");
+        let img_dp2 = root.join("dp2.jpg");
+        let img_hdmi = root.join("hdmi.png");
+        fs::write(&img_all, b"a").unwrap();
+        fs::write(&img_dp2, b"b").unwrap();
+        fs::write(&img_hdmi, b"c").unwrap();
+
+        set_wallpapers_in(
+            &root,
+            Some(&img_all),
+            &[("DP-2", &img_dp2), ("HDMI-A-2", &img_hdmi)],
+        )
+        .unwrap();
+
+        let bg = root.join("com.system76.CosmicBackground/v1");
+        assert_eq!(fs::read_to_string(bg.join("same-on-all")).unwrap(), "false");
+        assert_eq!(
+            fs::read_to_string(bg.join("backgrounds")).unwrap(),
+            "[\n    \"DP-2\",\n    \"HDMI-A-2\",\n]"
+        );
+        assert_eq!(
+            fs::read_to_string(bg.join("all")).unwrap(),
+            format!(
+                "(\n    output: \"all\",\n    source: Path(\"{}\"),\n    filter_by_theme: false,\n    rotation_frequency: 300,\n    filter_method: Lanczos,\n    scaling_mode: Zoom,\n    sampling_method: Alphanumeric,\n)",
+                img_all.display()
+            )
+        );
+        assert_eq!(
+            fs::read_to_string(bg.join("output.DP-2")).unwrap(),
+            format!(
+                "(\n    output: \"DP-2\",\n    source: Path(\"{}\"),\n    filter_by_theme: false,\n    rotation_frequency: 300,\n    filter_method: Lanczos,\n    scaling_mode: Zoom,\n    sampling_method: Alphanumeric,\n)",
+                img_dp2.display()
+            )
+        );
+        assert_eq!(
+            fs::read_to_string(bg.join("output.HDMI-A-2")).unwrap(),
+            format!(
+                "(\n    output: \"HDMI-A-2\",\n    source: Path(\"{}\"),\n    filter_by_theme: false,\n    rotation_frequency: 300,\n    filter_method: Lanczos,\n    scaling_mode: Zoom,\n    sampling_method: Alphanumeric,\n)",
+                img_hdmi.display()
+            )
+        );
+
+        // Switching back to global-only sets same-on-all back to true and clears backgrounds.
+        set_wallpapers_in(&root, Some(&img_all), &[]).unwrap();
+        assert_eq!(fs::read_to_string(bg.join("same-on-all")).unwrap(), "true");
+        assert_eq!(fs::read_to_string(bg.join("backgrounds")).unwrap(), "[]");
+
         fs::remove_dir_all(&root).unwrap();
     }
 
