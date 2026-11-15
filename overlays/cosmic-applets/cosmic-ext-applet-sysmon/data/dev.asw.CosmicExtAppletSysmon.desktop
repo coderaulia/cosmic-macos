@@ -1,0 +1,13 @@
+[Desktop Entry]
+Name=System Stats
+Comment=CPU, memory, swap, disk and GPU usage for the macOS-style top bar
+Type=Application
+Exec=cosmic-ext-applet-sysmon
+Terminal=false
+Categories=COSMIC;
+Keywords=COSMIC;Applet;CPU;Memory;GPU;Monitor;
+Icon=utilities-system-monitor-symbolic
+NoDisplay=true
+X-CosmicApplet=true
+X-HostWaylandDisplay=true
+X-CosmicHoverPopup=Auto

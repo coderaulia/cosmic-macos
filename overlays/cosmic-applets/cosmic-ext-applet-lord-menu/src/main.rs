@@ -54,7 +54,7 @@ const FORCE_QUIT_WINDOW_SIZE: Size = Size::new(400.0, 400.0);
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, CosmicConfigEntry)]
 #[version = 1]
 struct LordMenuConfig {
-    /// Optional XDG icon name (e.g. distro logo) overriding the built-in LordOS logo glyph.
+    /// Optional XDG icon name overriding the distribution logo from /etc/os-release.
     logo_icon: Option<String>,
 }
 
@@ -115,6 +115,58 @@ struct LordMenu {
     confirm_force_quit: bool,
     wayland_tx: Option<calloop::channel::Sender<WaylandRequest>>,
     token_tx: Option<calloop::channel::Sender<TokenRequest>>,
+    /// The running distribution's logo, found once at start-up.
+    os_logo: Option<PathBuf>,
+}
+
+/// Find the distribution's logo: `LOGO=` (or `ID=`) from `/etc/os-release`
+/// looked up as an icon file, then the generic "start-here" symbol.
+fn find_os_logo() -> Option<PathBuf> {
+    let release = std::fs::read_to_string("/etc/os-release")
+        .or_else(|_| std::fs::read_to_string("/usr/lib/os-release"))
+        .unwrap_or_default();
+    let field = |key: &str| {
+        release.lines().find_map(|line| {
+            let value = line.strip_prefix(key)?.strip_prefix('=')?;
+            let value = value.trim().trim_matches('"').trim_matches('\'');
+            // Icon names only: no path separators or parent references.
+            (!value.is_empty() && !value.contains('/') && !value.contains(".."))
+                .then(|| value.to_owned())
+        })
+    };
+    let mut names = Vec::new();
+    if let Some(logo) = field("LOGO") {
+        names.push(format!("{logo}-symbolic"));
+        names.push(logo);
+    }
+    if let Some(id) = field("ID") {
+        names.push(format!("distributor-logo-{id}-symbolic"));
+        names.push(format!("distributor-logo-{id}"));
+        names.push(id);
+    }
+    let dirs = [
+        "/usr/share/icons/hicolor/scalable/apps",
+        "/usr/share/icons/hicolor/scalable/places",
+        "/usr/share/icons/hicolor/symbolic/apps",
+        "/usr/share/icons",
+        "/usr/share/pixmaps",
+        "/usr/share/icons/hicolor/256x256/apps",
+        "/usr/share/icons/hicolor/48x48/apps",
+    ];
+    for name in &names {
+        for dir in dirs {
+            for ext in ["svg", "png"] {
+                let path = PathBuf::from(dir).join(format!("{name}.{ext}"));
+                if path.is_file() {
+                    return Some(path);
+                }
+            }
+        }
+    }
+    ["/usr/share/icons/Adwaita/symbolic/places/start-here-symbolic.svg"]
+        .into_iter()
+        .map(PathBuf::from)
+        .find(|p| p.is_file())
 }
 
 impl LordMenu {
@@ -130,6 +182,13 @@ impl LordMenu {
                 .symbolic(true)
                 .size(size)
                 .icon()
+        } else if let Some(path) = self.os_logo.as_ref() {
+            // Monochrome like the other bar icons: an SVG is tinted to the
+            // panel text colour.
+            icon::from_path(path.clone())
+                .symbolic(path.extension().is_some_and(|e| e == "svg"))
+                .icon()
+                .size(size)
         } else {
             lord_logo_icon(size)
         }
@@ -554,6 +613,7 @@ impl cosmic::Application for LordMenu {
             confirm_force_quit: false,
             wayland_tx: None,
             token_tx: None,
+            os_logo: find_os_logo(),
         };
         app.refresh_recent_items();
         (app, Task::none())

@@ -1,8 +1,8 @@
 diff --git a/Cargo.lock b/Cargo.lock
-index cf3d59d..c20a8c2 100644
+index cf3d59d..8d5b189 100644
 --- a/Cargo.lock
 +++ b/Cargo.lock
-@@ -1356,6 +1356,170 @@ dependencies = [
+@@ -1356,6 +1356,183 @@ dependencies = [
   "zbus",
  ]
  
@@ -145,6 +145,19 @@ index cf3d59d..c20a8c2 100644
 +]
 +
 +[[package]]
++name = "cosmic-ext-applet-sysmon"
++version = "0.1.0"
++dependencies = [
++ "cosmic-ext-mac-applet-style",
++ "libcosmic",
++ "mac-widgets",
++ "tokio",
++ "tracing",
++ "tracing-log",
++ "tracing-subscriber",
++]
++
++[[package]]
 +name = "cosmic-ext-dock"
 +version = "0.1.0"
 +dependencies = [
@@ -173,7 +186,7 @@ index cf3d59d..c20a8c2 100644
  [[package]]
  name = "cosmic-freedesktop-icons"
  version = "0.4.0"
-@@ -2806,6 +2970,22 @@ version = "0.2.1"
+@@ -2806,6 +2983,22 @@ version = "0.2.1"
  source = "registry+https://github.com/rust-lang/crates.io-index"
  checksum = "dfa686283ad6dd069f105e5ab091b04c62850d3e4cf5d67debad1933f55023df"
  
@@ -196,7 +209,7 @@ index cf3d59d..c20a8c2 100644
  [[package]]
  name = "hybrid-array"
  version = "0.4.15"
-@@ -4228,6 +4408,16 @@ dependencies = [
+@@ -4228,6 +4421,16 @@ dependencies = [
   "num-traits",
  ]
  
@@ -213,7 +226,7 @@ index cf3d59d..c20a8c2 100644
  [[package]]
  name = "macaddr"
  version = "1.0.1"
-@@ -5492,6 +5682,20 @@ dependencies = [
+@@ -5492,6 +5695,20 @@ dependencies = [
   "bytemuck",
  ]
  
@@ -234,7 +247,7 @@ index cf3d59d..c20a8c2 100644
  [[package]]
  name = "ron"
  version = "0.11.0"
-@@ -5607,6 +5811,41 @@ dependencies = [
+@@ -5607,6 +5824,41 @@ dependencies = [
   "windows-sys 0.61.2",
  ]
  
@@ -276,7 +289,7 @@ index cf3d59d..c20a8c2 100644
  [[package]]
  name = "rustversion"
  version = "1.0.23"
-@@ -6093,6 +6332,12 @@ dependencies = [
+@@ -6093,6 +6345,12 @@ dependencies = [
   "syn 2.0.119",
  ]
  
@@ -289,7 +302,7 @@ index cf3d59d..c20a8c2 100644
  [[package]]
  name = "svg_fmt"
  version = "0.4.5"
-@@ -6698,6 +6943,12 @@ version = "0.2.2"
+@@ -6698,6 +6956,12 @@ version = "0.2.2"
  source = "registry+https://github.com/rust-lang/crates.io-index"
  checksum = "b4ac048d71ede7ee76d585517add45da530660ef4390e49b098733c6e897f254"
  
@@ -302,7 +315,7 @@ index cf3d59d..c20a8c2 100644
  [[package]]
  name = "upower_dbus"
  version = "0.3.2"
-@@ -6708,6 +6959,35 @@ dependencies = [
+@@ -6708,6 +6972,35 @@ dependencies = [
   "zbus",
  ]
  
@@ -338,7 +351,7 @@ index cf3d59d..c20a8c2 100644
  [[package]]
  name = "url"
  version = "2.5.8"
-@@ -6760,6 +7040,12 @@ version = "1.0.5"
+@@ -6760,6 +7053,12 @@ version = "1.0.5"
  source = "registry+https://github.com/rust-lang/crates.io-index"
  checksum = "c8232dd3cdaed5356e0f716d285e4b40b932ac434100fe9b7e0e8e935b9e6246"
  
@@ -351,7 +364,7 @@ index cf3d59d..c20a8c2 100644
  [[package]]
  name = "utf8_iter"
  version = "1.0.4"
-@@ -7056,6 +7342,15 @@ dependencies = [
+@@ -7056,6 +7355,15 @@ dependencies = [
   "wasm-bindgen",
  ]
  
@@ -368,10 +381,10 @@ index cf3d59d..c20a8c2 100644
  name = "weezl"
  version = "0.1.12"
 diff --git a/Cargo.toml b/Cargo.toml
-index 77d96a9..082f037 100644
+index 77d96a9..a2741b7 100644
 --- a/Cargo.toml
 +++ b/Cargo.toml
-@@ -15,6 +15,15 @@ members = [
+@@ -15,6 +15,16 @@ members = [
      "cosmic-applet-status-area",
      "cosmic-applet-tiling",
      "cosmic-applet-time",
@@ -382,6 +395,7 @@ index 77d96a9..082f037 100644
 +    "cosmic-ext-applet-spotlight",
 +    "cosmic-ext-applet-control-center",
 +    "cosmic-ext-applet-power-menu",
++    "cosmic-ext-applet-sysmon",
 +    "cosmic-ext-mac-applet-style",
 +    "cosmic-ext-dock",
      "cosmic-applet-workspaces",

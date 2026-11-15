@@ -1,0 +1,15 @@
+[package]
+name = "cosmic-ext-applet-sysmon"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+description = "macOS-style system stats for the COSMIC panel: CPU, memory, swap, disk, GPU, battery"
+
+[dependencies]
+cosmic-ext-mac-applet-style = { path = "../cosmic-ext-mac-applet-style" }
+libcosmic.workspace = true
+mac-widgets = { path = "../../apps/mac-suite/mac-widgets" }
+tokio.workspace = true
+tracing-log.workspace = true
+tracing-subscriber.workspace = true
+tracing.workspace = true

@@ -123,9 +123,38 @@ pub fn copy_png(png: &[u8]) -> Result<(), Error> {
             return Ok(());
         }
     }
+    // wl-clipboard-rs serves the clipboard from a thread that dies with this
+    // process, and mac-screenshot exits right after a capture. Hand the
+    // image to a detached copy of ourselves that keeps serving it until
+    // something else is copied.
+    use std::os::unix::process::CommandExt;
+    let exe = std::env::current_exe()?;
+    let mut child = Command::new(exe)
+        .arg("--serve-clipboard")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .process_group(0)
+        .spawn()?;
+    child
+        .stdin
+        .take()
+        .ok_or_else(|| Error::Msg("clipboard: no stdin".into()))?
+        .write_all(png)?;
+    Ok(())
+}
+
+/// Serve PNG bytes from stdin on the clipboard until another app replaces
+/// them (runs in the detached `--serve-clipboard` process).
+pub fn serve_clipboard() -> Result<(), Error> {
+    use std::io::Read;
     use wl_clipboard_rs::copy::{MimeType, Options, Source};
-    Options::new()
-        .copy(Source::Bytes(png.to_vec().into()), MimeType::Specific("image/png".into()))
+    let mut png = Vec::new();
+    std::io::stdin().read_to_end(&mut png)?;
+    let mut options = Options::new();
+    options.foreground(true);
+    options
+        .copy(Source::Bytes(png.into()), MimeType::Specific("image/png".into()))
         .map_err(|e| Error::Msg(format!("clipboard: {e}")))
 }
 

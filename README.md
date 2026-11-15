@@ -107,7 +107,7 @@ reminder notifications; Clipboard adds a Wayland history daemon, Spotlight-style
 quick-paste window (`Super+V`), and panel popover (see
 [docs/clipboard-manager-plan.md](docs/clipboard-manager-plan.md)); and the
 Panel Toolbar provides a macOS-style top bar with Lord Menu, App Menu,
-centered Clock Center, workspace indicator, resource monitor (minimon), Spotlight button, Control Center, and a power menu (see
+centered Clock Center, workspace indicator, system stats (CPU, memory, swap, disk, GPU), Spotlight button, Control Center, and a power menu (see
 [docs/panel-toolbar-plan.md](docs/panel-toolbar-plan.md)).
 
 ## Troubleshooting
@@ -138,8 +138,6 @@ centered Clock Center, workspace indicator, resource monitor (minimon), Spotligh
   through "Sign in with Google". Google needs your own Desktop OAuth client ID
   with the CalDAV API enabled (and `MAC_MAIL_GMAIL_CLIENT_SECRET` if Google asks
   for a secret). Microsoft calendars need the Graph API and are not supported.
-- The resource monitor is the third-party `minimon` applet (install it
-  separately); it is not part of this repo.
 
 - Launchpad, Screenshot, Appearance and the clock widgets are new and have not
   been tried on every setup yet: Launchpad has no folders or drag-to-reorder,

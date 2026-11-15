@@ -278,7 +278,7 @@ case "$MODE" in
       "com.system76.CosmicAppletWorkspaces"
     )
     RIGHT_ITEMS=(
-      "io.github.cosmic_utils.minimon-applet"
+      "dev.asw.CosmicExtAppletSysmon"
       "com.system76.CosmicAppletStatusArea"
       "dev.asw.CosmicExtAppletClipboard"
       "com.system76.CosmicAppletAudio"
@@ -305,7 +305,7 @@ case "$MODE" in
       "com.system76.CosmicAppletWorkspaces"
     )
     RIGHT_ITEMS=(
-      "io.github.cosmic_utils.minimon-applet"
+      "dev.asw.CosmicExtAppletSysmon"
       "com.system76.CosmicAppletStatusArea"
       "$clipboard_id"
       "com.system76.CosmicAppletAudio"
@@ -402,7 +402,7 @@ for spec in "${SETS[@]}"; do
       fi
       ;;
     monitor)
-      if ! replace_or_remove_in RIGHT_ITEMS "$val" "io.github.cosmic_utils.minimon-applet"; then
+      if ! replace_or_remove_in RIGHT_ITEMS "$val" "io.github.cosmic_utils.minimon-applet" "dev.asw.CosmicExtAppletSysmon"; then
         if [ "$val" != "none" ] && [ "$val" != "no" ]; then
           RIGHT_ITEMS=("$val" "${RIGHT_ITEMS[@]}")
         fi

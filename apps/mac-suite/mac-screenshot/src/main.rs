@@ -32,6 +32,9 @@ struct Cli {
     /// Show the floating thumbnail for a saved screenshot (internal).
     #[arg(long, value_name = "FILE", hide = true)]
     thumbnail: Option<PathBuf>,
+    /// Keep a PNG read from stdin on the clipboard (internal).
+    #[arg(long, hide = true)]
+    serve_clipboard: bool,
 }
 
 fn main() {
@@ -40,6 +43,12 @@ fn main() {
         .init();
     let cli = Cli::parse();
 
+    if cli.serve_clipboard {
+        if let Err(e) = output::serve_clipboard() {
+            tracing::error!("{e}");
+        }
+        return;
+    }
     if let Some(path) = cli.thumbnail {
         ui::thumbnail::run(path);
         return;

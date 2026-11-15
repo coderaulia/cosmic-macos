@@ -33,6 +33,7 @@ APPLET_OVERLAYS=(
   cosmic-ext-applet-clock-center
   cosmic-ext-applet-lord-menu
   cosmic-ext-applet-power-menu
+  cosmic-ext-applet-sysmon
   cosmic-ext-applet-app-menu
   cosmic-ext-applet-clipboard
   cosmic-ext-applet-spotlight
