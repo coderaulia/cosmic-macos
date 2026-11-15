@@ -3530,6 +3530,7 @@ dependencies = [
 name = "mac-screenshot"
 version = "0.1.0"
 dependencies = [
+ "ashpd 0.12.3",
  "clap",
  "cosmic-client-toolkit",
  "futures-util",

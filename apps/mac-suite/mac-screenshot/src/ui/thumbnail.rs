@@ -60,8 +60,51 @@ pub struct Thumbnail {
     core: app::Core,
     id: SurfaceId,
     path: PathBuf,
+    is_video: bool,
     handle: Option<image::Handle>,
     hovered: bool,
+}
+
+fn is_video_path(path: &std::path::Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| matches!(e.to_ascii_lowercase().as_str(), "mp4" | "mkv" | "webm"))
+}
+
+fn load_preview_image(path: &std::path::Path, is_video: bool) -> Option<::image::RgbaImage> {
+    if !is_video {
+        return ::image::open(path).ok().map(|i| i.to_rgba8());
+    }
+    let dir = output::private_runtime_dir()?;
+    let tmp = dir.join(format!("macshot-thumb-{}.png", std::process::id()));
+    let status = std::process::Command::new("gst-launch-1.0")
+        .args([
+            "-q",
+            "filesrc",
+            &format!("location={}", path.display()),
+            "!",
+            "decodebin",
+            "!",
+            "videoconvert",
+            "!",
+            "pngenc",
+            "snapshot=true",
+            "!",
+            "filesink",
+            &format!("location={}", tmp.display()),
+        ])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .ok();
+    let img = if status.is_some_and(|s| s.success()) {
+        ::image::open(&tmp).ok().map(|i| i.to_rgba8())
+    } else {
+        None
+    };
+    let _ = std::fs::remove_file(&tmp);
+    img
 }
 
 /// Fit `(w, h)` into the thumbnail box, never upscaling.
@@ -94,7 +137,8 @@ impl cosmic::Application for Thumbnail {
         core.set_app_type(cosmic::core::AppType::System);
         core.set_keyboard_nav(false);
 
-        let decoded = ::image::open(&flags.path).ok().map(|i| i.to_rgba8());
+        let is_video = is_video_path(&flags.path);
+        let decoded = load_preview_image(&flags.path, is_video);
         let (handle, (tw, th)) = match decoded {
             Some(img) => {
                 let (w, h) = thumb_size(img.width(), img.height());
@@ -105,7 +149,7 @@ impl cosmic::Application for Thumbnail {
         };
         let _ = tw;
         let id = SurfaceId::unique();
-        let app = Self { core, id, path: flags.path, handle, hovered: false };
+        let app = Self { core, id, path: flags.path, is_video, handle, hovered: false };
         let surface = get_layer_surface(SctkLayerSurfaceSettings {
             id,
             layer: Layer::Overlay,
@@ -176,20 +220,30 @@ impl cosmic::Application for Thumbnail {
             .unwrap_or_default();
         let preview: Element<'_, Message> = match &self.handle {
             Some(h) => image(h.clone()).content_fit(ContentFit::ScaleDown).into(),
+            None if self.is_video => text::body("Screen Recording").into(),
             None => text::body("Preview unavailable").into(),
         };
+        let actions = if self.is_video {
+            row![
+                button::standard("Open").on_press(Message::Open),
+                button::standard("Show in Files").on_press(Message::ShowInFiles),
+                button::destructive("Delete").on_press(Message::Delete),
+            ]
+        } else {
+            row![
+                button::standard("Copy").on_press(Message::Copy),
+                button::standard("Show in Files").on_press(Message::ShowInFiles),
+                button::destructive("Delete").on_press(Message::Delete),
+            ]
+        }
+        .spacing(6);
         let body = column![
             button::custom(container(preview).center_x(Length::Fill))
                 .class(Button::Image)
                 .padding(0)
                 .on_press(Message::Open),
             text::caption(name),
-            row![
-                button::standard("Copy").on_press(Message::Copy),
-                button::standard("Show in Files").on_press(Message::ShowInFiles),
-                button::destructive("Delete").on_press(Message::Delete),
-            ]
-            .spacing(6),
+            actions,
         ]
         .spacing(6)
         .align_x(Horizontal::Center);

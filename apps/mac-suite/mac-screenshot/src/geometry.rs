@@ -67,7 +67,7 @@ impl Rect {
     /// Convert to a pixel rectangle of an `img_w x img_h` image that shows
     /// a `logical_w x logical_h` area. Returns `None` when empty.
     pub fn to_pixels(
-        &self,
+        self,
         logical_w: f32,
         logical_h: f32,
         img_w: u32,

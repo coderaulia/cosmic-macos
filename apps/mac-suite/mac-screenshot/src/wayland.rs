@@ -208,7 +208,7 @@ pub fn to_rgba(format: wl_shm::Format, width: u32, height: u32, raw: &[u8]) -> O
         _ => return None,
     };
     let mut px = raw[..n].to_vec();
-    for p in px.chunks_exact_mut(4) {
+    for p in px.as_chunks_mut::<4>().0 {
         if swap {
             p.swap(0, 2);
         }
