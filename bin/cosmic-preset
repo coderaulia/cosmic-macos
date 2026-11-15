@@ -104,6 +104,10 @@ current() { [ -f "$CURRENT" ] && cat "$CURRENT" || true; }
 DOCK_MARKER="use-ext-dock"
 DOCK_BIN="$HOME/.local/bin/cosmic-ext-dock"
 
+# A preset containing this marker file runs Sonoma-style desktop widgets.
+WIDGETS_MARKER="use-desktop-widgets"
+WIDGETS_BIN="$HOME/.local/bin/mac-desktop-widgets"
+
 # Start or stop the standalone dock to match the active preset.
 sync_dock() {
   local cur
@@ -112,6 +116,17 @@ sync_dock() {
     pgrep -x cosmic-ext-dock >/dev/null || setsid -f "$DOCK_BIN" >/dev/null 2>&1
   else
     pkill -x cosmic-ext-dock || true
+  fi
+}
+
+# Start or stop desktop widgets to match the active preset.
+sync_widgets() {
+  local cur
+  cur="$(current)"
+  if [ -n "$cur" ] && [ -e "$STORE/$cur/$WIDGETS_MARKER" ] && [ -x "$WIDGETS_BIN" ]; then
+    pgrep -x mac-desktop-widgets >/dev/null || setsid -f "$WIDGETS_BIN" >/dev/null 2>&1
+  else
+    pkill -x mac-desktop-widgets || true
   fi
 }
 
@@ -141,6 +156,7 @@ cmd_save() {
   mkdir -p "$STORE/$name"
   copy_managed "$LIVE" "$STORE/$name"
   if pgrep -x cosmic-ext-dock >/dev/null; then touch "$STORE/$name/$DOCK_MARKER"; fi
+  if pgrep -x mac-desktop-widgets >/dev/null; then touch "$STORE/$name/$WIDGETS_MARKER"; fi
   echo "$name" >"$CURRENT"
   echo "saved current desktop as '$name'"
 }
@@ -162,6 +178,7 @@ cmd_apply() {
   copy_managed "$STORE/$name" "$LIVE"
   echo "$name" >"$CURRENT"
   sync_dock
+  sync_widgets
   echo "applied '$name'"
   notify "Applied: $name"
 }
@@ -173,6 +190,7 @@ cmd_undo() {
   copy_managed "$PREVIOUS" "$LIVE"
   if [ -n "$name" ]; then echo "$name" >"$CURRENT"; else rm -f "$CURRENT"; fi
   sync_dock
+  sync_widgets
   echo "restored state from before the last apply"
   notify "Undid last preset change"
 }
@@ -195,6 +213,7 @@ cmd_restore_full() {
   rsync -a --delete "$FULL_BACKUP/" "$LIVE/"
   echo "$BASELINE" >"$CURRENT"
   sync_dock
+  sync_widgets
   echo "restored full backup"
   notify "Restored full COSMIC backup"
 }
@@ -228,6 +247,7 @@ usage: cosmic-preset <command>
   delete <name>         delete a preset
   reload                restart cosmic-panel if a change did not show up
   dock-sync             start or stop the standalone dock for the active preset
+  widgets-sync          start or stop desktop widgets for the active preset
   login-check           restart the panel if the clock applet is missing after login
   restore-full --yes    restore the complete ~/.config/cosmic backup
 EOF
@@ -244,6 +264,7 @@ case "${1:-}" in
   delete) cmd_delete "${2:-}" ;;
   reload) cmd_reload ;;
   dock-sync) sync_dock ;;
+  widgets-sync) sync_widgets ;;
   login-check) cmd_login_check ;;
   restore-full) cmd_restore_full "${2:-}" ;;
   *) usage; [ -n "${1:-}" ] && [ "$1" != "-h" ] && [ "$1" != "--help" ] && exit 1 || exit 0 ;;

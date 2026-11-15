@@ -249,6 +249,8 @@ pub enum Message {
     OpenSystemMonitor,
     /// Open Appearance settings.
     OpenAppearanceSettings,
+    /// Open Desktop Widgets edit mode.
+    EditDesktopWidgets,
     PreviousMonth,
     NextMonth,
     OpenDateTimeSettings,
@@ -539,11 +541,10 @@ impl Window {
     }
 
     /// Prepares the widget section when the popup opens: reloads settings,
-    /// takes a first stats sample and fetches weather off the UI thread when
-    /// the cache is stale.
+    /// refreshes stats against the running CPU sample and fetches weather off
+    /// the UI thread when the cache is stale.
     fn open_widgets(&mut self) -> app::Task<Message> {
         self.widget_settings = WidgetSettings::load();
-        self.cpu_prev = None;
         self.stats = Stats::read(&mut self.cpu_prev);
         if !self.widget_settings.show_weather {
             return Task::none();
@@ -648,6 +649,12 @@ impl cosmic::Application for Window {
                 }
             };
 
+        // Take an initial CPU sample at startup so the first popup open computes
+        // real usage instead of showing 0%.
+        let mut cpu_prev = None;
+        let stats = Stats::read(&mut cpu_prev);
+        let widget_settings = WidgetSettings::load();
+
         (
             Self {
                 core,
@@ -670,10 +677,10 @@ impl cosmic::Application for Window {
                 notifications_proxy,
                 notifications_tx: None,
                 dbus_sender: None,
-                widget_settings: WidgetSettings::default(),
+                widget_settings,
                 weather: WeatherState::default(),
-                stats: Stats::default(),
-                cpu_prev: None,
+                stats,
+                cpu_prev,
             },
             Task::none(),
         )
@@ -986,6 +993,18 @@ impl cosmic::Application for Window {
             Message::OpenAppearanceSettings => {
                 self.open_app_and_close_popup("mac-appearance", "cosmic-settings", &[])
             }
+            Message::EditDesktopWidgets => {
+                if let Some(bin) = resolve_command("mac-desktop-widgets") {
+                    let mut cmd = std::process::Command::new(bin);
+                    cmd.arg("--edit");
+                    tokio::spawn(cosmic::process::spawn(cmd));
+                }
+                if let Some(p) = self.popup.take() {
+                    destroy_popup(p)
+                } else {
+                    Task::none()
+                }
+            }
             Message::OpenDateTimeSettings => {
                 let exec = "cosmic-settings time".to_string();
                 if let Some(tx) = self.token_tx.as_ref() {
@@ -1260,10 +1279,16 @@ impl cosmic::Application for Window {
                 .push(container(up_next).padding([4, 16]));
         }
 
-        left_col = left_col.push(divider()).push(
-            menu_button(text::body(fl!("datetime-settings")))
-                .on_press(Message::OpenDateTimeSettings),
-        );
+        left_col = left_col
+            .push(divider())
+            .push(
+                menu_button(text::body("Edit Widgets…"))
+                    .on_press(Message::EditDesktopWidgets),
+            )
+            .push(
+                menu_button(text::body(fl!("datetime-settings")))
+                    .on_press(Message::OpenDateTimeSettings),
+            );
 
         let mut right_col = column![].spacing(8).padding([12, 16]).width(Length::Fill);
         let mut has_top_widgets = false;

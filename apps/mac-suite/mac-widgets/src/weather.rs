@@ -205,7 +205,7 @@ pub fn describe(code: u8) -> (&'static str, &'static str) {
         3 => ("Overcast", "weather-overcast-symbolic"),
         45 | 48 => ("Fog", "weather-fog-symbolic"),
         51..=57 => ("Drizzle", "weather-showers-scattered-symbolic"),
-        61..=65 | 66 | 67 => ("Rain", "weather-showers-symbolic"),
+        61..=67 => ("Rain", "weather-showers-symbolic"),
         71..=77 | 85 | 86 => ("Snow", "weather-snow-symbolic"),
         80..=82 => ("Showers", "weather-showers-symbolic"),
         95..=99 => ("Thunderstorm", "weather-storm-symbolic"),

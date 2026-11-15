@@ -1,0 +1,18 @@
+[package]
+name = "mac-desktop-widgets"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+description = "macOS Sonoma-style desktop widgets on the Wayland bottom layer"
+
+[dependencies]
+cctk = { git = "https://github.com/pop-os/cosmic-protocols", package = "cosmic-client-toolkit", rev = "c0cff4d" }
+clap = { version = "4", features = ["derive"] }
+jiff.workspace = true
+libcosmic = { workspace = true, features = ["desktop"] }
+mac-widgets = { path = "../mac-widgets" }
+ron = "0.12"
+serde = { version = "1", features = ["derive"] }
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

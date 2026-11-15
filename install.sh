@@ -13,7 +13,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
-ALL=(preset dock panel clock clipboard spotlight files notepad viewer calendar mail theme launchpad screenshot appearance widgets comp)
+ALL=(preset dock panel clock clipboard spotlight files notepad viewer calendar mail theme launchpad screenshot appearance widgets desktop-widgets comp)
 
 describe() {
   case "$1" in
@@ -32,8 +32,9 @@ describe() {
     launchpad) echo "Launchpad: full-screen app grid on Super+A" ;;
     screenshot) echo "screenshot tool with region/window/screen capture on Super+Shift+S" ;;
     appearance) echo "automatic light/dark mode and wallpaper (settings: Appearance app)" ;;
-    widgets)   echo "weather, Up Next and system cards in the clock popup" ;;
-    comp)      echo "compositor with the genie minimize animation (needs a re-login)" ;;
+    widgets)         echo "weather, Up Next and system cards in the clock popup" ;;
+    desktop-widgets) echo "macOS Sonoma-style desktop widgets on the wallpaper" ;;
+    comp)            echo "compositor with the genie minimize animation (needs a re-login)" ;;
   esac
 }
 
@@ -47,7 +48,7 @@ needs() {
     files) echo "libcosmic files" ;;
     notepad) echo "libcosmic edit" ;;
     viewer) echo "libcosmic viewer" ;;
-    calendar|mail|theme|launchpad|screenshot|appearance) echo libcosmic ;;
+    calendar|mail|theme|launchpad|screenshot|appearance|desktop-widgets) echo libcosmic ;;
     preset) echo "" ;;
   esac
 }
@@ -96,7 +97,7 @@ run() {
     comp)      ./install-genie-comp.sh ;;
     theme)     ./install-theme.sh ;;
     files|notepad|viewer|calendar|mail) ./install-apps.sh "$component" ;;
-    launchpad|screenshot|appearance|widgets) ./install-extras.sh "$component" ;;
+    launchpad|screenshot|appearance|widgets|desktop-widgets) ./install-extras.sh "$component" ;;
   esac
 }
 

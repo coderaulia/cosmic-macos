@@ -3478,6 +3478,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "mac-desktop-widgets"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "cosmic-client-toolkit",
+ "jiff",
+ "libcosmic",
+ "mac-widgets",
+ "ron",
+ "serde",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "mac-launchpad"
 version = "0.1.0"
 dependencies = [
