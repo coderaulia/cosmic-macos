@@ -795,6 +795,128 @@ index 20e11b7..1d51fd1 100644
                  let elem_geometry = mapped.geometry().to_physical_precise_round(output_scale);
  
                  let scale = geo.size.to_f64() / original_geo.size.to_f64();
+diff --git a/src/shell/workspace.rs b/src/shell/workspace.rs
+index fd63dcb..98fa535 100644
+--- a/src/shell/workspace.rs
++++ b/src/shell/workspace.rs
+@@ -215,6 +215,9 @@ pub struct FullscreenSurface {
+     pub previous_geometry: Option<Rectangle<i32, Local>>,
+     start_at: Option<Instant>,
+     pub ended_at: Option<Instant>,
++    /// Set while the window minimizes: it then collapses into the dock icon
++    /// (`previous_geometry`) through the genie warp instead of shrinking.
++    minimizing_since: Option<Instant>,
+ }
+ 
+ impl PartialEq for FullscreenSurface {
+@@ -559,8 +562,13 @@ impl Workspace {
+         }
+ 
+         self.fullscreen_surfaces.retain(|f| {
++            let duration = if f.minimizing_since.is_some() {
++                crate::shell::layout::floating::MINIMIZE_ANIMATION_DURATION
++            } else {
++                FULLSCREEN_ANIMATION_DURATION
++            };
+             if let Some(end) = f.ended_at
+-                && Instant::now().duration_since(end) >= FULLSCREEN_ANIMATION_DURATION
++                && Instant::now().duration_since(end) >= duration
+             {
+                 self.dirty.store(true, Ordering::SeqCst);
+                 return false;
+@@ -1055,18 +1063,9 @@ impl Workspace {
+             {
+                 let f = self.fullscreen_surfaces.get_mut(idx)?;
+                 f.previous_geometry = Some(to);
+-                f.ended_at = Some(
+-                    Instant::now()
+-                        - (FULLSCREEN_ANIMATION_DURATION
+-                            - f.start_at
+-                                .take()
+-                                .map(|earlier| {
+-                                    Instant::now()
+-                                        .duration_since(earlier)
+-                                        .min(FULLSCREEN_ANIMATION_DURATION)
+-                                })
+-                                .unwrap_or(FULLSCREEN_ANIMATION_DURATION)),
+-                );
++                f.start_at = None;
++                f.ended_at = Some(Instant::now());
++                f.minimizing_since = Some(Instant::now());
+             }
+ 
+             fullscreen_state.surface.set_minimized(true);
+@@ -1168,6 +1167,7 @@ impl Workspace {
+                     previous_geometry: previous.map(|p| p.previous_geometry),
+                     start_at: None,
+                     ended_at: None,
++                    minimizing_since: None,
+                 });
+                 self.dirty.store(true, Ordering::SeqCst);
+                 None
+@@ -1278,6 +1278,7 @@ impl Workspace {
+             previous_geometry,
+             start_at: Some(Instant::now()),
+             ended_at: None,
++            minimizing_since: None,
+         });
+     }
+ 
+@@ -1655,6 +1656,54 @@ impl Workspace {
+                     .as_ref()
+                     .unwrap_or(&fullscreen_geo);
+ 
++                // Minimizing: collapse into the dock icon through the genie warp.
++                if let Some(since) = fullscreen.minimizing_since {
++                    let progress = (Instant::now().duration_since(since).as_secs_f32()
++                        / crate::shell::layout::floating::MINIMIZE_ANIMATION_DURATION
++                            .as_secs_f32())
++                    .clamp(0.0, 1.0);
++                    let mut snapshot = Vec::new();
++                    fullscreen.surface.push_render_elements(
++                        renderer,
++                        (0, 0).into(),
++                        output_scale.into(),
++                        1.0,
++                        Some(true),
++                        None,
++                        false,
++                        [0, 0, 0, 0],
++                        0,
++                        &mut |elem: SurfaceRenderElement<R>| snapshot.push(elem),
++                        None,
++                    );
++                    let window_physical = Rectangle::new(
++                        fullscreen_geo
++                            .loc
++                            .as_logical()
++                            .to_physical_precise_round(output_scale),
++                        fullscreen
++                            .surface
++                            .0
++                            .geometry()
++                            .size
++                            .to_physical_precise_round(output_scale),
++                    );
++                    let icon_physical = previous_geo
++                        .as_logical()
++                        .to_physical_precise_round(output_scale);
++                    if let Some(genie) = crate::backend::render::wayland::genie::GenieRenderElement::new(
++                        renderer,
++                        &snapshot,
++                        window_physical,
++                        icon_physical,
++                        output_scale.into(),
++                        progress,
++                    ) {
++                        push(WorkspaceRenderElement::Window(CosmicMappedRenderElement::Genie(genie)));
++                        return;
++                    }
++                }
++
+                 let (target_geo, alpha) = match (fullscreen.start_at, fullscreen.ended_at) {
+                     (Some(started), _) => {
+                         let duration = Instant::now().duration_since(started).as_secs_f64()
 diff --git a/src/wayland/handlers/toplevel_management.rs b/src/wayland/handlers/toplevel_management.rs
 index 91e22a4..a8749f4 100644
 --- a/src/wayland/handlers/toplevel_management.rs
