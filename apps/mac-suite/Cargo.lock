@@ -3482,6 +3482,8 @@ name = "mac-launchpad"
 version = "0.1.0"
 dependencies = [
  "libcosmic",
+ "ron",
+ "serde",
  "tokio",
  "tracing",
  "tracing-subscriber",

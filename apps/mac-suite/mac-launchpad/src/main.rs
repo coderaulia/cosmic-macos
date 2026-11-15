@@ -6,7 +6,9 @@
 //! `mac-launchpad --daemon` starts it hidden.
 
 mod apps;
+mod drag;
 mod ipc;
+mod layout;
 mod ui;
 
 fn main() -> cosmic::iced::Result {
