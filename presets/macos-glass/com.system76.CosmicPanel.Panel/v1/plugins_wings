@@ -1,7 +1,9 @@
 Some(([
     "dev.asw.CosmicExtAppletLordMenu",
     "dev.asw.CosmicExtAppletAppMenu",
+    "com.system76.CosmicAppletWorkspaces",
 ], [
+    "io.github.cosmic_utils.minimon-applet",
     "com.system76.CosmicAppletStatusArea",
     "dev.asw.CosmicExtAppletClipboard",
     "com.system76.CosmicAppletAudio",
@@ -9,4 +11,5 @@ Some(([
     "com.system76.CosmicAppletNetwork",
     "dev.asw.CosmicExtAppletSpotlight",
     "dev.asw.CosmicExtAppletControlCenter",
+    "com.system76.CosmicAppletPower",
 ]))

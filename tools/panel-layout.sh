@@ -33,6 +33,9 @@ Slots for --set:
   app-menu=<id|none>   App menu slot in left wing
   spotlight=<id|none>  Spotlight slot in right wing
   control-center=<id|none>  Control Center slot in right wing
+  workspaces=<id|none> Workspace indicator in left wing
+  monitor=<id|none>    Resource monitor (first in right wing)
+  power=<id|none>      Power menu (last in right wing)
   notifications=<id|yes|no|none>  Stock notifications slot in right wing
 
 Customization:
@@ -272,8 +275,10 @@ case "$MODE" in
     LEFT_ITEMS=(
       "dev.asw.CosmicExtAppletLordMenu"
       "dev.asw.CosmicExtAppletAppMenu"
+      "com.system76.CosmicAppletWorkspaces"
     )
     RIGHT_ITEMS=(
+      "io.github.cosmic_utils.minimon-applet"
       "com.system76.CosmicAppletStatusArea"
       "dev.asw.CosmicExtAppletClipboard"
       "com.system76.CosmicAppletAudio"
@@ -281,6 +286,7 @@ case "$MODE" in
       "com.system76.CosmicAppletNetwork"
       "dev.asw.CosmicExtAppletSpotlight"
       "dev.asw.CosmicExtAppletControlCenter"
+      "com.system76.CosmicAppletPower"
     )
     ;;
   toolbar)
@@ -296,8 +302,10 @@ case "$MODE" in
     LEFT_ITEMS=(
       "dev.asw.CosmicExtAppletLordMenu"
       "dev.asw.CosmicExtAppletAppMenu"
+      "com.system76.CosmicAppletWorkspaces"
     )
     RIGHT_ITEMS=(
+      "io.github.cosmic_utils.minimon-applet"
       "com.system76.CosmicAppletStatusArea"
       "$clipboard_id"
       "com.system76.CosmicAppletAudio"
@@ -305,6 +313,7 @@ case "$MODE" in
       "com.system76.CosmicAppletNetwork"
       "dev.asw.CosmicExtAppletSpotlight"
       "dev.asw.CosmicExtAppletControlCenter"
+      "com.system76.CosmicAppletPower"
     )
     if [ "$has_notifications" = 1 ] && ! array_contains "dev.asw.CosmicExtAppletClockCenter" "${CENTER_ITEMS[@]}"; then
       insert_before_in RIGHT_ITEMS "dev.asw.CosmicExtAppletSpotlight" "com.system76.CosmicAppletNotifications"
@@ -380,6 +389,27 @@ for spec in "${SETS[@]}"; do
       ;;
     control-center)
       if ! replace_or_remove_in RIGHT_ITEMS "$val" "dev.asw.CosmicExtAppletControlCenter"; then
+        if [ "$val" != "none" ] && [ "$val" != "no" ]; then
+          RIGHT_ITEMS+=("$val")
+        fi
+      fi
+      ;;
+    workspaces)
+      if ! replace_or_remove_in LEFT_ITEMS "$val" "com.system76.CosmicAppletWorkspaces" "com.system76.CosmicPanelWorkspacesButton"; then
+        if [ "$val" != "none" ] && [ "$val" != "no" ]; then
+          insert_after_in LEFT_ITEMS "dev.asw.CosmicExtAppletAppMenu" "$val"
+        fi
+      fi
+      ;;
+    monitor)
+      if ! replace_or_remove_in RIGHT_ITEMS "$val" "io.github.cosmic_utils.minimon-applet"; then
+        if [ "$val" != "none" ] && [ "$val" != "no" ]; then
+          RIGHT_ITEMS=("$val" "${RIGHT_ITEMS[@]}")
+        fi
+      fi
+      ;;
+    power)
+      if ! replace_or_remove_in RIGHT_ITEMS "$val" "com.system76.CosmicAppletPower"; then
         if [ "$val" != "none" ] && [ "$val" != "no" ]; then
           RIGHT_ITEMS+=("$val")
         fi
