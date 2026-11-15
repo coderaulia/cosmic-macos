@@ -1,0 +1,16 @@
+[package]
+name = "mac-appmenu"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+description = "D-Bus global menu protocol (dev.asw.AppMenu1) and helpers for mac-suite and COSMIC apps"
+
+[dependencies]
+futures-core = "0.3"
+serde = { version = "1.0", features = ["derive"] }
+tokio = { version = "1", features = ["rt", "sync"] }
+tracing = "0.1"
+zbus = { version = "5", default-features = false, features = ["tokio"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }

@@ -155,6 +155,7 @@ enum Message {
     SaveSync,
     CancelSync,
     Synced(Result<Vec<Event>, String>),
+    AppMenuActivate(String),
 }
 
 /// Calendar server settings form.
@@ -431,6 +432,7 @@ struct Calendar {
     sync_form: Option<SyncForm>,
     syncing: bool,
     status: Option<String>,
+    app_menu: mac_appmenu::AppMenuHandle,
 }
 
 impl Calendar {
@@ -1291,11 +1293,13 @@ impl cosmic::Application for Calendar {
             sync_form: None,
             syncing: false,
             status: None,
+            app_menu: mac_appmenu::AppMenuHandle::new(APP_ID, Vec::new()),
         };
         if !files.is_empty() {
             calendar.import_files(&files);
         }
         calendar.check_reminders();
+        calendar.sync_app_menu();
         (calendar, Task::none())
     }
 
@@ -1328,10 +1332,76 @@ impl cosmic::Application for Calendar {
             _ => None,
         });
         let clock = cosmic::iced::time::every(Duration::from_secs(30)).map(|_| Message::Tick);
-        Subscription::batch([keys, clock])
+        let app_menu =
+            Subscription::run_with(self.app_menu.clone(), mac_appmenu::activate_stream)
+                .map(Message::AppMenuActivate);
+        Subscription::batch([keys, clock, app_menu])
     }
 
     fn update(&mut self, message: Message) -> app::Task<Message> {
+        let task = self.update_inner(message);
+        self.sync_app_menu();
+        task
+    }
+
+    fn view(&self) -> Element<'_, Message> {
+        let content = match self.view {
+            View::Month => self.month_view(),
+            View::Week => {
+                let start = week_start(self.selected);
+                let days = (0..7)
+                    .filter_map(|i| start.checked_add(i64::from(i).days()).ok())
+                    .collect();
+                self.time_grid(days)
+            }
+            View::Day => self.time_grid(vec![self.selected]),
+        };
+
+        let mut main = column![self.toolbar()];
+        if let Some(form) = self.sync_form.as_ref() {
+            main = main.push(
+                row![
+                    widget::text_input("Calendar URL (CalDAV)", form.url.as_str())
+                        .on_input(Message::SyncUrl)
+                        .width(Length::Fill),
+                    widget::text_input("User", form.user.as_str())
+                        .on_input(Message::SyncUser)
+                        .width(Length::Fixed(140.0)),
+                    widget::text_input("Password", form.password.as_str())
+                        .password()
+                        .on_input(Message::SyncPassword)
+                        .width(Length::Fixed(140.0)),
+                    button::suggested("Connect").on_press(Message::SaveSync),
+                    widget::text_input("Google client ID", form.google_id.as_str())
+                        .on_input(Message::SyncGoogleId)
+                        .width(Length::Fixed(160.0)),
+                    button::standard("Sign in with Google").on_press(Message::SignInGoogle),
+                    button::text("Cancel").on_press(Message::CancelSync),
+                ]
+                .spacing(8)
+                .align_y(Alignment::Center)
+                .padding([8, 16]),
+            );
+        }
+        if let Some(status) = self.status.as_ref() {
+            main = main.push(text::caption(status.as_str()).apply(container).padding([2, 16]));
+        }
+        let main = main
+            .push(divider::horizontal::default())
+            .push(content)
+            .width(Length::Fill)
+            .height(Length::Fill);
+
+        let mut layout = row![self.sidebar(), divider::vertical::default(), main];
+        if let Some(form) = self.inspector.as_ref() {
+            layout = layout.push(divider::vertical::default()).push(self.inspector_view(form));
+        }
+        layout.height(Length::Fill).into()
+    }
+}
+
+impl Calendar {
+    fn update_inner(&mut self, message: Message) -> app::Task<Message> {
         match message {
             Message::SetView(view) => self.view = view,
             Message::Previous => self.selected = self.step(false),
@@ -1604,63 +1674,106 @@ impl cosmic::Application for Calendar {
                     Err(err) => self.status = Some(err),
                 }
             }
+            Message::AppMenuActivate(item_id) => {
+                return self.handle_app_menu_activate(&item_id);
+            }
         }
         Task::none()
     }
+}
 
-    fn view(&self) -> Element<'_, Message> {
-        let content = match self.view {
-            View::Month => self.month_view(),
-            View::Week => {
-                let start = week_start(self.selected);
-                let days = (0..7)
-                    .filter_map(|i| start.checked_add(i64::from(i).days()).ok())
-                    .collect();
-                self.time_grid(days)
-            }
-            View::Day => self.time_grid(vec![self.selected]),
-        };
+impl Calendar {
+    fn build_app_menu_layout(&self) -> mac_appmenu::MenuLayout {
+        use mac_appmenu::{MenuItemSpec, MenuSpec};
 
-        let mut main = column![self.toolbar()];
-        if let Some(form) = self.sync_form.as_ref() {
-            main = main.push(
-                row![
-                    widget::text_input("Calendar URL (CalDAV)", form.url.as_str())
-                        .on_input(Message::SyncUrl)
-                        .width(Length::Fill),
-                    widget::text_input("User", form.user.as_str())
-                        .on_input(Message::SyncUser)
-                        .width(Length::Fixed(140.0)),
-                    widget::text_input("Password", form.password.as_str())
-                        .password()
-                        .on_input(Message::SyncPassword)
-                        .width(Length::Fixed(140.0)),
-                    button::suggested("Connect").on_press(Message::SaveSync),
-                    widget::text_input("Google client ID", form.google_id.as_str())
-                        .on_input(Message::SyncGoogleId)
-                        .width(Length::Fixed(160.0)),
-                    button::standard("Sign in with Google").on_press(Message::SignInGoogle),
-                    button::text("Cancel").on_press(Message::CancelSync),
-                ]
-                .spacing(8)
-                .align_y(Alignment::Center)
-                .padding([8, 16]),
-            );
-        }
-        if let Some(status) = self.status.as_ref() {
-            main = main.push(text::caption(status.as_str()).apply(container).padding([2, 16]));
-        }
-        let main = main
-            .push(divider::horizontal::default())
-            .push(content)
-            .width(Length::Fill)
-            .height(Length::Fill);
+        let can_delete = self
+            .inspector
+            .as_ref()
+            .is_some_and(|insp| insp.editing.is_some());
+        let has_win = self.core.main_window_id().is_some();
 
-        let mut layout = row![self.sidebar(), divider::vertical::default(), main];
-        if let Some(form) = self.inspector.as_ref() {
-            layout = layout.push(divider::vertical::default()).push(self.inspector_view(form));
+        vec![
+            MenuSpec::new(
+                "file",
+                "File",
+                vec![
+                    MenuItemSpec::action("file.new_event", "New Event").shortcut("N"),
+                    MenuItemSpec::separator(),
+                    MenuItemSpec::action("file.import_ics", "Import .ics…"),
+                    MenuItemSpec::action("file.export_ics", "Export .ics…"),
+                    MenuItemSpec::separator(),
+                    MenuItemSpec::action("file.sync_caldav", "Sync CalDAV").enabled(!self.syncing),
+                ],
+            ),
+            MenuSpec::new(
+                "edit",
+                "Edit",
+                vec![
+                    MenuItemSpec::action("edit.delete_event", "Delete Event")
+                        .shortcut("Delete")
+                        .enabled(can_delete),
+                ],
+            ),
+            MenuSpec::new(
+                "view",
+                "View",
+                vec![
+                    MenuItemSpec::checkbox("view.day", "Day", matches!(self.view, View::Day)),
+                    MenuItemSpec::checkbox("view.week", "Week", matches!(self.view, View::Week)),
+                    MenuItemSpec::checkbox(
+                        "view.month",
+                        "Month",
+                        matches!(self.view, View::Month),
+                    ),
+                    MenuItemSpec::separator(),
+                    MenuItemSpec::action("view.today", "Today").shortcut("T"),
+                ],
+            ),
+            MenuSpec::new(
+                "window",
+                "Window",
+                vec![
+                    MenuItemSpec::action("window.minimize", "Minimize").enabled(has_win),
+                    MenuItemSpec::action("window.zoom", "Zoom").enabled(has_win),
+                    MenuItemSpec::separator(),
+                    MenuItemSpec::action("window.close", "Close Window").enabled(has_win),
+                ],
+            ),
+        ]
+    }
+
+    fn sync_app_menu(&self) {
+        self.app_menu.set_layout(self.build_app_menu_layout());
+    }
+
+    fn handle_app_menu_activate(&mut self, item_id: &str) -> app::Task<Message> {
+        match item_id {
+            "file.new_event" => self.update_inner(Message::NewEvent),
+            "file.import_ics" => self.update_inner(Message::ToggleImport),
+            "file.export_ics" => self.update_inner(Message::ToggleExport),
+            "file.sync_caldav" => self.update_inner(Message::OpenSync),
+            "edit.delete_event" => self.update_inner(Message::DeleteEvent),
+            "view.day" => self.update_inner(Message::SetView(View::Day)),
+            "view.week" => self.update_inner(Message::SetView(View::Week)),
+            "view.month" => self.update_inner(Message::SetView(View::Month)),
+            "view.today" => self.update_inner(Message::Today),
+            "window.minimize" => self
+                .core
+                .main_window_id()
+                .map(|id| cosmic::iced::window::minimize(id, true))
+                .unwrap_or_else(Task::none),
+            "window.zoom" => self
+                .core
+                .main_window_id()
+                .map(cosmic::iced::window::toggle_maximize)
+                .unwrap_or_else(Task::none),
+            "window.close" => self
+                .core
+                .main_window_id()
+                .map(cosmic::iced::window::close)
+                .unwrap_or_else(Task::none),
+            _ => Task::none(),
         }
-        layout.height(Length::Fill).into()
     }
 }
 

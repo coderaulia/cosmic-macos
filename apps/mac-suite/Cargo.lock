@@ -3440,12 +3440,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "mac-appmenu"
+version = "0.1.0"
+dependencies = [
+ "futures-core",
+ "serde",
+ "tokio",
+ "tracing",
+ "zbus",
+]
+
+[[package]]
 name = "mac-calendar"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "jiff",
  "libcosmic",
+ "mac-appmenu",
  "mac-oauth",
  "serde_json",
  "tokio",
@@ -3517,6 +3529,7 @@ dependencies = [
  "jiff",
  "lettre",
  "libcosmic",
+ "mac-appmenu",
  "mac-oauth",
  "mail-parser",
  "open",
