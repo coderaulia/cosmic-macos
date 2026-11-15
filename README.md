@@ -21,14 +21,14 @@ Components (`./install.sh --list`):
 |---|---|
 | `preset` | `cosmic-preset`: switch between your original desktop and the macOS preset |
 | `dock` | Magnifying dock: bounce, slide-hide, window previews on hover, drag to reorder (after "Edit Dock…"), right-click menu, trash |
-| `panel` | macOS-style top menu bar applets (lord menu, active app menu, Spotlight button, Control Center) |
+| `panel` | macOS-style top menu bar applets (lord menu, active app menu, workspaces, resource monitor, Spotlight button, Control Center, power menu) |
 | `clock` | Panel clock with a calendar that shows your events, now playing, and notifications |
 | `clipboard` | Clipboard history daemon, quick-paste window (`Super+V`), and panel applet |
 | `spotlight` | Spotlight-style launcher on the Super key, with result headings and a details pane |
 | `files` | Files with an inline tree, Finder-style columns with preview, Quick Look on Space |
 | `notepad` | Notepad as a searchable Notes app (notes in `~/Documents/Notes`, saved automatically) |
 | `viewer` | Image viewer with a Preview-style toolbar |
-| `calendar` | Calendar (day/week/month) with multiple calendars, recurring events, `.ics` import/export, search, reminders and CalDAV sync |
+| `calendar` | Calendar (day/week/month) with multiple calendars, recurring events, `.ics` import/export, search, reminders, CalDAV sync and Google Calendar sign-in |
 | `mail` | Mail with native HTML rendering, multi-window compose, conversation threading, multiple accounts, OAuth2/password sign-in (secrets in the keyring), local cache and IMAP IDLE |
 | `theme` | macOS blue accent and rounder corners, stored in the preset |
 | `comp` | Compositor with the genie minimize/restore animation (log out and in afterwards) |
@@ -103,7 +103,7 @@ reminder notifications; Clipboard adds a Wayland history daemon, Spotlight-style
 quick-paste window (`Super+V`), and panel popover (see
 [docs/clipboard-manager-plan.md](docs/clipboard-manager-plan.md)); and the
 Panel Toolbar provides a macOS-style top bar with Lord Menu, App Menu,
-centered Clock Center, Spotlight button, and Control Center (see
+centered Clock Center, workspace indicator, resource monitor (minimon), Spotlight button, Control Center, and a power menu (see
 [docs/panel-toolbar-plan.md](docs/panel-toolbar-plan.md)).
 
 ## Troubleshooting
@@ -127,10 +127,15 @@ centered Clock Center, Spotlight button, and Control Center (see
   otherwise use an app password.
 - Heavy marketing HTML emails render simplified in Mail's native view; use
   "Open in browser" for complex layouts.
-- The genie animation covers floating and tiled windows, not fullscreen ones.
+- The genie animation covers floating, tiled and fullscreen windows when minimizing; restoring a fullscreen window has no genie yet.
 - After a `cosmic-comp` package update, run `./install.sh comp` again.
-- Calendar sync needs a server that accepts a password login (Nextcloud,
-  Radicale, Baikal, Fastmail, iCloud with an app password).
+- Calendar sync works with servers that accept a password login (Nextcloud,
+  Radicale, Baikal, Fastmail, iCloud with an app password) and with Google
+  through "Sign in with Google". Google needs your own Desktop OAuth client ID
+  with the CalDAV API enabled (and `MAC_MAIL_GMAIL_CLIENT_SECRET` if Google asks
+  for a secret). Microsoft calendars need the Graph API and are not supported.
+- The resource monitor is the third-party `minimon` applet (install it
+  separately); it is not part of this repo.
 
 ## License
 

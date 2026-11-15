@@ -16,6 +16,7 @@ APPLETS=(
   "cosmic-ext-applet-app-menu|dev.asw.CosmicExtAppletAppMenu"
   "cosmic-ext-applet-spotlight|dev.asw.CosmicExtAppletSpotlight"
   "cosmic-ext-applet-control-center|dev.asw.CosmicExtAppletControlCenter"
+  "cosmic-ext-applet-power-menu|dev.asw.CosmicExtAppletPowerMenu"
 )
 
 if [ "${1:-}" = "--uninstall" ]; then

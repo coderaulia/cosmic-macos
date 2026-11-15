@@ -286,7 +286,7 @@ case "$MODE" in
       "com.system76.CosmicAppletNetwork"
       "dev.asw.CosmicExtAppletSpotlight"
       "dev.asw.CosmicExtAppletControlCenter"
-      "com.system76.CosmicAppletPower"
+      "dev.asw.CosmicExtAppletPowerMenu"
     )
     ;;
   toolbar)
@@ -313,7 +313,7 @@ case "$MODE" in
       "com.system76.CosmicAppletNetwork"
       "dev.asw.CosmicExtAppletSpotlight"
       "dev.asw.CosmicExtAppletControlCenter"
-      "com.system76.CosmicAppletPower"
+      "dev.asw.CosmicExtAppletPowerMenu"
     )
     if [ "$has_notifications" = 1 ] && ! array_contains "dev.asw.CosmicExtAppletClockCenter" "${CENTER_ITEMS[@]}"; then
       insert_before_in RIGHT_ITEMS "dev.asw.CosmicExtAppletSpotlight" "com.system76.CosmicAppletNotifications"
@@ -409,7 +409,7 @@ for spec in "${SETS[@]}"; do
       fi
       ;;
     power)
-      if ! replace_or_remove_in RIGHT_ITEMS "$val" "com.system76.CosmicAppletPower"; then
+      if ! replace_or_remove_in RIGHT_ITEMS "$val" "com.system76.CosmicAppletPower" "dev.asw.CosmicExtAppletPowerMenu"; then
         if [ "$val" != "none" ] && [ "$val" != "no" ]; then
           RIGHT_ITEMS+=("$val")
         fi

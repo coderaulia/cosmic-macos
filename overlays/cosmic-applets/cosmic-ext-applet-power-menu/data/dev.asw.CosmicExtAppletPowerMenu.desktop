@@ -1,0 +1,13 @@
+[Desktop Entry]
+Name=Power Menu
+Comment=Power and session actions for the macOS-style top bar
+Type=Application
+Exec=cosmic-ext-applet-power-menu
+Terminal=false
+Categories=COSMIC;
+Keywords=COSMIC;Applet;Power;Shut Down;Restart;Lock;
+Icon=dev.asw.CosmicExtAppletPowerMenu-symbolic
+NoDisplay=true
+X-CosmicApplet=true
+X-HostWaylandDisplay=true
+X-CosmicHoverPopup=Auto

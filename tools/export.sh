@@ -32,6 +32,7 @@ APPLET_OVERLAYS=(
   cosmic-ext-mac-applet-style
   cosmic-ext-applet-clock-center
   cosmic-ext-applet-lord-menu
+  cosmic-ext-applet-power-menu
   cosmic-ext-applet-app-menu
   cosmic-ext-applet-clipboard
   cosmic-ext-applet-spotlight

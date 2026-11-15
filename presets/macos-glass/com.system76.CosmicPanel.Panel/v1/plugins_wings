@@ -11,5 +11,5 @@ Some(([
     "com.system76.CosmicAppletNetwork",
     "dev.asw.CosmicExtAppletSpotlight",
     "dev.asw.CosmicExtAppletControlCenter",
-    "com.system76.CosmicAppletPower",
+    "dev.asw.CosmicExtAppletPowerMenu",
 ]))

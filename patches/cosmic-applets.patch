@@ -1,8 +1,8 @@
 diff --git a/Cargo.lock b/Cargo.lock
-index cf3d59d..77575e3 100644
+index cf3d59d..ccc76ea 100644
 --- a/Cargo.lock
 +++ b/Cargo.lock
-@@ -1356,6 +1356,154 @@ dependencies = [
+@@ -1356,6 +1356,169 @@ dependencies = [
   "zbus",
  ]
  
@@ -117,6 +117,21 @@ index cf3d59d..77575e3 100644
 +]
 +
 +[[package]]
++name = "cosmic-ext-applet-power-menu"
++version = "0.1.0"
++dependencies = [
++ "cosmic-ext-mac-applet-style",
++ "libcosmic",
++ "logind-zbus",
++ "rustix 1.1.5",
++ "tokio",
++ "tracing",
++ "tracing-log",
++ "tracing-subscriber",
++ "zbus",
++]
++
++[[package]]
 +name = "cosmic-ext-applet-spotlight"
 +version = "0.1.0"
 +dependencies = [
@@ -158,10 +173,10 @@ index cf3d59d..77575e3 100644
  name = "cosmic-freedesktop-icons"
  version = "0.4.0"
 diff --git a/Cargo.toml b/Cargo.toml
-index 77d96a9..20c67c3 100644
+index 77d96a9..082f037 100644
 --- a/Cargo.toml
 +++ b/Cargo.toml
-@@ -15,6 +15,14 @@ members = [
+@@ -15,6 +15,15 @@ members = [
      "cosmic-applet-status-area",
      "cosmic-applet-tiling",
      "cosmic-applet-time",
@@ -171,6 +186,7 @@ index 77d96a9..20c67c3 100644
 +    "cosmic-ext-applet-clipboard",
 +    "cosmic-ext-applet-spotlight",
 +    "cosmic-ext-applet-control-center",
++    "cosmic-ext-applet-power-menu",
 +    "cosmic-ext-mac-applet-style",
 +    "cosmic-ext-dock",
      "cosmic-applet-workspaces",

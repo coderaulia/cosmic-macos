@@ -54,7 +54,8 @@ setup_applets() {
     cosmic-ext-applet-app-menu \
     cosmic-ext-applet-clipboard \
     cosmic-ext-applet-spotlight \
-    cosmic-ext-applet-control-center; do
+    cosmic-ext-applet-control-center \
+    cosmic-ext-applet-power-menu; do
     if [ ! -d "upstream-applets/$dir" ] && [ -d "overlays/cosmic-applets/$dir" ]; then
       cp -r "overlays/cosmic-applets/$dir" "upstream-applets/$dir"
       echo "    added $dir"
