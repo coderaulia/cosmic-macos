@@ -4,8 +4,9 @@
 #   screenshot  capture tool on Super+Shift+S
 #   appearance  automatic light/dark mode and wallpaper (settings: mac-theme --settings)
 #   widgets     weather, Up Next and system cards in the clock popup
+#   desktop-widgets  macOS Sonoma-style desktop widgets on the wallpaper
 #
-# Usage: ./install-extras.sh [launchpad|screenshot|appearance|widgets]...
+# Usage: ./install-extras.sh [launchpad|screenshot|appearance|widgets|desktop-widgets]...
 #        ./install-extras.sh --uninstall
 set -euo pipefail
 
@@ -15,16 +16,20 @@ BIN_DIR="$HOME/.local/bin"
 APPS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 AUTOSTART="${XDG_CONFIG_HOME:-$HOME/.config}/autostart"
-ALL=(launchpad screenshot appearance widgets)
+PRESETS="${XDG_CONFIG_HOME:-$HOME/.config}/cosmic-presets"
+ALL=(launchpad screenshot appearance widgets desktop-widgets)
 
 if [ "${1:-}" = "--uninstall" ]; then
   "$ROOT/tools/shortcut.sh" unset Super a || true
   "$ROOT/tools/shortcut.sh" unset "Super,Shift" s || true
   systemctl --user disable --now mac-appearance.service 2>/dev/null || true
   pkill -x mac-launchpad || true
-  rm -f "$BIN_DIR"/mac-{launchpad,screenshot,appearance} \
+  pkill -x mac-desktop-widgets || true
+  rm -f "$BIN_DIR"/mac-{launchpad,screenshot,appearance,desktop-widgets} \
     "$APPS_DIR"/dev.asw.Mac{Launchpad,Screenshot,Theme}.desktop \
-    "$UNIT_DIR/mac-appearance.service" "$AUTOSTART/dev.asw.MacLaunchpad.desktop"
+    "$UNIT_DIR/mac-appearance.service" "$AUTOSTART/dev.asw.MacLaunchpad.desktop" \
+    "$AUTOSTART/dev.asw.MacDesktopWidgets.desktop" \
+    "$PRESETS/macos-glass/use-desktop-widgets" "$PRESETS/macos-light/use-desktop-widgets"
   systemctl --user daemon-reload 2>/dev/null || true
   echo "uninstalled (the clock widgets stay until: ./install-clock-center.sh)"
   exit 0
@@ -85,6 +90,17 @@ EOF
       ;;
     widgets)
       "$ROOT/install-clock-center.sh"
+      ;;
+    desktop-widgets)
+      build mac-desktop-widgets
+      mkdir -p "$AUTOSTART"
+      printf '[Desktop Entry]\nType=Application\nName=Desktop Widgets\nExec=sh -c "%s/cosmic-preset widgets-sync"\nNoDisplay=true\n' \
+        "$BIN_DIR" >"$AUTOSTART/dev.asw.MacDesktopWidgets.desktop"
+      [ -d "$PRESETS/macos-glass" ] && touch "$PRESETS/macos-glass/use-desktop-widgets"
+      [ -d "$PRESETS/macos-light" ] && touch "$PRESETS/macos-light/use-desktop-widgets"
+      if [ -x "$BIN_DIR/cosmic-preset" ]; then
+        "$BIN_DIR/cosmic-preset" widgets-sync || true
+      fi
       ;;
     *) echo "unknown: $name (choose from: ${ALL[*]})" >&2; exit 1 ;;
   esac
