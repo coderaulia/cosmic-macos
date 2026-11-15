@@ -32,16 +32,31 @@ impl Command {
     }
 }
 
-pub fn socket_path() -> PathBuf {
-    let dir = std::env::var_os("XDG_RUNTIME_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir);
-    dir.join("mac-launchpad.sock")
+/// The control socket, or `None` when no private directory is available.
+pub fn socket_path() -> Option<PathBuf> {
+    private_runtime_dir().map(|dir| dir.join("mac-launchpad.sock"))
 }
+
+/// A directory only this user can write to: `$XDG_RUNTIME_DIR`, or else a
+/// private (0700) folder under `~/.cache`. Never the shared `/tmp`.
+fn private_runtime_dir() -> Option<PathBuf> {
+    if let Some(dir) = std::env::var_os("XDG_RUNTIME_DIR").filter(|d| !d.is_empty()) {
+        return Some(PathBuf::from(dir));
+    }
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+    let dir = PathBuf::from(std::env::var_os("HOME")?).join(".cache/mac-suite");
+    std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&dir).ok()?;
+    let meta = std::fs::symlink_metadata(&dir).ok()?;
+    (meta.is_dir() && meta.permissions().mode() & 0o077 == 0).then_some(dir)
+}
+
 
 /// Sends a command to a running instance. `false` if none is listening.
 pub fn send(cmd: Command) -> bool {
-    let Ok(mut stream) = UnixStream::connect(socket_path()) else {
+    let Some(path) = socket_path() else {
+        return false;
+    };
+    let Ok(mut stream) = UnixStream::connect(path) else {
         return false;
     };
     writeln!(stream, "{}", cmd.as_str()).is_ok()

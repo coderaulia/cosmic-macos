@@ -452,7 +452,10 @@ fn socket_stream() -> impl cosmic::iced::futures::Stream<Item = Message> {
         |mut tx: cosmic::iced::futures::channel::mpsc::Sender<Message>| async move {
             use tokio::io::{AsyncBufReadExt, BufReader};
 
-            let path = ipc::socket_path();
+            let Some(path) = ipc::socket_path() else {
+                tracing::error!("no private runtime directory; Launchpad cannot be toggled");
+                return;
+            };
             let listener = match tokio::net::UnixListener::bind(&path) {
                 Ok(l) => l,
                 Err(first) => {
