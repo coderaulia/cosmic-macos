@@ -110,11 +110,15 @@ fn load_agenda() -> Vec<AgendaEntry> {
         .collect()
 }
 
-/// Popup width: the stock applet popup's 360 px, 30% wider.
-const POPUP_WIDTH: f32 = 468.0;
+/// Two-column popup width so Calendar sits side-by-side with Weather/Widgets.
+const POPUP_WIDTH: f32 = 760.0;
+/// Left column width (Calendar + Up Next + Settings).
+const LEFT_COL_WIDTH: f32 = 360.0;
+/// Maximum popup height: 60% of 1080p viewport (648 px).
+const MAX_POPUP_HEIGHT: f32 = 648.0;
 /// Width of one calendar column, sized so seven columns plus padding fill
-/// the popup. The stock applet uses 44.
-const CELL_WIDTH: f32 = 60.0;
+/// the left column.
+const CELL_WIDTH: f32 = 46.0;
 
 /// The stock time applet's config is reused so COSMIC Settings keeps working.
 const TIME_CONFIG_ID: &str = "com.system76.CosmicAppletTime";
@@ -848,7 +852,7 @@ impl cosmic::Application for Window {
                                 .min_height(1.0)
                                 .min_width(POPUP_WIDTH)
                                 .max_width(POPUP_WIDTH)
-                                .max_height(1000.0);
+                                .max_height(MAX_POPUP_HEIGHT);
                             popup_settings
                         },
                         None,
@@ -1171,7 +1175,9 @@ impl cosmic::Application for Window {
         let divider =
             || padded_control(divider::horizontal::default()).padding([space_xxs, space_s]);
 
-        let mut content_list = column![
+        let now_hm = format!("{:02}:{:02}", self.now.hour(), self.now.minute());
+
+        let mut left_col = column![
             row![
                 column![date, day_of_week],
                 space::horizontal().width(Length::Fill),
@@ -1181,44 +1187,70 @@ impl cosmic::Application for Window {
             .padding([12, 20]),
             calendar.padding([0, 12].into()),
         ]
-        .padding([8, 0]);
+        .padding([8, 0])
+        .width(Length::Fixed(LEFT_COL_WIDTH));
 
         if let Some(agenda) = self.agenda_section() {
-            content_list = content_list.push(divider()).push(agenda);
+            left_col = left_col.push(divider()).push(agenda);
         }
 
-        let now_hm = format!("{:02}:{:02}", self.now.hour(), self.now.minute());
-        if let Some(section) = widgets::section(
-            &self.widget_settings,
-            &self.weather,
-            &self.stats,
-            &self.agenda,
-            self.now.date(),
-            &now_hm,
-        ) {
-            content_list = content_list.push(divider()).push(section);
+        if self.widget_settings.show_up_next {
+            let up_next = widgets::up_next_card(
+                widgets::upcoming(&self.agenda, self.now.date(), &now_hm),
+                self.now.date(),
+            );
+            left_col = left_col
+                .push(divider())
+                .push(container(up_next).padding([4, 16]));
+        }
+
+        left_col = left_col.push(divider()).push(
+            menu_button(text::body(fl!("datetime-settings")))
+                .on_press(Message::OpenDateTimeSettings),
+        );
+
+        let mut right_col = column![].spacing(8).padding([12, 16]).width(Length::Fill);
+        let mut has_top_widgets = false;
+
+        if self.widget_settings.show_weather {
+            right_col = right_col.push(widgets::weather_card(
+                &self.weather,
+                self.widget_settings.units,
+            ));
+            has_top_widgets = true;
+        }
+
+        if self.widget_settings.show_system {
+            right_col = right_col.push(widgets::system_card(&self.stats));
+            has_top_widgets = true;
         }
 
         if !control_center_installed()
             && let Some(status) = self.player_status.as_ref()
         {
-            content_list = content_list
-                .push(divider())
-                .push(self.now_playing(status));
+            if has_top_widgets {
+                right_col = right_col.push(divider::horizontal::default());
+            }
+            right_col = right_col.push(self.now_playing(status));
+            has_top_widgets = true;
         }
 
-        let content_list = content_list
-            .push(divider())
-            .push(self.notification_center())
-            .push(divider())
-            .push(
-                menu_button(text::body(fl!("datetime-settings")))
-                    .on_press(Message::OpenDateTimeSettings),
-            );
+        if has_top_widgets {
+            right_col = right_col.push(divider::horizontal::default());
+        }
+        right_col = right_col.push(self.notification_center());
+
+        let body = row![
+            scrollable(left_col).width(Length::Fixed(LEFT_COL_WIDTH)),
+            divider::vertical::default(),
+            scrollable(right_col).width(Length::Fill),
+        ]
+        .height(Length::Shrink)
+        .width(Length::Fixed(POPUP_WIDTH));
 
         mac_popover_container_sized(
             &self.core.applet,
-            content_list.width(Length::Fixed(POPUP_WIDTH)),
+            container(body).max_height(MAX_POPUP_HEIGHT),
             POPUP_WIDTH,
             POPUP_WIDTH,
         )
