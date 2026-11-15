@@ -1,5 +1,5 @@
 diff --git a/Cargo.lock b/Cargo.lock
-index 1e4dc68..dbb6bee 100644
+index 1e4dc68..88448c4 100644
 --- a/Cargo.lock
 +++ b/Cargo.lock
 @@ -743,7 +743,6 @@ dependencies = [
@@ -34,7 +34,15 @@ index 1e4dc68..dbb6bee 100644
  dependencies = [
   "almost",
   "configparser",
-@@ -2421,7 +2417,6 @@ dependencies = [
+@@ -1201,6 +1197,7 @@ dependencies = [
+  "i18n-embed-fl",
+  "image",
+  "libcosmic",
++ "mac-appmenu",
+  "notify",
+  "open",
+  "paste",
+@@ -2421,7 +2418,6 @@ dependencies = [
  [[package]]
  name = "iced"
  version = "0.14.0"
@@ -42,7 +50,7 @@ index 1e4dc68..dbb6bee 100644
  dependencies = [
   "build_helpers",
   "dnd",
-@@ -2443,7 +2438,6 @@ dependencies = [
+@@ -2443,7 +2439,6 @@ dependencies = [
  [[package]]
  name = "iced_accessibility"
  version = "0.1.0"
@@ -50,7 +58,7 @@ index 1e4dc68..dbb6bee 100644
  dependencies = [
   "accesskit",
   "accesskit_winit",
-@@ -2452,7 +2446,6 @@ dependencies = [
+@@ -2452,7 +2447,6 @@ dependencies = [
  [[package]]
  name = "iced_core"
  version = "0.14.0"
@@ -58,7 +66,7 @@ index 1e4dc68..dbb6bee 100644
  dependencies = [
   "bitflags 2.13.2",
   "build_helpers",
-@@ -2479,7 +2472,6 @@ dependencies = [
+@@ -2479,7 +2473,6 @@ dependencies = [
  [[package]]
  name = "iced_debug"
  version = "0.14.0"
@@ -66,7 +74,7 @@ index 1e4dc68..dbb6bee 100644
  dependencies = [
   "iced_core",
   "iced_futures",
-@@ -2489,7 +2481,6 @@ dependencies = [
+@@ -2489,7 +2482,6 @@ dependencies = [
  [[package]]
  name = "iced_futures"
  version = "0.14.0"
@@ -74,7 +82,7 @@ index 1e4dc68..dbb6bee 100644
  dependencies = [
   "futures",
   "iced_core",
-@@ -2503,7 +2494,6 @@ dependencies = [
+@@ -2503,7 +2495,6 @@ dependencies = [
  [[package]]
  name = "iced_graphics"
  version = "0.14.0"
@@ -82,7 +90,7 @@ index 1e4dc68..dbb6bee 100644
  dependencies = [
   "bitflags 2.13.2",
   "bytemuck",
-@@ -2524,7 +2514,6 @@ dependencies = [
+@@ -2524,7 +2515,6 @@ dependencies = [
  [[package]]
  name = "iced_program"
  version = "0.14.0"
@@ -90,7 +98,7 @@ index 1e4dc68..dbb6bee 100644
  dependencies = [
   "iced_graphics",
   "iced_runtime",
-@@ -2533,7 +2522,6 @@ dependencies = [
+@@ -2533,7 +2523,6 @@ dependencies = [
  [[package]]
  name = "iced_renderer"
  version = "0.14.0"
@@ -98,7 +106,7 @@ index 1e4dc68..dbb6bee 100644
  dependencies = [
   "iced_graphics",
   "iced_tiny_skia",
-@@ -2545,7 +2533,6 @@ dependencies = [
+@@ -2545,7 +2534,6 @@ dependencies = [
  [[package]]
  name = "iced_runtime"
  version = "0.14.0"
@@ -106,7 +114,7 @@ index 1e4dc68..dbb6bee 100644
  dependencies = [
   "build_helpers",
   "bytes",
-@@ -2562,7 +2549,6 @@ dependencies = [
+@@ -2562,7 +2550,6 @@ dependencies = [
  [[package]]
  name = "iced_tiny_skia"
  version = "0.14.0"
@@ -114,7 +122,7 @@ index 1e4dc68..dbb6bee 100644
  dependencies = [
   "bytemuck",
   "cosmic-text",
-@@ -2579,7 +2565,6 @@ dependencies = [
+@@ -2579,7 +2566,6 @@ dependencies = [
  [[package]]
  name = "iced_wgpu"
  version = "0.14.0"
@@ -122,7 +130,7 @@ index 1e4dc68..dbb6bee 100644
  dependencies = [
   "as-raw-xcb-connection",
   "bitflags 2.13.2",
-@@ -2611,7 +2596,6 @@ dependencies = [
+@@ -2611,7 +2597,6 @@ dependencies = [
  [[package]]
  name = "iced_widget"
  version = "0.14.2"
@@ -130,7 +138,7 @@ index 1e4dc68..dbb6bee 100644
  dependencies = [
   "build_helpers",
   "cosmic-client-toolkit",
-@@ -2631,7 +2615,6 @@ dependencies = [
+@@ -2631,7 +2616,6 @@ dependencies = [
  [[package]]
  name = "iced_winit"
  version = "0.14.0"
@@ -138,7 +146,7 @@ index 1e4dc68..dbb6bee 100644
  dependencies = [
   "build_helpers",
   "cosmic-client-toolkit",
-@@ -3348,7 +3331,6 @@ checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
+@@ -3348,7 +3332,6 @@ checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
  [[package]]
  name = "libcosmic"
  version = "1.0.0"
@@ -146,6 +154,24 @@ index 1e4dc68..dbb6bee 100644
  dependencies = [
   "apply",
   "ashpd 0.12.3",
+@@ -3590,6 +3573,17 @@ dependencies = [
+  "num-traits",
+ ]
+ 
++[[package]]
++name = "mac-appmenu"
++version = "0.1.0"
++dependencies = [
++ "futures-core",
++ "serde",
++ "tokio",
++ "tracing",
++ "zbus",
++]
++
+ [[package]]
+ name = "malloc_buf"
+ version = "0.0.6"
 diff --git a/Cargo.toml b/Cargo.toml
 index b8ae5de..b038a2b 100644
 --- a/Cargo.toml

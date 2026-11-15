@@ -528,6 +528,12 @@ impl Recorder {
             }));
         }
 
+        if let Some(stderr) = child.stderr.take() {
+            std::thread::spawn(move || {
+                let _ = std::io::copy(&mut std::io::BufReader::new(stderr), &mut std::io::sink());
+            });
+        }
+
         let _ = &portal.proxy;
         Ok(Self { rt, portal, child, output_path })
     }
