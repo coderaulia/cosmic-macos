@@ -4,6 +4,8 @@
 //! surfaces, soft blue accent, subtle 1px window outlines, neutral text buttons,
 //! crisp off-white text on accent pills, and rounder corners.
 
+mod appearance_ui;
+
 use cosmic::{
     cosmic_config::{Config, CosmicConfigEntry},
     cosmic_theme::{
@@ -118,7 +120,8 @@ fn apply(
         .map_err(|err| err.to_string())
 }
 
-fn main() {
+/// Write the macOS look into the light and dark COSMIC themes. Returns whether both worked.
+fn apply_theme() -> bool {
     let results = [
         (
             "dark",
@@ -129,17 +132,28 @@ fn main() {
             apply(ThemeBuilder::light_config(), Theme::light_config(), &LIGHT_PALETTE),
         ),
     ];
-    let mut failed = false;
+    let mut ok = true;
     for (name, result) in results {
         match result {
             Ok(()) => println!("{name} theme updated"),
             Err(err) => {
                 eprintln!("{name} theme failed: {err}");
-                failed = true;
+                ok = false;
             }
         }
     }
-    if failed {
+    ok
+}
+
+/// No arguments applies the theme (what the install scripts use);
+/// `--settings` opens the settings window with the Appearance page.
+fn main() {
+    if std::env::args().skip(1).any(|a| a == "--settings" || a == "--appearance") {
+        if let Err(err) = appearance_ui::run() {
+            eprintln!("mac-theme: {err}");
+            std::process::exit(1);
+        }
+    } else if !apply_theme() {
         std::process::exit(1);
     }
 }

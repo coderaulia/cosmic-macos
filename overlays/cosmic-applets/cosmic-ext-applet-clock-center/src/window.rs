@@ -30,6 +30,12 @@ use cosmic_notifications_util::{ActionId, Notification, markup};
 use mpris2_zbus::player::PlaybackStatus;
 use std::collections::HashMap;
 
+use crate::widgets::{self, WeatherState};
+use mac_widgets::{
+    settings::WidgetSettings,
+    stats::{CpuSample, Stats},
+    weather::{self as mac_weather, Forecast, Location},
+};
 use crate::mpris_subscription::{self, MprisRequest, MprisUpdate, PlayerStatus};
 use crate::subscriptions::{
     self,
@@ -66,11 +72,11 @@ use icu::{
 
 /// One event from the Calendar app, as far as the popup needs it.
 #[derive(Clone, Debug)]
-struct AgendaEntry {
-    date: Date,
+pub(crate) struct AgendaEntry {
+    pub(crate) date: Date,
     /// Start time as "HH:MM"; `None` for all-day events.
-    time: Option<String>,
-    title: String,
+    pub(crate) time: Option<String>,
+    pub(crate) title: String,
 }
 
 /// Events saved by the Calendar app (`mac-calendar`), if it is in use.
@@ -171,6 +177,10 @@ pub struct Window {
     notifications_proxy: Option<NotificationsAppletProxy<'static>>,
     notifications_tx: Option<tokio::sync::mpsc::Sender<notifications::Input>>,
     dbus_sender: Option<tokio::sync::mpsc::Sender<subscriptions::dbus::Input>>,
+    widget_settings: WidgetSettings,
+    weather: WeatherState,
+    stats: Stats,
+    cpu_prev: Option<CpuSample>,
 }
 
 #[derive(Debug, Clone)]
@@ -199,6 +209,8 @@ pub enum Message {
     Dismissed(u32),
     ActivateNotification(u32),
     ClearAll,
+    WeatherLoaded(Result<Forecast, String>),
+    StatsTick,
 }
 
 impl Window {
@@ -469,6 +481,37 @@ impl Window {
         Some(list.into())
     }
 
+    /// Prepares the widget section when the popup opens: reloads settings,
+    /// takes a first stats sample and fetches weather off the UI thread when
+    /// the cache is stale.
+    fn open_widgets(&mut self) -> app::Task<Message> {
+        self.widget_settings = WidgetSettings::load();
+        self.cpu_prev = None;
+        self.stats = Stats::read(&mut self.cpu_prev);
+        if !self.widget_settings.show_weather {
+            return Task::none();
+        }
+        let Some(location) = Location::load() else {
+            self.weather = WeatherState::NoLocation;
+            return Task::none();
+        };
+        if let Some(forecast) = mac_weather::cached(&location) {
+            self.weather = WeatherState::Ready(forecast);
+            return Task::none();
+        }
+        if !matches!(self.weather, WeatherState::Ready(_)) {
+            self.weather = WeatherState::Loading;
+        }
+        Task::perform(
+            async move {
+                tokio::task::spawn_blocking(move || mac_weather::load_or_fetch(&location))
+                    .await
+                    .map_err(|e| e.to_string())?
+            },
+            |result| cosmic::Action::App(Message::WeatherLoaded(result)),
+        )
+    }
+
     fn notification_center(&self) -> Element<'_, Message> {
         let mut header = row![text::heading(fl!("notifications")).width(Length::Fill)]
             .align_y(Alignment::Center)
@@ -570,6 +613,10 @@ impl cosmic::Application for Window {
                 notifications_proxy,
                 notifications_tx: None,
                 dbus_sender: None,
+                widget_settings: WidgetSettings::default(),
+                weather: WeatherState::default(),
+                stats: Stats::default(),
+                cpu_prev: None,
             },
             Task::none(),
         )
@@ -733,7 +780,13 @@ impl cosmic::Application for Window {
             ]),
             None => Subscription::none(),
         };
+        let stats_sub = if self.popup.is_some() && self.widget_settings.show_system {
+            cosmic::iced::time::every(std::time::Duration::from_secs(2)).map(|_| Message::StatsTick)
+        } else {
+            Subscription::none()
+        };
         Subscription::batch([
+            stats_sub,
             notifications_sub,
             mpris_subscription::mpris_subscription(0).map(Message::Mpris),
             self.core
@@ -759,7 +812,8 @@ impl cosmic::Application for Window {
                 if let Some(p) = self.popup.take() {
                     destroy_popup(p)
                 } else {
-                    cosmic::surface::surface_task(cosmic::surface::action::app_popup(
+                    let widgets_task = self.open_widgets();
+                    let popup_task = cosmic::surface::surface_task(cosmic::surface::action::app_popup(
                         |_| Default::default(),
                         |app: &mut Self| {
                             app.date_today = app.now.date();
@@ -798,8 +852,25 @@ impl cosmic::Application for Window {
                             popup_settings
                         },
                         None,
-                    ))
+                    ));
+                    Task::batch([popup_task, widgets_task])
                 }
+            }
+            Message::WeatherLoaded(result) => {
+                self.weather = match result {
+                    Ok(forecast) => WeatherState::Ready(forecast),
+                    Err(err) => {
+                        tracing::warn!(err, "Weather fetch failed");
+                        WeatherState::Failed
+                    }
+                };
+                Task::none()
+            }
+            Message::StatsTick => {
+                if self.popup.is_some() {
+                    self.stats = Stats::read(&mut self.cpu_prev);
+                }
+                Task::none()
             }
             Message::Tick => {
                 self.now = self.timezone.as_ref().map_or_else(
@@ -1114,6 +1185,18 @@ impl cosmic::Application for Window {
 
         if let Some(agenda) = self.agenda_section() {
             content_list = content_list.push(divider()).push(agenda);
+        }
+
+        let now_hm = format!("{:02}:{:02}", self.now.hour(), self.now.minute());
+        if let Some(section) = widgets::section(
+            &self.widget_settings,
+            &self.weather,
+            &self.stats,
+            &self.agenda,
+            self.now.date(),
+            &now_hm,
+        ) {
+            content_list = content_list.push(divider()).push(section);
         }
 
         if !control_center_installed()

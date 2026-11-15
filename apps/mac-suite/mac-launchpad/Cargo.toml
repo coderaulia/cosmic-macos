@@ -1,0 +1,12 @@
+[package]
+name = "mac-launchpad"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+description = "Launchpad: full-screen application grid overlay"
+
+[dependencies]
+libcosmic = { workspace = true, features = ["desktop"] }
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

@@ -1,0 +1,18 @@
+[package]
+name = "mac-appearance"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+description = "Automatic light/dark switching and dynamic wallpaper for COSMIC"
+
+[lib]
+name = "mac_appearance"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mac-appearance"
+path = "src/main.rs"
+
+[dependencies]
+jiff.workspace = true
+libc = "0.2"

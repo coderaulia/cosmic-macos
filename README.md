@@ -31,6 +31,10 @@ Components (`./install.sh --list`):
 | `calendar` | Calendar (day/week/month) with multiple calendars, recurring events, `.ics` import/export, search, reminders, CalDAV sync and Google Calendar sign-in |
 | `mail` | Mail with native HTML rendering, multi-window compose, conversation threading, multiple accounts, OAuth2/password sign-in (secrets in the keyring), local cache and IMAP IDLE |
 | `theme` | macOS blue accent and rounder corners, stored in the preset |
+| `launchpad` | Launchpad: full-screen app grid with search and pages (`Super+A`) |
+| `screenshot` | Screenshot tool: region, window or whole screen, floating thumbnail (`Super+Shift+S`) |
+| `appearance` | Automatic light/dark mode (sunset/sunrise or schedule) and light/dark or dynamic wallpaper; settings in the Appearance app |
+| `widgets` | Weather (Open-Meteo), Up Next and system cards in the clock popup |
 | `comp` | Compositor with the genie minimize/restore animation (log out and in afterwards) |
 
 Each piece builds on its own. `./install.sh files` fetches only what Files
@@ -136,6 +140,11 @@ centered Clock Center, workspace indicator, resource monitor (minimon), Spotligh
   for a secret). Microsoft calendars need the Graph API and are not supported.
 - The resource monitor is the third-party `minimon` applet (install it
   separately); it is not part of this repo.
+
+- Launchpad, Screenshot, Appearance and the clock widgets are new and have not
+  been tried on every setup yet: Launchpad has no folders or drag-to-reorder,
+  Screenshot has no screen recording, Appearance only sets the wallpaper for all
+  screens together, and weather needs a location set in the Appearance app.
 
 ## License
 

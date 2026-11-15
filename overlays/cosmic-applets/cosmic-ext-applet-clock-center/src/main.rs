@@ -6,6 +6,7 @@ mod localize;
 mod mpris_subscription;
 mod subscriptions;
 mod time;
+mod widgets;
 mod window;
 
 fn main() -> cosmic::iced::Result {

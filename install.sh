@@ -13,7 +13,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
-ALL=(preset dock panel clock clipboard spotlight files notepad viewer calendar mail theme comp)
+ALL=(preset dock panel clock clipboard spotlight files notepad viewer calendar mail theme launchpad screenshot appearance widgets comp)
 
 describe() {
   case "$1" in
@@ -29,6 +29,10 @@ describe() {
     calendar)  echo "Calendar with CalDAV sync" ;;
     mail)      echo "Mail for any IMAP/SMTP account" ;;
     theme)     echo "macOS blue accent and rounder corners (part of the preset)" ;;
+    launchpad) echo "Launchpad: full-screen app grid on Super+A" ;;
+    screenshot) echo "screenshot tool with region/window/screen capture on Super+Shift+S" ;;
+    appearance) echo "automatic light/dark mode and wallpaper (settings: Appearance app)" ;;
+    widgets)   echo "weather, Up Next and system cards in the clock popup" ;;
     comp)      echo "compositor with the genie minimize animation (needs a re-login)" ;;
   esac
 }
@@ -36,14 +40,14 @@ describe() {
 # Which upstream projects a component is built from.
 needs() {
   case "$1" in
-    dock|panel|clock) echo applets ;;
+    dock|panel|clock|widgets) echo applets ;;
     clipboard) echo "libcosmic applets" ;;
     spotlight) echo launcher ;;
     comp) echo comp ;;
     files) echo "libcosmic files" ;;
     notepad) echo "libcosmic edit" ;;
     viewer) echo "libcosmic viewer" ;;
-    calendar|mail|theme) echo libcosmic ;;
+    calendar|mail|theme|launchpad|screenshot|appearance) echo libcosmic ;;
     preset) echo "" ;;
   esac
 }
@@ -92,6 +96,7 @@ run() {
     comp)      ./install-genie-comp.sh ;;
     theme)     ./install-theme.sh ;;
     files|notepad|viewer|calendar|mail) ./install-apps.sh "$component" ;;
+    launchpad|screenshot|appearance|widgets) ./install-extras.sh "$component" ;;
   esac
 }
 
@@ -113,6 +118,7 @@ case "${1:-}" in
     ./install-spotlight.sh --uninstall || true
     ./install-genie-comp.sh --uninstall || true
     ./install-apps.sh --uninstall || true
+    ./install-extras.sh --uninstall || true
     echo
     echo "Switch the look back with: cosmic-preset revert"
     ;;

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Screenshot
+Comment=Capture the screen, a window or a selected portion
+Exec=mac-screenshot
+Icon=applets-screenshot-symbolic
+Terminal=false
+Categories=Utility;
+Keywords=screenshot;capture;screen;
+StartupNotify=false
