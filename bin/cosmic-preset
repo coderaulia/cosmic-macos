@@ -14,6 +14,7 @@ PREVIOUS="$STORE/.previous"       # managed state right before the last apply
 FULL_BACKUP="$STORE/.full-backup" # complete copy of ~/.config/cosmic
 BASELINE="original"
 ALTERNATE="macos-glass"
+LIGHT="macos-light"
 
 # Whole directories, mirrored exactly (extra files are removed).
 MANAGED_DIRS=(
@@ -177,7 +178,7 @@ cmd_undo() {
 }
 
 cmd_toggle() {
-  if [ "$(current)" = "$ALTERNATE" ]; then cmd_apply "$BASELINE"; else cmd_apply "$ALTERNATE"; fi
+  if [ "$(current)" = "$ALTERNATE" ]; then cmd_apply "$LIGHT"; else cmd_apply "$ALTERNATE"; fi
 }
 
 cmd_delete() {
@@ -222,7 +223,7 @@ usage: cosmic-preset <command>
   apply <name>          apply a preset
   save <name> [--force] save the current desktop as a preset
   revert                apply '$BASELINE'
-  toggle                switch between '$BASELINE' and '$ALTERNATE'
+  toggle                switch between '$ALTERNATE' and '$LIGHT'
   undo                  restore the state from before the last apply
   delete <name>         delete a preset
   reload                restart cosmic-panel if a change did not show up

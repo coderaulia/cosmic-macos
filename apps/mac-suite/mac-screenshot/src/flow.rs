@@ -141,4 +141,20 @@ mod tests {
         assert_eq!(crop(&s, None).unwrap().dimensions(), (200, 100));
         assert!(crop(&s, Some(Rect::new(0.0, 0.0, 0.0, 5.0))).is_none());
     }
+
+    #[test]
+    fn crop_clamps_out_of_bounds_and_fractional_scales() {
+        // 3840x2160 at 1.5x -> logical 2560x1440 (using smaller proportional dims for speed).
+        let s = shot(384, 216, 256, 144);
+        let img = crop(&s, Some(Rect::new(-20.0, -10.0, 300.0, 200.0))).unwrap();
+        assert_eq!(img.dimensions(), (384, 216));
+
+        let edge = crop(&s, Some(Rect::new(200.0, 100.0, 100.0, 100.0))).unwrap();
+        assert_eq!(edge.dimensions(), (84, 66));
+
+        // Negative / zero / offscreen selections return None cleanly.
+        assert!(crop(&s, Some(Rect::new(10.0, 10.0, -5.0, 20.0))).is_none());
+        assert!(crop(&s, Some(Rect::new(300.0, 10.0, 20.0, 20.0))).is_none());
+        assert!(crop(&shot(100, 100, 0, 100), Some(Rect::new(0.0, 0.0, 10.0, 10.0))).is_none());
+    }
 }

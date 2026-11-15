@@ -18,7 +18,6 @@ use cctk::{
 };
 use cosmic::{
     Element, Task, app,
-    applet::token::subscription::{TokenRequest, TokenUpdate, activation_token_subscription},
     cosmic_config::{self, Config, CosmicConfigEntry, cosmic_config_derive::CosmicConfigEntry},
     desktop::fde::{self, DesktopEntry},
     iced::{
@@ -91,7 +90,6 @@ enum Message {
     Power(PowerAction),
     PowerResult(Result<(), String>),
     Wayland(Box<WaylandUpdate>),
-    Token(TokenUpdate),
     Closed(window::Id),
 }
 
@@ -114,7 +112,6 @@ struct LordMenu {
     selected_force_quit_app: Option<String>,
     confirm_force_quit: bool,
     wayland_tx: Option<calloop::channel::Sender<WaylandRequest>>,
-    token_tx: Option<calloop::channel::Sender<TokenRequest>>,
     /// The running distribution's logo, found once at start-up.
     os_logo: Option<PathBuf>,
 }
@@ -195,16 +192,8 @@ impl LordMenu {
     }
 
     fn spawn_with_token(&self, exec: String) -> Task<cosmic::Action<Message>> {
-        if let Some(tx) = self.token_tx.as_ref() {
-            let _ = tx.send(TokenRequest {
-                app_id: APP_ID.to_string(),
-                exec: exec.clone(),
-            });
-            Task::none()
-        } else {
-            spawn_shell_command(&exec, None);
-            Task::none()
-        }
+        spawn_shell_command(&exec, None);
+        Task::none()
     }
 
     fn close_popup_task(&mut self) -> app::Task<Message> {
@@ -319,6 +308,12 @@ impl LordMenu {
                     mac_menu_divider(),
                     mac_menu_item(text::body("System Settings…"))
                         .on_press(Message::LaunchCommand("cosmic-settings".to_string())),
+                    mac_menu_item(text::body("Appearance & Widgets…"))
+                        .on_press(Message::LaunchCommand(resolve_appearance_command())),
+                    mac_menu_item(text::body("Toggle Dark / Light Mode"))
+                        .on_press(Message::LaunchCommand(
+                            "/home/asw/.local/bin/cosmic-preset toggle".to_string(),
+                        )),
                 ];
 
                 if self.has_app_store {
@@ -612,7 +607,6 @@ impl cosmic::Application for LordMenu {
             selected_force_quit_app: None,
             confirm_force_quit: false,
             wayland_tx: None,
-            token_tx: None,
             os_logo: find_os_logo(),
         };
         app.refresh_recent_items();
@@ -812,13 +806,6 @@ impl cosmic::Application for LordMenu {
                     self.wayland_tx = None;
                 }
             },
-            Message::Token(u) => match u {
-                TokenUpdate::Init(tx) => self.token_tx = Some(tx),
-                TokenUpdate::Finished => self.token_tx = None,
-                TokenUpdate::ActivationToken { token, exec, .. } => {
-                    spawn_shell_command(&exec, token.as_deref());
-                }
-            },
             Message::Closed(id) => {
                 if self.popup == Some(id) {
                     self.popup = None;
@@ -865,10 +852,7 @@ impl cosmic::Application for LordMenu {
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        Subscription::batch([
-            wayland::subscription().map(|u| Message::Wayland(Box::new(u))),
-            activation_token_subscription(0).map(Message::Token),
-        ])
+        wayland::subscription().map(|u| Message::Wayland(Box::new(u)))
     }
 
     fn style(&self) -> Option<cosmic::iced::theme::Style> {
@@ -941,6 +925,19 @@ fn is_binary_installed(name: &str) -> bool {
         }
     }
     PathBuf::from("/usr/bin").join(name).is_file()
+}
+
+fn resolve_appearance_command() -> String {
+    if is_binary_installed("mac-appearance") {
+        return "mac-appearance".to_string();
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        let local = PathBuf::from(home).join(".local/bin/mac-appearance");
+        if local.is_file() {
+            return local.to_string_lossy().into_owned();
+        }
+    }
+    "cosmic-settings".to_string()
 }
 
 fn spawn_shell_command(cmd_line: &str, token: Option<&str>) {

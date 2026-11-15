@@ -18,8 +18,8 @@ use cosmic::{
     },
     surface, theme,
     widget::{
-        Button, Grid, Id, autosize, button, container, divider, grid, icon, rectangle_tracker::*,
-        scrollable, space, text, toggler,
+        Button, Grid, Id, autosize, button, container, divider, grid, icon, mouse_area,
+        rectangle_tracker::*, scrollable, space, text, toggler,
     },
 };
 use cosmic_ext_mac_applet_style::{
@@ -114,8 +114,57 @@ fn load_agenda() -> Vec<AgendaEntry> {
 const POPUP_WIDTH: f32 = 760.0;
 /// Left column width (Calendar + Up Next + Settings).
 const LEFT_COL_WIDTH: f32 = 360.0;
-/// Maximum popup height: 60% of 1080p viewport (648 px).
-const MAX_POPUP_HEIGHT: f32 = 648.0;
+/// Default fallback popup height: 60% of 1080p viewport (648 px).
+const DEFAULT_POPUP_MAX_HEIGHT: f32 = 648.0;
+
+/// Maximum popup height: 60% of the active display's logical viewport height,
+/// clamped to `480.0..=1200.0`, falling back to `648.0`.
+static POPUP_MAX_HEIGHT: LazyLock<f32> = LazyLock::new(detect_popup_max_height);
+
+/// Parses `cosmic-randr list` output to compute 60% of the logical viewport height
+/// from the first `(current)` mode height and its output `Scale:` percentage.
+fn parse_randr_popup_max_height(output: &str) -> f32 {
+    let mut current_scale = 100.0_f32;
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if !line.starts_with(char::is_whitespace) && !trimmed.is_empty() {
+            current_scale = 100.0;
+            continue;
+        }
+        if let Some(rest) = trimmed.strip_prefix("Scale:") {
+            if let Ok(scale) = rest.trim().trim_end_matches('%').parse::<f32>()
+                && scale > 0.0
+            {
+                current_scale = scale;
+            }
+            continue;
+        }
+        if trimmed.contains("(current)")
+            && let Some(mode) = trimmed.split_whitespace().next()
+            && let Some((_, h_str)) = mode.split_once('x')
+            && let Ok(height) = h_str.parse::<u32>()
+            && height > 0
+        {
+            let logical_height = height as f32 / (current_scale / 100.0);
+            return (logical_height * 0.60).clamp(480.0, 1200.0);
+        }
+    }
+    DEFAULT_POPUP_MAX_HEIGHT
+}
+
+fn detect_popup_max_height() -> f32 {
+    let Ok(output) = std::process::Command::new("cosmic-randr")
+        .arg("list")
+        .output()
+    else {
+        return DEFAULT_POPUP_MAX_HEIGHT;
+    };
+    if !output.status.success() {
+        return DEFAULT_POPUP_MAX_HEIGHT;
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    parse_randr_popup_max_height(&text)
+}
 /// Width of one calendar column, sized so seven columns plus padding fill
 /// the left column.
 const CELL_WIDTH: f32 = 46.0;
@@ -196,6 +245,10 @@ pub enum Message {
     SelectDay(i8),
     /// Open the Calendar app.
     OpenCalendar,
+    /// Open System Monitor.
+    OpenSystemMonitor,
+    /// Open Appearance settings.
+    OpenAppearanceSettings,
     PreviousMonth,
     NextMonth,
     OpenDateTimeSettings,
@@ -852,7 +905,7 @@ impl cosmic::Application for Window {
                                 .min_height(1.0)
                                 .min_width(POPUP_WIDTH)
                                 .max_width(POPUP_WIDTH)
-                                .max_height(MAX_POPUP_HEIGHT);
+                                .max_height(*POPUP_MAX_HEIGHT);
                             popup_settings
                         },
                         None,
@@ -925,11 +978,13 @@ impl cosmic::Application for Window {
                 Task::none()
             }
             Message::OpenCalendar => {
-                let command = std::env::var_os("HOME")
-                    .map(|home| std::path::PathBuf::from(home).join(".local/bin/mac-calendar"))
-                    .unwrap_or_else(|| "mac-calendar".into());
-                tokio::spawn(cosmic::process::spawn(std::process::Command::new(command)));
-                Task::none()
+                self.open_app_and_close_popup("mac-calendar", "cosmic-settings", &["time"])
+            }
+            Message::OpenSystemMonitor => {
+                self.open_app_and_close_popup("cosmic-monitor", "cosmic-settings", &[])
+            }
+            Message::OpenAppearanceSettings => {
+                self.open_app_and_close_popup("mac-appearance", "cosmic-settings", &[])
             }
             Message::OpenDateTimeSettings => {
                 let exec = "cosmic-settings time".to_string();
@@ -1195,10 +1250,11 @@ impl cosmic::Application for Window {
         }
 
         if self.widget_settings.show_up_next {
-            let up_next = widgets::up_next_card(
+            let up_next = mouse_area(widgets::up_next_card(
                 widgets::upcoming(&self.agenda, self.now.date(), &now_hm),
                 self.now.date(),
-            );
+            ))
+            .on_press(Message::OpenCalendar);
             left_col = left_col
                 .push(divider())
                 .push(container(up_next).padding([4, 16]));
@@ -1213,15 +1269,21 @@ impl cosmic::Application for Window {
         let mut has_top_widgets = false;
 
         if self.widget_settings.show_weather {
-            right_col = right_col.push(widgets::weather_card(
-                &self.weather,
-                self.widget_settings.units,
-            ));
+            right_col = right_col.push(
+                mouse_area(widgets::weather_card(
+                    &self.weather,
+                    self.widget_settings.units,
+                ))
+                .on_press(Message::OpenAppearanceSettings),
+            );
             has_top_widgets = true;
         }
 
         if self.widget_settings.show_system {
-            right_col = right_col.push(widgets::system_card(&self.stats));
+            right_col = right_col.push(
+                mouse_area(widgets::system_card(&self.stats))
+                    .on_press(Message::OpenSystemMonitor),
+            );
             has_top_widgets = true;
         }
 
@@ -1250,7 +1312,7 @@ impl cosmic::Application for Window {
 
         mac_popover_container_sized(
             &self.core.applet,
-            container(body).max_height(MAX_POPUP_HEIGHT),
+            container(body).max_height(*POPUP_MAX_HEIGHT),
             POPUP_WIDTH,
             POPUP_WIDTH,
         )
@@ -1490,5 +1552,104 @@ fn date_button(
         button.on_press(Message::SelectDay(day))
     } else {
         button
+    }
+}
+
+fn resolve_command(bin: &str) -> Option<std::path::PathBuf> {
+    if let Some(home) = std::env::var_os("HOME") {
+        let local_bin = std::path::PathBuf::from(home).join(".local/bin").join(bin);
+        if local_bin.is_file() {
+            return Some(local_bin);
+        }
+    }
+    if let Some(path_var) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path_var) {
+            let candidate = dir.join(bin);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
+impl Window {
+    fn open_app_and_close_popup(
+        &mut self,
+        primary: &str,
+        fallback: &str,
+        fallback_args: &[&str],
+    ) -> app::Task<Message> {
+        let cmd = if let Some(bin) = resolve_command(primary) {
+            std::process::Command::new(bin)
+        } else {
+            let mut fallback_cmd = std::process::Command::new(fallback);
+            fallback_cmd.args(fallback_args);
+            fallback_cmd
+        };
+        tokio::spawn(cosmic::process::spawn(cmd));
+
+        if let Some(p) = self.popup.take() {
+            destroy_popup(p)
+        } else {
+            Task::none()
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_randr_popup_max_height_handles_scales_clamps_and_fallback() {
+        let sample_1080p = "\
+HDMI-A-1 (enabled)
+  Scale: 100%
+  Modes:
+    1920x1080 @  60.000 Hz (current) (preferred)
+    1280x720 @  60.000 Hz
+";
+        assert!((parse_randr_popup_max_height(sample_1080p) - 648.0).abs() < 0.01);
+
+        let sample_hidpi = "\
+eDP-1 (enabled)
+  Scale: 200%
+  Modes:
+    3840x2160 @  60.000 Hz (current) (preferred)
+";
+        assert!((parse_randr_popup_max_height(sample_hidpi) - 648.0).abs() < 0.01);
+
+        let sample_1440p = "\
+DP-1 (enabled)
+  Scale: 100%
+  Modes:
+    2560x1440 @ 144.000 Hz (current)
+";
+        assert!((parse_randr_popup_max_height(sample_1440p) - 864.0).abs() < 0.01);
+
+        let sample_small_clamped = "\
+VGA-1 (enabled)
+  Scale: 100%
+  Modes:
+    1280x720 @ 60.000 Hz (current)
+";
+        assert!((parse_randr_popup_max_height(sample_small_clamped) - 480.0).abs() < 0.01);
+
+        let sample_large_clamped = "\
+DP-2 (enabled)
+  Scale: 100%
+  Modes:
+    3840x2160 @ 60.000 Hz (current)
+";
+        assert!((parse_randr_popup_max_height(sample_large_clamped) - 1200.0).abs() < 0.01);
+
+        assert!((parse_randr_popup_max_height("") - DEFAULT_POPUP_MAX_HEIGHT).abs() < 0.01);
+        assert!(
+            (parse_randr_popup_max_height("HDMI-A-1 (disabled)\n  Scale: 150%\n")
+                - DEFAULT_POPUP_MAX_HEIGHT)
+                .abs()
+                < 0.01
+        );
     }
 }

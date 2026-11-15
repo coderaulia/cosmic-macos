@@ -1,0 +1,15 @@
+Some(([
+    "dev.asw.CosmicExtAppletLordMenu",
+    "dev.asw.CosmicExtAppletAppMenu",
+    "com.system76.CosmicAppletWorkspaces",
+], [
+    "dev.asw.CosmicExtAppletSysmon",
+    "com.system76.CosmicAppletStatusArea",
+    "dev.asw.CosmicExtAppletClipboard",
+    "com.system76.CosmicAppletAudio",
+    "com.system76.CosmicAppletBattery",
+    "com.system76.CosmicAppletNetwork",
+    "dev.asw.CosmicExtAppletSpotlight",
+    "dev.asw.CosmicExtAppletControlCenter",
+    "dev.asw.CosmicExtAppletPowerMenu",
+]))

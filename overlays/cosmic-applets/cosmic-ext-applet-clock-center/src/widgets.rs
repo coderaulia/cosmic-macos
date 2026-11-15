@@ -10,7 +10,7 @@ use cosmic::{
     widget::{container, icon, text},
 };
 use mac_widgets::{
-    settings::{Units, WidgetSettings},
+    settings::Units,
     stats::{Stats, format_bytes},
     weather::{Forecast, describe},
 };
@@ -188,32 +188,6 @@ pub fn system_card<'a>(stats: &Stats) -> Element<'a, Message> {
         ));
     }
     card(list)
-}
-
-/// All enabled cards stacked, or `None` when everything is switched off.
-pub fn section<'a>(
-    settings: &WidgetSettings,
-    weather: &'a WeatherState,
-    stats: &Stats,
-    agenda: &'a [AgendaEntry],
-    today: jiff::civil::Date,
-    now_hm: &str,
-) -> Option<Element<'a, Message>> {
-    let mut cards = column![].spacing(8).padding([4, 16]);
-    let mut any = false;
-    if settings.show_weather {
-        cards = cards.push(weather_card(weather, settings.units));
-        any = true;
-    }
-    if settings.show_up_next {
-        cards = cards.push(up_next_card(upcoming(agenda, today, now_hm), today));
-        any = true;
-    }
-    if settings.show_system {
-        cards = cards.push(system_card(stats));
-        any = true;
-    }
-    any.then(|| cards.into())
 }
 
 #[cfg(test)]

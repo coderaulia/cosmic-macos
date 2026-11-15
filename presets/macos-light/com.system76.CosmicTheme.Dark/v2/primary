@@ -1,0 +1,20 @@
+(
+    base: "#282B32FF",
+    component: (
+        base: "#383B43FF",
+        hover: "#4C4F55FF",
+        pressed: "#606368FF",
+        selected: "#4C4F55FF",
+        selected_text: "#4A90E2FF",
+        focus: "#4A90E2FF",
+        divider: "#FFFFFF33",
+        on: "#FFFFFFFF",
+        disabled: "#383B4380",
+        on_disabled: "#FFFFFFA6",
+        border: "#B6BECEFF",
+        disabled_border: "#B6BECE80",
+    ),
+    divider: "#53555BFF",
+    on: "#FFFFFFFF",
+    small_widget: "#36393E40",
+)

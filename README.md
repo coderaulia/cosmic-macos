@@ -12,7 +12,7 @@ one command switches the look back.
 ./install.sh --check        # which build tools are missing
 ./install.sh all            # everything, or pick pieces:
 ./install.sh dock files mail
-cosmic-preset apply macos-glass
+cosmic-preset apply macos-glass   # or macos-light
 ```
 
 Components (`./install.sh --list`):
@@ -45,6 +45,7 @@ that file to bring it back.
 ### Going back
 
 ```bash
+cosmic-preset toggle        # switch between macos-glass and macos-light
 cosmic-preset revert        # original look, original theme, stock dock
 ./install.sh --uninstall    # remove everything that was installed
 ```
@@ -64,11 +65,13 @@ the upstream history is not copied.
 | `apps/mac-suite/` | Calendar, Mail, Clipboard, and the theme tool (our own Rust workspace) |
 | `overlays/cosmic-applets/` | Our custom applets (`cosmic-ext-dock`, `cosmic-ext-mac-applet-style`, and the panel/clipboard applets) |
 | `patches/*.patch` | Our changes to cosmic-files, cosmic-edit, cosmic-viewer, cosmic-launcher, cosmic-comp, cosmic-applets, and libcosmic |
-| `presets/macos-glass/` | The macOS preset for `cosmic-preset` |
-| `bin/cosmic-preset` | The preset switcher |
+| `presets/macos-glass/`, `presets/macos-light/` | Dark and light macOS presets for `cosmic-preset` |
+| `bin/cosmic-preset` | The preset switcher (`apply`, `toggle`, `revert`) |
 | `setup.sh` | Clones the upstream projects at the tag and applies the patches |
 | `install-*.sh`, `install.sh` | Build and install scripts |
 | `tools/export.sh` | Regenerates `patches/`, `overlays/` and `presets/` from the working copies |
+| `tools/verify.sh` | Runs shell syntax, panel layout, overlay sync, and preset checks |
+| `PKGBUILD` | Arch/CachyOS package definition (`cosmic-macos-git`) |
 
 `setup.sh` creates the working copies (`apps/cosmic-*`, `cosmic-comp`,
 `upstream-applets`, `libcosmic-mac`), which are not tracked. Window buttons on the
@@ -81,6 +84,7 @@ Edit in the working copies, build with the install scripts, then:
 
 ```bash
 ./tools/export.sh           # turn the working copies back into patches
+./tools/verify.sh           # verify syntax, panel layout, overlay sync, and presets
 git add -A && git commit
 ```
 

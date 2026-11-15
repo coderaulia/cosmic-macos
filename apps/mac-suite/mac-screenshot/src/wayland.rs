@@ -196,7 +196,9 @@ cctk::delegate_screencopy!(State);
 
 /// Convert a raw shm frame to opaque RGBA. `None` for unsupported formats.
 pub fn to_rgba(format: wl_shm::Format, width: u32, height: u32, raw: &[u8]) -> Option<RgbaImage> {
-    let n = (width as usize) * (height as usize) * 4;
+    let n = (width as usize)
+        .checked_mul(height as usize)
+        .and_then(|px| px.checked_mul(4))?;
     if raw.len() < n {
         return None;
     }
@@ -335,6 +337,7 @@ pub fn snapshot(with_windows: bool, paint_cursor: bool) -> Result<Snapshot, Erro
         let logical_size = info
             .as_ref()
             .and_then(|i| i.logical_size)
+            .filter(|&(lw, lh)| lw > 0 && lh > 0)
             .unwrap_or((w as i32, h as i32));
         let windows = if with_windows { windows_on(&state, output) } else { Vec::new() };
         shots.push(OutputShot { name, logical_size, image, windows });

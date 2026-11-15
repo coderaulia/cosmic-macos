@@ -21,7 +21,7 @@ use cosmic::iced::runtime::core::event::{PlatformSpecific, wayland};
 use cosmic::iced::runtime::core::window::Id as SurfaceId;
 use cosmic::iced::runtime::{Action, platform_specific, task};
 use cosmic::iced::widget::{column, container, mouse_area, row};
-use cosmic::iced::{Alignment, Border, Color, Length, Rectangle, Subscription, stream};
+use cosmic::iced::{Alignment, Border, Color, Length, Rectangle, Size, Subscription, stream, window};
 use cosmic::theme::{Button, Container};
 use cosmic::widget::{button, icon, space::vertical as vertical_space, text, text_input};
 use cosmic::{Element, app::{self, Task}};
@@ -31,11 +31,88 @@ use crate::ipc::{self, Command};
 
 const COLUMNS: usize = 7;
 const ROWS: usize = 5;
-const PER_PAGE: usize = COLUMNS * ROWS;
 const ICON_SIZE: u16 = 96;
 const CELL_W: f32 = 150.0;
 const CELL_H: f32 = 140.0;
 const WHEEL_COOLDOWN: Duration = Duration::from_millis(250);
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct GridLayout {
+    columns: usize,
+    rows: usize,
+    cell_w: f32,
+    cell_h: f32,
+    icon_size: u16,
+    spacing: f32,
+    search_w: f32,
+    top_pad: u16,
+    bottom_pad: u16,
+}
+
+impl Default for GridLayout {
+    fn default() -> Self {
+        Self {
+            columns: COLUMNS,
+            rows: ROWS,
+            cell_w: CELL_W,
+            cell_h: CELL_H,
+            icon_size: ICON_SIZE,
+            spacing: 8.0,
+            search_w: 360.0,
+            top_pad: 40,
+            bottom_pad: 36,
+        }
+    }
+}
+
+impl GridLayout {
+    fn per_page(self) -> usize {
+        self.columns.saturating_mul(self.rows).max(1)
+    }
+}
+
+fn compute_layout(viewport_w: f32, viewport_h: f32) -> GridLayout {
+    if !viewport_w.is_finite()
+        || !viewport_h.is_finite()
+        || viewport_w <= 0.0
+        || viewport_h <= 0.0
+    {
+        return GridLayout::default();
+    }
+    let scale = (viewport_w / 1200.0).min(viewport_h / 900.0).clamp(0.55, 1.0);
+    let spacing = (8.0 * scale).round().clamp(4.0, 8.0);
+    let top_pad = (viewport_h * 0.045).round().clamp(8.0, 40.0) as u16;
+    let bottom_pad = (viewport_h * 0.04).round().clamp(8.0, 36.0) as u16;
+    let search_w = 360.0_f32
+        .min((viewport_w - 32.0).max(120.0))
+        .min(viewport_w.max(1.0));
+    let chrome_h = f32::from(top_pad) + f32::from(bottom_pad) + 56.0;
+    let horiz_margin = (viewport_w * 0.04).clamp(16.0, 64.0);
+    let avail_w = (viewport_w - horiz_margin).max(1.0);
+    let avail_h = (viewport_h - chrome_h).max(1.0);
+
+    let cell_w = (CELL_W * scale).clamp(84.0, CELL_W).min(avail_w);
+    let cell_h = (CELL_H * scale).clamp(78.0, CELL_H).min(avail_h);
+    let icon_size = (f32::from(ICON_SIZE) * scale)
+        .round()
+        .clamp(16.0, f32::from(ICON_SIZE))
+        .min((cell_h * (f32::from(ICON_SIZE) / CELL_H)).round().max(16.0)) as u16;
+
+    let columns = (((avail_w + spacing) / (cell_w + spacing)).floor() as usize).clamp(1, COLUMNS);
+    let rows = (((avail_h + spacing) / (cell_h + spacing)).floor() as usize).clamp(1, ROWS);
+
+    GridLayout {
+        columns,
+        rows,
+        cell_w,
+        cell_h,
+        icon_size,
+        spacing,
+        search_w,
+        top_pad,
+        bottom_pad,
+    }
+}
 
 static INPUT_ID: LazyLock<cosmic::widget::Id> =
     LazyLock::new(|| cosmic::widget::Id::new("launchpad-search"));
@@ -50,6 +127,7 @@ pub enum Message {
     Page(isize),
     GoPage(usize),
     Wheel(f32),
+    Resized(SurfaceId, Size),
     Hide,
     Key(Key, Modifiers, Status),
     Unfocused(SurfaceId),
@@ -65,6 +143,7 @@ pub struct Launchpad {
     /// Indices into `apps` for the current query.
     matches: Vec<usize>,
     page: usize,
+    layout: GridLayout,
     last_wheel: Option<Instant>,
 }
 
@@ -79,22 +158,33 @@ pub fn run(show: bool) -> cosmic::iced::Result {
     app::run::<Launchpad>(settings, show)
 }
 
-fn page_count(n: usize) -> usize {
-    n.div_ceil(PER_PAGE).max(1)
+fn page_count(n: usize, per_page: usize) -> usize {
+    n.div_ceil(per_page.max(1)).max(1)
 }
 
 fn step_page(page: usize, delta: isize, count: usize) -> usize {
-    page.saturating_add_signed(delta).min(count - 1)
+    page.saturating_add_signed(delta).min(count.saturating_sub(1))
+}
+
+fn page_slice(matches: &[usize], page: usize, per_page: usize) -> &[usize] {
+    if matches.is_empty() {
+        return &[];
+    }
+    let per_page = per_page.max(1);
+    let clamped_page = page.min(page_count(matches.len(), per_page).saturating_sub(1));
+    let start = clamped_page.saturating_mul(per_page).min(matches.len());
+    let end = start.saturating_add(per_page).min(matches.len());
+    &matches[start..end]
 }
 
 impl Launchpad {
     fn pages(&self) -> usize {
-        page_count(self.matches.len())
+        page_count(self.matches.len(), self.layout.per_page())
     }
 
     fn refilter(&mut self) {
         self.matches = apps::filter(&self.apps, &self.query);
-        self.page = self.page.min(self.pages() - 1);
+        self.page = self.page.min(self.pages().saturating_sub(1));
     }
 
     fn load_task() -> Task<Message> {
@@ -186,7 +276,7 @@ impl Launchpad {
     fn cell(&self, app_idx: usize) -> Element<'_, Message> {
         let app = &self.apps[app_idx];
         let content = column![
-            icon::icon(app.icon.clone()).size(ICON_SIZE),
+            icon::icon(app.icon.clone()).size(self.layout.icon_size),
             text::body(app.name.as_str())
                 .width(Length::Fill)
                 .align_x(Horizontal::Center)
@@ -197,8 +287,8 @@ impl Launchpad {
         .width(Length::Fill);
 
         button::custom(content)
-            .width(Length::Fixed(CELL_W))
-            .height(Length::Fixed(CELL_H))
+            .width(Length::Fixed(self.layout.cell_w))
+            .height(Length::Fixed(self.layout.cell_h))
             .padding([10, 6])
             .on_press(Message::Launch(app_idx))
             .class(Button::Custom {
@@ -217,18 +307,21 @@ impl Launchpad {
                 .center_y(Length::Fill)
                 .into();
         }
-        let start = self.page * PER_PAGE;
-        let page_items = &self.matches[start..(start + PER_PAGE).min(self.matches.len())];
-        let rows = page_items.chunks(COLUMNS).map(|chunk| {
+        let page_items = page_slice(&self.matches, self.page, self.layout.per_page());
+        let rows = page_items.chunks(self.layout.columns.max(1)).map(|chunk| {
             row(chunk.iter().map(|&i| self.cell(i)))
-                .spacing(8)
+                .spacing(self.layout.spacing)
                 .align_y(Alignment::Start)
                 .into()
         });
-        container(column(rows).spacing(8).align_x(Alignment::Start))
-            .center_x(Length::Fill)
-            .center_y(Length::Fill)
-            .into()
+        container(
+            column(rows)
+                .spacing(self.layout.spacing)
+                .align_x(Alignment::Start),
+        )
+        .center_x(Length::Fill)
+        .center_y(Length::Fill)
+        .into()
     }
 
     fn dots(&self) -> Element<'_, Message> {
@@ -291,6 +384,7 @@ impl cosmic::Application for Launchpad {
             query: String::new(),
             matches: Vec::new(),
             page: 0,
+            layout: GridLayout::default(),
             last_wheel: None,
         };
         // Preload so the first show is instant; refreshed again on every show.
@@ -333,13 +427,19 @@ impl cosmic::Application for Launchpad {
             }
             Message::Launch(i) => return self.launch(i),
             Message::Page(d) => self.page = step_page(self.page, d, self.pages()),
-            Message::GoPage(p) => self.page = p.min(self.pages() - 1),
+            Message::GoPage(p) => self.page = p.min(self.pages().saturating_sub(1)),
             Message::Wheel(dy) => {
                 let ready = self.last_wheel.is_none_or(|t| t.elapsed() >= WHEEL_COOLDOWN);
                 if self.visible && ready && dy != 0.0 {
                     self.last_wheel = Some(Instant::now());
                     // Wheel down / scroll forward moves to the next page.
                     self.page = step_page(self.page, if dy < 0.0 { 1 } else { -1 }, self.pages());
+                }
+            }
+            Message::Resized(id, size) => {
+                if id == self.window_id {
+                    self.layout = compute_layout(size.width, size.height);
+                    self.page = self.page.min(self.pages().saturating_sub(1));
                 }
             }
             Message::Key(key, mods, _status) => {
@@ -390,15 +490,19 @@ impl cosmic::Application for Launchpad {
             .on_input(Message::Query)
             .on_paste(Message::Query)
             .on_submit(|_| Message::Submit)
-            .width(Length::Fixed(360.0))
+            .width(Length::Fixed(self.layout.search_w))
             .size(16.0)
             .padding([8, 12])
             .always_active();
 
         let body = column![
-            container(search).center_x(Length::Fill).padding([40, 0, 0, 0]),
+            container(search)
+                .center_x(Length::Fill)
+                .padding([self.layout.top_pad, 0, 0, 0]),
             container(self.grid()).width(Length::Fill).height(Length::Fill),
-            container(self.dots()).center_x(Length::Fill).padding([0, 0, 36, 0]),
+            container(self.dots())
+                .center_x(Length::Fill)
+                .padding([0, 0, self.layout.bottom_pad, 0]),
         ]
         .width(Length::Fill)
         .height(Length::Fill);
@@ -424,10 +528,13 @@ impl cosmic::Application for Launchpad {
 
     fn subscription(&self) -> Subscription<Self::Message> {
         Subscription::batch([
-            listen_raw(|event, status, _id| match event {
+            listen_raw(|event, status, id| match event {
                 cosmic::iced::Event::PlatformSpecific(PlatformSpecific::Wayland(
                     wayland::Event::Layer(wayland::LayerEvent::Unfocused, _, layer_id),
                 )) => Some(Message::Unfocused(layer_id)),
+                cosmic::iced::Event::Window(window::Event::Resized(size)) => {
+                    Some(Message::Resized(id, size))
+                }
                 cosmic::iced::Event::Keyboard(cosmic::iced::keyboard::Event::KeyPressed {
                     key,
                     modifiers,
@@ -496,15 +603,58 @@ mod tests {
 
     #[test]
     fn page_count_rounds_up_and_is_at_least_one() {
-        assert_eq!(page_count(0), 1);
-        assert_eq!(page_count(PER_PAGE), 1);
-        assert_eq!(page_count(PER_PAGE + 1), 2);
+        let per_page = COLUMNS * ROWS;
+        assert_eq!(page_count(0, per_page), 1);
+        assert_eq!(page_count(per_page, per_page), 1);
+        assert_eq!(page_count(per_page + 1, per_page), 2);
+        assert_eq!(page_count(10, 0), 10);
     }
 
     #[test]
-    fn step_page_clamps() {
+    fn step_page_clamps_and_avoids_underflow() {
+        assert_eq!(step_page(0, -1, 0), 0);
+        assert_eq!(step_page(5, 1, 0), 0);
         assert_eq!(step_page(0, -1, 3), 0);
         assert_eq!(step_page(1, 1, 3), 2);
         assert_eq!(step_page(2, 1, 3), 2);
+    }
+
+    #[test]
+    fn page_slice_handles_empty_and_out_of_bounds_pages() {
+        assert_eq!(page_slice(&[], 0, 35), &[] as &[usize]);
+        assert_eq!(page_slice(&[], 4, 0), &[] as &[usize]);
+        let items: Vec<usize> = (0..10).collect();
+        assert_eq!(page_slice(&items, 0, 4), &[0, 1, 2, 3]);
+        assert_eq!(page_slice(&items, 2, 4), &[8, 9]);
+        // Out-of-bounds page clamps to the last valid page rather than panicking.
+        assert_eq!(page_slice(&items, 99, 4), &[8, 9]);
+        assert_eq!(page_slice(&items, usize::MAX, 4), &[8, 9]);
+    }
+
+    #[test]
+    fn compute_layout_adapts_to_viewports_and_fractional_scales() {
+        let fhd = compute_layout(1920.0, 1080.0);
+        assert_eq!((fhd.columns, fhd.rows, fhd.icon_size), (7, 5, 96));
+
+        // 1920x1080 at 150% fractional scale -> 1280x720 logical.
+        let hidpi_150 = compute_layout(1280.0, 720.0);
+        assert!(hidpi_150.columns >= 5 && hidpi_150.rows >= 4);
+        assert!(hidpi_150.cell_w * hidpi_150.columns as f32 <= 1280.0);
+        assert!(hidpi_150.cell_h * hidpi_150.rows as f32 <= 720.0);
+
+        // 1920x1080 at 200% scale -> 960x540 logical.
+        let hidpi_200 = compute_layout(960.0, 540.0);
+        assert!(hidpi_200.columns >= 1 && hidpi_200.rows >= 1);
+        assert!(hidpi_200.cell_w * hidpi_200.columns as f32 <= 960.0);
+
+        // Tiny and invalid viewports remain safe and non-zero.
+        for (w, h) in [(240.0, 180.0), (80.0, 60.0), (0.0, 0.0), (-100.0, 500.0), (f32::NAN, 720.0)] {
+            let l = compute_layout(w, h);
+            assert!(l.columns >= 1);
+            assert!(l.rows >= 1);
+            assert!(l.per_page() >= 1);
+            assert!(l.icon_size >= 16);
+            assert!(l.cell_w > 0.0 && l.cell_h > 0.0);
+        }
     }
 }

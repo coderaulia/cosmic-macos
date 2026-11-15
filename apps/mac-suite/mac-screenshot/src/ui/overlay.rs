@@ -115,6 +115,8 @@ pub struct Overlay {
 
 /// The four rectangles that dim everything outside `hole`.
 pub fn dim_blocks(hole: Rect, width: f32, height: f32) -> [Rect; 4] {
+    let width = if width.is_finite() { width.max(0.0) } else { 0.0 };
+    let height = if height.is_finite() { height.max(0.0) } else { 0.0 };
     let hole = hole.clamp_to(width, height);
     [
         Rect::new(0.0, 0.0, width, hole.y),
@@ -312,8 +314,9 @@ impl Overlay {
 
     fn surface_view(&self, id: SurfaceId, oi: usize) -> Element<'_, Message> {
         let shot = &self.snapshot.outputs[oi];
-        let (w, h) = (shot.logical_size.0 as f32, shot.logical_size.1 as f32);
-        let scale = shot.image.width() as f32 / w.max(1.0);
+        let (w, h) = ((shot.logical_size.0 as f32).max(0.0), (shot.logical_size.1 as f32).max(0.0));
+        let sx = shot.image.width() as f32 / w.max(1.0);
+        let sy = shot.image.height() as f32 / h.max(1.0);
         let is_active = self.active == Some(id);
 
         let mut layers: Vec<Element<'_, Message>> = vec![
@@ -329,7 +332,8 @@ impl Overlay {
             Mode::Region => self.selection.filter(|(o, _)| *o == oi).map(|(_, r)| r),
             Mode::Window => self.hovered.filter(|(o, _)| *o == oi).map(|(_, r)| r),
             Mode::Screen => is_active.then(|| Rect::new(0.0, 0.0, w, h)),
-        };
+        }
+        .map(|r| r.clamp_to(w, h));
         match hole {
             Some(hole) => {
                 for r in dim_blocks(hole, w, h) {
@@ -340,7 +344,7 @@ impl Overlay {
                     layers.push(block(hole, fill(Color::from_rgba(0.2, 0.5, 1.0, 0.18))));
                 }
                 if self.mode != Mode::Screen {
-                    let label = format!("{} × {}", (hole.w * scale).round(), (hole.h * scale).round());
+                    let label = format!("{} × {}", (hole.w * sx).round(), (hole.h * sy).round());
                     let y = if hole.y >= 28.0 { hole.y - 26.0 } else { hole.y + 4.0 };
                     layers.push(
                         pin(container(
@@ -359,8 +363,10 @@ impl Overlay {
 
         if is_active && self.mode == Mode::Region && self.selection.is_none() {
             let line = Color::from_rgba(1.0, 1.0, 1.0, 0.7);
-            layers.push(block(Rect::new(self.cursor.0, 0.0, 1.0, h), fill(line)));
-            layers.push(block(Rect::new(0.0, self.cursor.1, w, 1.0), fill(line)));
+            let cx = self.cursor.0.clamp(0.0, w);
+            let cy = self.cursor.1.clamp(0.0, h);
+            layers.push(block(Rect::new(cx, 0.0, 1.0, h), fill(line)));
+            layers.push(block(Rect::new(0.0, cy, w, 1.0), fill(line)));
         }
 
         let area = mouse_area(stack(layers).width(Length::Fill).height(Length::Fill))
@@ -444,7 +450,7 @@ impl cosmic::Application for Overlay {
             Message::FallbackSurface => {
                 // No per-output events arrived: use the active output and
                 // assume the first capture belongs to it.
-                if self.surfaces.is_empty() {
+                if self.surfaces.is_empty() && !self.snapshot.outputs.is_empty() {
                     tracing::warn!("no output events; falling back to the active output");
                     return self.open_surface(0, IcedOutput::Active);
                 }
@@ -567,5 +573,15 @@ mod tests {
         assert_eq!(pick_target(Mode::Window, None, Some((2, r)), None), Some((2, Some(r))));
         assert_eq!(pick_target(Mode::Screen, None, None, Some(3)), Some((3, None)));
         assert_eq!(pick_target(Mode::Screen, None, None, None), None);
+    }
+
+    #[test]
+    fn dim_blocks_handles_out_of_bounds_and_negative_viewport() {
+        let b = dim_blocks(Rect::new(-10.0, -10.0, 50.0, 50.0), 100.0, 100.0);
+        let total: f32 = b.iter().map(Rect::area).sum::<f32>() + 40.0 * 40.0;
+        assert_eq!(total, 100.0 * 100.0);
+
+        let neg = dim_blocks(Rect::new(10.0, 10.0, 20.0, 20.0), -10.0, 0.0);
+        assert!(neg.iter().all(|r| r.w >= 0.0 && r.h >= 0.0 && r.area() == 0.0));
     }
 }
