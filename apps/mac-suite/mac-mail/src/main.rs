@@ -178,6 +178,7 @@ enum Msg {
     HtmlMail(HtmlMailEvent),
     RemoteImagesLoaded(MessageKey, HashMap<String, Result<DecodedImage, String>>),
     TaskPanicked(String),
+    AppMenuActivate(String),
 }
 
 struct Mail {
@@ -206,6 +207,7 @@ struct Mail {
     compose: ComposeManager,
     trusted_senders: TrustedSenders,
     pending_mailto: Option<MailtoUri>,
+    app_menu: mac_appmenu::AppMenuHandle,
 }
 
 /// Run blocking network work on a worker thread and turn its result into a message.
@@ -1353,6 +1355,120 @@ impl Mail {
 
         container(form).center(Length::Fill).into()
     }
+
+    fn build_app_menu_layout(&self) -> mac_appmenu::MenuLayout {
+        use mac_appmenu::{MenuItemSpec, MenuSpec};
+
+        let signed_in = !self.accounts.is_empty() && !self.adding_account;
+        let has_account = !self.accounts.is_empty();
+        let has_sel = self.selected.is_some();
+        let can_archive = has_sel && self.selected_has_archive_folder();
+        let has_win = self.core.main_window_id().is_some();
+
+        vec![
+            MenuSpec::new(
+                "file",
+                "File",
+                vec![
+                    MenuItemSpec::action("file.new_message", "New Message")
+                        .shortcut("Ctrl+N")
+                        .enabled(signed_in),
+                    MenuItemSpec::action("file.refresh", "Refresh")
+                        .shortcut("Ctrl+R")
+                        .enabled(signed_in),
+                    MenuItemSpec::separator(),
+                    MenuItemSpec::action("file.sign_out", "Sign Out").enabled(has_account),
+                ],
+            ),
+            MenuSpec::new(
+                "edit",
+                "Edit",
+                vec![
+                    MenuItemSpec::action("edit.reply", "Reply")
+                        .shortcut("R")
+                        .enabled(has_sel),
+                    MenuItemSpec::action("edit.reply_all", "Reply All").enabled(has_sel),
+                    MenuItemSpec::action("edit.forward", "Forward").enabled(has_sel),
+                    MenuItemSpec::separator(),
+                    MenuItemSpec::action("edit.delete", "Delete")
+                        .shortcut("Delete")
+                        .enabled(has_sel),
+                    MenuItemSpec::action("edit.archive", "Archive").enabled(can_archive),
+                    MenuItemSpec::action("edit.mark_unread", "Mark Unread").enabled(has_sel),
+                ],
+            ),
+            MenuSpec::new(
+                "view",
+                "View",
+                vec![
+                    MenuItemSpec::checkbox(
+                        "view.toggle_threading",
+                        "Threaded View",
+                        self.threaded_mode,
+                    )
+                    .enabled(signed_in),
+                    MenuItemSpec::action("view.load_older", "Load Older Messages")
+                        .enabled(signed_in && self.has_more && !self.loading_older),
+                ],
+            ),
+            MenuSpec::new(
+                "window",
+                "Window",
+                vec![
+                    MenuItemSpec::action("window.minimize", "Minimize").enabled(has_win),
+                    MenuItemSpec::action("window.zoom", "Zoom").enabled(has_win),
+                    MenuItemSpec::separator(),
+                    MenuItemSpec::action("window.close", "Close Window").enabled(has_win),
+                ],
+            ),
+        ]
+    }
+
+    fn sync_app_menu(&self) {
+        self.app_menu.set_layout(self.build_app_menu_layout());
+    }
+
+    fn handle_app_menu_activate(&mut self, item_id: &str) -> app::Task<Msg> {
+        match item_id {
+            "file.new_message" => self.update_inner(Msg::Compose),
+            "file.refresh" => self.update_inner(Msg::Refresh),
+            "file.sign_out" => {
+                let target = self
+                    .active_account
+                    .clone()
+                    .or_else(|| self.accounts.first().map(|rt| rt.account.email.clone()));
+                if let Some(email) = target {
+                    self.update_inner(Msg::SignOutAccount(email))
+                } else {
+                    Task::none()
+                }
+            }
+            "edit.reply" => self.update_inner(Msg::Reply),
+            "edit.reply_all" => self.update_inner(Msg::ReplyAll),
+            "edit.forward" => self.update_inner(Msg::Forward),
+            "edit.delete" => self.update_inner(Msg::Delete),
+            "edit.archive" => self.update_inner(Msg::Archive),
+            "edit.mark_unread" => self.update_inner(Msg::MarkUnread),
+            "view.toggle_threading" => self.update_inner(Msg::ToggleThreading),
+            "view.load_older" => self.update_inner(Msg::LoadOlder),
+            "window.minimize" => self
+                .core
+                .main_window_id()
+                .map(|id| cosmic::iced::window::minimize(id, true))
+                .unwrap_or_else(Task::none),
+            "window.zoom" => self
+                .core
+                .main_window_id()
+                .map(cosmic::iced::window::toggle_maximize)
+                .unwrap_or_else(Task::none),
+            "window.close" => self
+                .core
+                .main_window_id()
+                .map(cosmic::iced::window::close)
+                .unwrap_or_else(Task::none),
+            _ => Task::none(),
+        }
+    }
 }
 
 impl cosmic::Application for Mail {
@@ -1401,6 +1517,7 @@ impl cosmic::Application for Mail {
             compose: ComposeManager::new(),
             trusted_senders,
             pending_mailto: initial_mailto,
+            app_menu: mac_appmenu::AppMenuHandle::new(APP_ID, Vec::new()),
         };
 
         let mut startup_tasks = Vec::new();
@@ -1471,6 +1588,7 @@ impl cosmic::Application for Mail {
             }
         }
 
+        mail.sync_app_menu();
         (mail, Task::batch(startup_tasks))
     }
 
@@ -1523,6 +1641,11 @@ impl cosmic::Application for Mail {
             }
         }));
 
+        subs.push(
+            Subscription::run_with(self.app_menu.clone(), mac_appmenu::activate_stream)
+                .map(Msg::AppMenuActivate),
+        );
+
         let main_id = self.core().main_window_id();
         if !self.accounts.is_empty()
             && !self.adding_account
@@ -1539,6 +1662,18 @@ impl cosmic::Application for Mail {
                 else {
                     return None;
                 };
+                if modifiers.control() && !modifiers.alt() && !modifiers.logo() && !modifiers.shift()
+                {
+                    return match key {
+                        keyboard::Key::Character(c) if c.eq_ignore_ascii_case("n") => {
+                            Some(Msg::Compose)
+                        }
+                        keyboard::Key::Character(c) if c.eq_ignore_ascii_case("r") => {
+                            Some(Msg::Refresh)
+                        }
+                        _ => None,
+                    };
+                }
                 if modifiers.control() || modifiers.alt() || modifiers.logo() {
                     return None;
                 }
@@ -1558,6 +1693,42 @@ impl cosmic::Application for Mail {
     }
 
     fn update(&mut self, message: Msg) -> app::Task<Msg> {
+        let task = self.update_inner(message);
+        self.sync_app_menu();
+        task
+    }
+
+    fn view(&self) -> Element<'_, Msg> {
+        if self.accounts.is_empty() || self.adding_account {
+            return self.setup_view();
+        }
+        let mut main = column![row![
+            self.sidebar(),
+            divider::vertical::default(),
+            self.message_list(),
+            divider::vertical::default(),
+            self.reading_pane(),
+        ]
+        .height(Length::Fill)];
+        if let Some(footer) = self
+            .body_state
+            .hovered_link
+            .as_deref()
+            .or(self.status.as_deref())
+        {
+            main = main.push(text::caption(footer).apply(container).padding([4, 12]));
+        }
+        main.height(Length::Fill).into()
+    }
+
+    fn view_window(&self, id: window::Id) -> Element<'_, Msg> {
+        let focused = self.core().focused_window().is_some_and(|f| f == id);
+        self.compose.view_window(id, focused).map(Msg::ComposeEvent)
+    }
+}
+
+impl Mail {
+    fn update_inner(&mut self, message: Msg) -> app::Task<Msg> {
         match message {
             Msg::FormEmail(value) => {
                 let guess = account::guess(&value);
@@ -2071,7 +2242,7 @@ impl cosmic::Application for Mail {
             Msg::RunSearch => {
                 let query = self.search_text.trim().to_owned();
                 if query.is_empty() {
-                    return self.update(Msg::ClearSearch);
+                    return self.update_inner(Msg::ClearSearch);
                 }
                 self.busy = true;
                 self.searching = true;
@@ -2503,35 +2674,10 @@ impl cosmic::Application for Mail {
                 self.busy = false;
                 self.status = Some(err);
             }
+            Msg::AppMenuActivate(item_id) => {
+                return self.handle_app_menu_activate(&item_id);
+            }
         }
         Task::none()
-    }
-
-    fn view(&self) -> Element<'_, Msg> {
-        if self.accounts.is_empty() || self.adding_account {
-            return self.setup_view();
-        }
-        let mut main = column![row![
-            self.sidebar(),
-            divider::vertical::default(),
-            self.message_list(),
-            divider::vertical::default(),
-            self.reading_pane(),
-        ]
-        .height(Length::Fill)];
-        if let Some(footer) = self
-            .body_state
-            .hovered_link
-            .as_deref()
-            .or(self.status.as_deref())
-        {
-            main = main.push(text::caption(footer).apply(container).padding([4, 12]));
-        }
-        main.height(Length::Fill).into()
-    }
-
-    fn view_window(&self, id: window::Id) -> Element<'_, Msg> {
-        let focused = self.core().focused_window().is_some_and(|f| f == id);
-        self.compose.view_window(id, focused).map(Msg::ComposeEvent)
     }
 }

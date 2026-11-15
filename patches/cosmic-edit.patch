@@ -1,5 +1,5 @@
 diff --git a/Cargo.lock b/Cargo.lock
-index e478a98..2280ad0 100644
+index e478a98..33fb1ae 100644
 --- a/Cargo.lock
 +++ b/Cargo.lock
 @@ -821,7 +821,6 @@ dependencies = [
@@ -26,7 +26,15 @@ index e478a98..2280ad0 100644
  dependencies = [
   "quote",
   "syn 2.0.119",
-@@ -1557,7 +1554,6 @@ dependencies = [
+@@ -1405,6 +1402,7 @@ dependencies = [
+  "ignore",
+  "libcosmic",
+  "log",
++ "mac-appmenu",
+  "notify",
+  "open",
+  "paste",
+@@ -1557,7 +1555,6 @@ dependencies = [
  [[package]]
  name = "cosmic-theme"
  version = "1.0.0"
@@ -34,7 +42,7 @@ index e478a98..2280ad0 100644
  dependencies = [
   "almost",
   "configparser",
-@@ -3184,7 +3180,6 @@ dependencies = [
+@@ -3184,7 +3181,6 @@ dependencies = [
  [[package]]
  name = "iced"
  version = "0.14.0"
@@ -42,7 +50,7 @@ index e478a98..2280ad0 100644
  dependencies = [
   "build_helpers",
   "dnd",
-@@ -3206,7 +3201,6 @@ dependencies = [
+@@ -3206,7 +3202,6 @@ dependencies = [
  [[package]]
  name = "iced_accessibility"
  version = "0.1.0"
@@ -50,7 +58,7 @@ index e478a98..2280ad0 100644
  dependencies = [
   "accesskit",
   "accesskit_winit",
-@@ -3215,7 +3209,6 @@ dependencies = [
+@@ -3215,7 +3210,6 @@ dependencies = [
  [[package]]
  name = "iced_core"
  version = "0.14.0"
@@ -58,7 +66,7 @@ index e478a98..2280ad0 100644
  dependencies = [
   "bitflags 2.13.2",
   "build_helpers",
-@@ -3241,7 +3234,6 @@ dependencies = [
+@@ -3241,7 +3235,6 @@ dependencies = [
  [[package]]
  name = "iced_debug"
  version = "0.14.0"
@@ -66,7 +74,7 @@ index e478a98..2280ad0 100644
  dependencies = [
   "iced_core",
   "iced_futures",
-@@ -3251,7 +3243,6 @@ dependencies = [
+@@ -3251,7 +3244,6 @@ dependencies = [
  [[package]]
  name = "iced_futures"
  version = "0.14.0"
@@ -74,7 +82,7 @@ index e478a98..2280ad0 100644
  dependencies = [
   "futures",
   "iced_core",
-@@ -3265,7 +3256,6 @@ dependencies = [
+@@ -3265,7 +3257,6 @@ dependencies = [
  [[package]]
  name = "iced_graphics"
  version = "0.14.0"
@@ -82,7 +90,7 @@ index e478a98..2280ad0 100644
  dependencies = [
   "bitflags 2.13.2",
   "bytemuck",
-@@ -3286,7 +3276,6 @@ dependencies = [
+@@ -3286,7 +3277,6 @@ dependencies = [
  [[package]]
  name = "iced_program"
  version = "0.14.0"
@@ -90,7 +98,7 @@ index e478a98..2280ad0 100644
  dependencies = [
   "iced_graphics",
   "iced_runtime",
-@@ -3295,7 +3284,6 @@ dependencies = [
+@@ -3295,7 +3285,6 @@ dependencies = [
  [[package]]
  name = "iced_renderer"
  version = "0.14.0"
@@ -98,7 +106,7 @@ index e478a98..2280ad0 100644
  dependencies = [
   "iced_graphics",
   "iced_tiny_skia",
-@@ -3307,7 +3295,6 @@ dependencies = [
+@@ -3307,7 +3296,6 @@ dependencies = [
  [[package]]
  name = "iced_runtime"
  version = "0.14.0"
@@ -106,7 +114,7 @@ index e478a98..2280ad0 100644
  dependencies = [
   "build_helpers",
   "bytes",
-@@ -3323,7 +3310,6 @@ dependencies = [
+@@ -3323,7 +3311,6 @@ dependencies = [
  [[package]]
  name = "iced_tiny_skia"
  version = "0.14.0"
@@ -114,7 +122,7 @@ index e478a98..2280ad0 100644
  dependencies = [
   "bytemuck",
   "cosmic-text",
-@@ -3340,7 +3326,6 @@ dependencies = [
+@@ -3340,7 +3327,6 @@ dependencies = [
  [[package]]
  name = "iced_wgpu"
  version = "0.14.0"
@@ -122,7 +130,7 @@ index e478a98..2280ad0 100644
  dependencies = [
   "as-raw-xcb-connection",
   "bitflags 2.13.2",
-@@ -3372,7 +3357,6 @@ dependencies = [
+@@ -3372,7 +3358,6 @@ dependencies = [
  [[package]]
  name = "iced_widget"
  version = "0.14.2"
@@ -130,7 +138,7 @@ index e478a98..2280ad0 100644
  dependencies = [
   "build_helpers",
   "cosmic-client-toolkit",
-@@ -3391,7 +3375,6 @@ dependencies = [
+@@ -3391,7 +3376,6 @@ dependencies = [
  [[package]]
  name = "iced_winit"
  version = "0.14.0"
@@ -138,7 +146,7 @@ index e478a98..2280ad0 100644
  dependencies = [
   "build_helpers",
   "cosmic-client-toolkit",
-@@ -4495,7 +4478,6 @@ checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
+@@ -4495,7 +4479,6 @@ checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
  [[package]]
  name = "libcosmic"
  version = "1.0.0"
@@ -146,11 +154,39 @@ index e478a98..2280ad0 100644
  dependencies = [
   "apply",
   "ashpd 0.12.3",
+@@ -4735,6 +4718,17 @@ dependencies = [
+  "sha2 0.11.1",
+ ]
+ 
++[[package]]
++name = "mac-appmenu"
++version = "0.1.0"
++dependencies = [
++ "futures-core",
++ "serde",
++ "tokio",
++ "tracing",
++ "zbus",
++]
++
+ [[package]]
+ name = "malloc_buf"
+ version = "0.0.6"
 diff --git a/Cargo.toml b/Cargo.toml
-index 955992c..877c7e4 100644
+index 955992c..aefee84 100644
 --- a/Cargo.toml
 +++ b/Cargo.toml
-@@ -73,3 +73,24 @@ debug = true
+@@ -43,6 +43,9 @@ git = "https://github.com/pop-os/cosmic-syntax-theme.git"
+ version = "0.19"
+ features = ["syntect", "vi"]
+ 
++[dependencies.mac-appmenu]
++path = "../mac-suite/mac-appmenu"
++
+ [dependencies.libcosmic]
+ git = "https://github.com/pop-os/libcosmic.git"
+ default-features = false
+@@ -73,3 +76,24 @@ debug = true
  
  # [patch."https://github.com/pop-os/cosmic-files.git"]
  # cosmic-files = { git = "https://github.com/pop-os/cosmic-files//", branch = "theme-v2" }
@@ -303,6 +339,175 @@ index 0000000..19a0a3c
 +    </binaries>
 +  </provides>
 +</component>
+diff --git a/src/app_menu.rs b/src/app_menu.rs
+new file mode 100644
+index 0000000..2da35e1
+--- /dev/null
++++ b/src/app_menu.rs
+@@ -0,0 +1,163 @@
++// SPDX-License-Identifier: GPL-3.0-only
++
++use std::collections::HashMap;
++use std::path::PathBuf;
++
++use cosmic::widget::menu::key_bind::KeyBind;
++use mac_appmenu::{MenuItemSpec, MenuLayout, MenuSpec, format_shortcut};
++
++use crate::config::Config;
++use crate::{Action, fl};
++
++fn shortcut_for(key_binds: &HashMap<KeyBind, Action>, action: Action) -> String {
++    key_binds
++        .iter()
++        .find_map(|(kb, bound)| (*bound == action).then(|| format_shortcut(&kb.to_string())))
++        .unwrap_or_default()
++}
++
++pub fn app_menu_layout(
++    config: &Config,
++    key_binds: &HashMap<KeyBind, Action>,
++    projects: &[(String, PathBuf)],
++    has_selection: bool,
++) -> MenuLayout {
++    let sc = |action| shortcut_for(key_binds, action);
++
++    vec![
++        MenuSpec::new(
++            "file",
++            fl!("file"),
++            vec![
++                MenuItemSpec::action("file.new", fl!("new-file"))
++                    .shortcut_raw(sc(Action::NewFile)),
++                MenuItemSpec::action("file.new_window", fl!("new-window"))
++                    .shortcut_raw(sc(Action::NewWindow)),
++                MenuItemSpec::separator(),
++                MenuItemSpec::action("file.open", fl!("open-file"))
++                    .shortcut_raw(sc(Action::OpenFileDialog)),
++                MenuItemSpec::action("file.close", fl!("close-file"))
++                    .shortcut_raw(sc(Action::CloseFile)),
++                MenuItemSpec::separator(),
++                MenuItemSpec::action("file.open_project", fl!("menu-open-project"))
++                    .shortcut_raw(sc(Action::OpenProjectDialog)),
++                MenuItemSpec::separator(),
++                MenuItemSpec::action("file.save", fl!("save"))
++                    .shortcut_raw(sc(Action::Save)),
++                MenuItemSpec::action("file.save_as", fl!("save-as"))
++                    .shortcut_raw(sc(Action::SaveAsDialog)),
++                MenuItemSpec::action("file.revert", fl!("revert-all-changes"))
++                    .shortcut_raw(sc(Action::RevertAllChanges)),
++                MenuItemSpec::separator(),
++                MenuItemSpec::action(
++                    "file.document_statistics",
++                    fl!("menu-document-statistics"),
++                )
++                .shortcut_raw(sc(Action::ToggleDocumentStatistics)),
++                MenuItemSpec::action("file.git_management", fl!("menu-git-management"))
++                    .shortcut_raw(sc(Action::ToggleGitManagement)),
++                MenuItemSpec::separator(),
++                MenuItemSpec::action("file.quit", fl!("quit")).shortcut_raw(sc(Action::Quit)),
++            ],
++        ),
++        MenuSpec::new(
++            "edit",
++            fl!("edit"),
++            vec![
++                MenuItemSpec::action("edit.undo", fl!("undo")).shortcut_raw(sc(Action::Undo)),
++                MenuItemSpec::action("edit.redo", fl!("redo")).shortcut_raw(sc(Action::Redo)),
++                MenuItemSpec::separator(),
++                MenuItemSpec::action("edit.cut", fl!("cut"))
++                    .shortcut_raw(sc(Action::Cut))
++                    .enabled(has_selection),
++                MenuItemSpec::action("edit.copy", fl!("copy"))
++                    .shortcut_raw(sc(Action::Copy))
++                    .enabled(has_selection),
++                MenuItemSpec::action("edit.paste", fl!("paste"))
++                    .shortcut_raw(sc(Action::Paste)),
++                MenuItemSpec::action("edit.select_all", fl!("select-all"))
++                    .shortcut_raw(sc(Action::SelectAll)),
++                MenuItemSpec::separator(),
++                MenuItemSpec::action("edit.find", fl!("find")).shortcut_raw(sc(Action::Find)),
++                MenuItemSpec::action("edit.find_replace", fl!("replace"))
++                    .shortcut_raw(sc(Action::FindAndReplace)),
++                MenuItemSpec::action("edit.find_in_project", fl!("find-in-project"))
++                    .shortcut_raw(sc(Action::ToggleProjectSearch))
++                    .enabled(!projects.is_empty()),
++            ],
++        ),
++        MenuSpec::new(
++            "view",
++            fl!("view"),
++            vec![
++                MenuItemSpec::action("view.zoom_in", fl!("zoom-in"))
++                    .shortcut_raw(sc(Action::ZoomIn)),
++                MenuItemSpec::action("view.zoom_reset", fl!("default-size"))
++                    .shortcut_raw(sc(Action::ZoomReset)),
++                MenuItemSpec::action("view.zoom_out", fl!("zoom-out"))
++                    .shortcut_raw(sc(Action::ZoomOut)),
++                MenuItemSpec::separator(),
++                MenuItemSpec::checkbox(
++                    "view.auto_indent",
++                    fl!("automatic-indentation"),
++                    config.auto_indent,
++                )
++                .shortcut_raw(sc(Action::ToggleAutoIndent)),
++                MenuItemSpec::checkbox("view.word_wrap", fl!("word-wrap"), config.word_wrap)
++                    .shortcut_raw(sc(Action::ToggleWordWrap)),
++                MenuItemSpec::checkbox(
++                    "view.line_numbers",
++                    fl!("show-line-numbers"),
++                    config.line_numbers,
++                )
++                .shortcut_raw(sc(Action::ToggleLineNumbers)),
++                MenuItemSpec::checkbox(
++                    "view.highlight_current_line",
++                    fl!("highlight-current-line"),
++                    config.highlight_current_line,
++                )
++                .shortcut_raw(sc(Action::ToggleHighlightCurrentLine)),
++                MenuItemSpec::separator(),
++                MenuItemSpec::action("view.settings", fl!("menu-settings"))
++                    .shortcut_raw(sc(Action::ToggleSettingsPage)),
++                MenuItemSpec::action("view.about", fl!("menu-about"))
++                    .shortcut_raw(sc(Action::About)),
++            ],
++        ),
++    ]
++}
++
++pub fn action_from_id(id: &str) -> Option<Action> {
++    match id {
++        "file.new" => Some(Action::NewFile),
++        "file.new_window" => Some(Action::NewWindow),
++        "file.open" => Some(Action::OpenFileDialog),
++        "file.close" => Some(Action::CloseFile),
++        "file.open_project" => Some(Action::OpenProjectDialog),
++        "file.save" => Some(Action::Save),
++        "file.save_as" => Some(Action::SaveAsDialog),
++        "file.revert" => Some(Action::RevertAllChanges),
++        "file.document_statistics" => Some(Action::ToggleDocumentStatistics),
++        "file.git_management" => Some(Action::ToggleGitManagement),
++        "file.quit" => Some(Action::Quit),
++        "edit.undo" => Some(Action::Undo),
++        "edit.redo" => Some(Action::Redo),
++        "edit.cut" => Some(Action::Cut),
++        "edit.copy" => Some(Action::Copy),
++        "edit.paste" => Some(Action::Paste),
++        "edit.select_all" => Some(Action::SelectAll),
++        "edit.find" => Some(Action::Find),
++        "edit.find_replace" => Some(Action::FindAndReplace),
++        "edit.find_in_project" => Some(Action::ToggleProjectSearch),
++        "view.zoom_in" => Some(Action::ZoomIn),
++        "view.zoom_reset" => Some(Action::ZoomReset),
++        "view.zoom_out" => Some(Action::ZoomOut),
++        "view.auto_indent" => Some(Action::ToggleAutoIndent),
++        "view.word_wrap" => Some(Action::ToggleWordWrap),
++        "view.line_numbers" => Some(Action::ToggleLineNumbers),
++        "view.highlight_current_line" => Some(Action::ToggleHighlightCurrentLine),
++        "view.settings" => Some(Action::ToggleSettingsPage),
++        "view.about" => Some(Action::About),
++        _ => None,
++    }
++}
 diff --git a/src/config.rs b/src/config.rs
 index 3eaaac0..65dcdc0 100644
 --- a/src/config.rs
@@ -319,10 +524,18 @@ index 3eaaac0..65dcdc0 100644
              syntax_theme_light: "COSMIC Light".to_string(),
              tab_width: 4,
 diff --git a/src/main.rs b/src/main.rs
-index 4b9cbba..4195845 100644
+index 4b9cbba..cecc535 100644
 --- a/src/main.rs
 +++ b/src/main.rs
-@@ -303,6 +303,94 @@ impl MenuAction for Action {
+@@ -41,6 +41,7 @@ use tokio::time;
+ use unicode_segmentation::UnicodeSegmentation;
+ 
+ use config::{AppTheme, CONFIG_VERSION, Config, ConfigState};
++mod app_menu;
+ mod config;
+ 
+ use git::{GitDiff, GitDiffLine, GitRepository, GitStatus, GitStatusKind};
+@@ -303,6 +304,94 @@ impl MenuAction for Action {
      }
  }
  
@@ -417,7 +630,7 @@ index 4b9cbba..4195845 100644
  #[derive(Clone, Debug)]
  pub struct Flags {
      config_handler: Option<cosmic_config::Config>,
-@@ -337,6 +425,10 @@ enum NewTab {
+@@ -337,6 +426,11 @@ enum NewTab {
  #[allow(dead_code)]
  #[derive(Clone, Debug)]
  pub enum Message {
@@ -425,10 +638,11 @@ index 4b9cbba..4195845 100644
 +    NoteSearch(String),
 +    /// Notes sidebar: open this note.
 +    NoteOpen(PathBuf),
++    AppMenuActivate(String),
      AppTheme(AppTheme),
      AutoScroll(Option<f32>),
      Config(Config),
-@@ -454,6 +546,9 @@ pub enum Find {
+@@ -454,6 +548,9 @@ pub enum Find {
  
  pub struct App {
      core: Core,
@@ -438,7 +652,15 @@ index 4b9cbba..4195845 100644
      about: About,
      nav_model: segmented_button::SingleSelectModel,
      tab_model: segmented_button::SingleSelectModel,
-@@ -499,6 +594,116 @@ struct FindField {
+@@ -490,6 +587,7 @@ pub struct App {
+         HashSet<(PathBuf, RecursiveMode)>,
+     )>,
+     modifiers: Modifiers,
++    app_menu: mac_appmenu::AppMenuHandle,
+ }
+ 
+ #[derive(Debug, Clone, Copy)]
+@@ -499,6 +597,116 @@ struct FindField {
  }
  
  impl App {
@@ -555,58 +777,672 @@ index 4b9cbba..4195845 100644
      pub fn active_tab(&self) -> Option<&Tab> {
          self.tab_model.active_data()
      }
-@@ -1391,7 +1596,7 @@ impl Application for App {
-     type Message = Message;
- 
-     /// The unique application ID to supply to the window manager.
+@@ -1377,502 +1585,176 @@ impl App {
+         ])
+         .into()
+     }
+-}
+-
+-/// Implement [`cosmic::Application`] to integrate with COSMIC.
+-impl Application for App {
+-    /// Default async executor to use with the app.
+-    type Executor = executor::Default;
+-
+-    /// Argument received [`cosmic::Application::new`].
+-    type Flags = Flags;
+-
+-    /// Message type specific to our [`App`].
+-    type Message = Message;
+-
+-    /// The unique application ID to supply to the window manager.
 -    const APP_ID: &'static str = "com.system76.CosmicEdit";
-+    const APP_ID: &'static str = "dev.asw.MacNotepad";
+-
+-    fn core(&self) -> &Core {
+-        &self.core
+-    }
  
-     fn core(&self) -> &Core {
-         &self.core
-@@ -1477,6 +1682,8 @@ impl Application for App {
-             about,
-             nav_model: nav_bar::Model::builder().build(),
-             tab_model: segmented_button::Model::builder().build(),
-+            notes: Vec::new(),
-+            note_search: String::new(),
-             config_handler: flags.config_handler,
-             config: flags.config,
-             config_state_handler: flags.config_state_handler,
-@@ -1522,9 +1729,19 @@ impl Application for App {
- 
-         app.update_nav_bar_placeholder();
- 
--        // Open an empty file if no arguments provided
-+        // Notes mode: started without files, show the notes folder in the
-+        // sidebar and open the most recently edited note (or a new one).
-         if app.tab_model.iter().next().is_none() {
--            app.open_tab(None);
-+            if let Some(dir) = notes::dir() {
-+                notes::ENABLED.store(true, std::sync::atomic::Ordering::Relaxed);
-+                app.open_project(&dir);
-+                app.core.nav_bar_set_toggled(true);
-+                let note = notes::latest(&dir).or_else(|| notes::create(&dir));
-+                app.open_tab(note);
-+                app.notes = notes::list(&dir);
-+            } else {
-+                app.open_tab(None);
+-    fn core_mut(&mut self) -> &mut Core {
+-        &mut self.core
++    fn sync_app_menu(&self) {
++        let has_selection = match self.active_tab() {
++            Some(Tab::Editor(tab)) => tab.editor.lock().unwrap().selection() != Selection::None,
++            Some(Tab::GitDiff(_)) | None => false,
++        };
++        let layout = app_menu::app_menu_layout(
++            &self.config,
++            &self.key_binds,
++            &self.projects,
++            has_selection,
++        );
++        self.app_menu.set_layout(layout);
+     }
+-
+-    /// Creates the application, and optionally emits command on initialize.
+-    fn init(mut core: Core, flags: Self::Flags) -> (Self, Task<Self::Message>) {
+-        core.window.context_is_overlay = false;
+-
+-        // Update font name from config
+-        {
+-            let mut font_system = font_system().write().unwrap();
+-            font_system
+-                .raw()
+-                .db_mut()
+-                .set_monospace_family(&flags.config.font_name);
++    fn update_inner(&mut self, message: Message) -> Task<Message> {
++        // Helper for updating config values efficiently
++        macro_rules! config_set {
++            ($name: ident, $value: expr) => {
++                match &self.config_handler {
++                    Some(config_handler) => {
++                        if let Err(err) =
++                            paste::paste! { self.config.[<set_ $name>](config_handler, $value) }
++                        {
++                            log::warn!("failed to save config {:?}: {}", stringify!($name), err);
++                        }
++                    }
++                    None => {
++                        self.config.$name = $value;
++                        log::warn!(
++                            "failed to save config {:?}: no config handler",
++                            stringify!($name)
++                        );
++                    }
++                }
++            };
+         }
+-
+-        let app_themes = vec![fl!("match-desktop"), fl!("dark"), fl!("light")];
+-
+-        let font_names = {
+-            let mut font_names = Vec::new();
+-            let mut font_system = font_system().write().unwrap();
+-            for face in font_system.raw().db().faces() {
+-                if face.monospaced {
+-                    //TODO: get localized name if possible
+-                    let font_name = face
+-                        .families
+-                        .first()
+-                        .map_or_else(|| face.post_script_name.to_string(), |x| x.0.to_string());
+-                    if !font_names.contains(&font_name) {
+-                        font_names.push(font_name);
++        match message {
++            Message::AppMenuActivate(item_id) => {
++                if let Some(action) = app_menu::action_from_id(&item_id) {
++                    return self.update_inner(action.message(None));
++                }
 +            }
-         }
++            Message::AppTheme(app_theme) => {
++                config_set!(app_theme, app_theme);
++                return self.update_config();
++            }
++            Message::AutoScroll(auto_scroll) => {
++                self.auto_scroll = auto_scroll.map(|new| {
++                    (
++                        new,
++                        self.auto_scroll
++                            .map(|old| old.1.wrapping_add(1))
++                            .unwrap_or_default(),
++                    )
++                });
++            }
++            Message::Config(config) => {
++                if config != self.config {
++                    log::info!("update config");
++                    //TODO: update syntax theme by clearing tabs, only if needed
++                    self.config = config;
++                    return self.update_config();
++                }
++            }
++            Message::ConfigState(config_state) => {
++                if config_state != self.config_state {
++                    log::info!("update config state");
++                    self.config_state = config_state;
++                }
++            }
++            Message::CloseFile => {
++                return self.update(Message::TabClose(self.tab_model.active()));
++            }
++            Message::CloseProject(project_i) => {
++                if project_i < self.projects.len() {
++                    let (_project_name, project_path) = self.projects.remove(project_i);
++                    self.update_watcher();
++                    let mut position = 0;
++                    let mut closing = false;
++                    while let Some(id) = self.nav_model.entity_at(position) {
++                        match self.nav_model.data::<ProjectNode>(id) {
++                            Some(node) => {
++                                if let ProjectNode::Folder { path, root, .. } = node {
++                                    if path == &project_path {
++                                        // Found the project root node, closing
++                                        closing = true;
++                                    } else if *root && closing {
++                                        // Found another project root node after closing, breaking
++                                        break;
++                                    }
++                                }
++                            }
++                            None => {
++                                if closing {
++                                    break;
++                                }
++                            }
++                        }
++                        if closing {
++                            self.nav_model.remove(id);
++                        } else {
++                            position += 1;
++                        }
+                     }
++                    self.update_nav_bar_placeholder();
+                 }
+             }
+-            font_names.sort();
+-            font_names
+-        };
++            Message::CloseWindow(window_id) => {
++                if Some(window_id) == self.core.main_window_id() {
++                    return self.update(Message::Quit);
++                }
++            }
++            Message::Copy => {
++                if let Some(Tab::Editor(tab)) = self.active_tab() {
++                    let editor = tab.editor.lock().unwrap();
++                    let selection_opt = editor.copy_selection();
++                    if let Some(selection) = selection_opt {
++                        return clipboard::write(selection);
++                    }
++                }
++            }
++            Message::Cut => {
++                if let Some(Tab::Editor(tab)) = self.active_tab() {
++                    let selection_opt = {
++                        let mut editor = tab.editor.lock().unwrap();
++                        let selection_opt = editor.copy_selection();
++                        editor.start_change();
++                        editor.delete_selection();
++                        editor.finish_change();
++                        selection_opt
++                    };
++                    if let Some(selection) = selection_opt {
++                        return Task::batch([
++                            clipboard::write(selection),
++                            self.update(Message::TabChanged(self.tab_model.active())),
++                        ]);
++                    }
++                }
++            }
++            Message::DefaultFont(index) => {
++                match self.font_names.get(index) {
++                    Some(font_name) => {
++                        if font_name != &self.config.font_name {
++                            // Update font name from config
++                            {
++                                let mut font_system = font_system().write().unwrap();
++                                font_system.raw().db_mut().set_monospace_family(font_name);
++                            }
  
-         //TODO: try update_config here? It breaks loading system theme by default
-@@ -1538,6 +1755,10 @@ impl Application for App {
-             return None;
-         }
+-        let mut font_size_names = Vec::new();
+-        let mut font_sizes = Vec::new();
+-        for font_size in 4..=32 {
+-            font_size_names.push(format!("{}px", font_size));
+-            font_sizes.push(font_size);
+-        }
++                            // Reset line number cache
++                            {
++                                let mut line_number_cache =
++                                    LINE_NUMBER_CACHE.get().unwrap().lock().unwrap();
++                                line_number_cache.clear();
++                            }
  
-+        if notes::ENABLED.load(std::sync::atomic::Ordering::Relaxed) {
-+            return Some(self.notes_sidebar());
-+        }
-+
-         let nav_model = self.nav_model()?;
+-        let mut theme_names =
+-            Vec::with_capacity(SYNTAX_SYSTEM.get().unwrap().theme_set.themes.len());
+-        for theme_name in SYNTAX_SYSTEM.get().unwrap().theme_set.themes.keys() {
+-            theme_names.push(theme_name.to_string());
+-        }
+-
+-        let mut zoom_step_names = Vec::new();
+-        let mut zoom_steps = Vec::new();
+-        for zoom_step in [25, 50, 75, 100, 150, 200] {
+-            zoom_step_names.push(format!("{}px", f32::from(zoom_step) / 100.0));
+-            zoom_steps.push(zoom_step);
+-        }
+-
+-        let about = About::default()
+-            .name(fl!("cosmic-text-editor"))
+-            .icon(icon::from_name(Self::APP_ID))
+-            .version(env!("CARGO_PKG_VERSION"))
+-            .author("System76")
+-            .comments(fl!("comment"))
+-            .license("GPL-3.0-only")
+-            .license_url("https://spdx.org/licenses/GPL-3.0-only")
+-            .developers([("System76", "info@system76.com")])
+-            .links([
+-                (fl!("repository"), "https://github.com/pop-os/cosmic-edit"),
+-                (
+-                    fl!("support"),
+-                    "https://github.com/pop-os/cosmic-edit/issues",
+-                ),
+-            ]);
+-
+-        let mut app = App {
+-            core,
+-            about,
+-            nav_model: nav_bar::Model::builder().build(),
+-            tab_model: segmented_button::Model::builder().build(),
+-            config_handler: flags.config_handler,
+-            config: flags.config,
+-            config_state_handler: flags.config_state_handler,
+-            config_state: flags.config_state,
+-            key_binds: key_binds(),
+-            zoom_step_names,
+-            zoom_steps,
+-            app_themes,
+-            font_names,
+-            font_size_names,
+-            font_sizes,
+-            theme_names,
+-            context_page: ContextPage::Settings,
+-            text_box_id: widget::Id::unique(),
+-            auto_scroll: None,
+-            dialog_opt: None,
+-            dialog_page_opt: None,
+-            find_opt: None,
+-            find_replace_id: widget::Id::unique(),
+-            find_replace_value: String::new(),
+-            find_search_id: widget::Id::unique(),
+-            find_search_value: String::new(),
+-            git_project_status: None,
+-            projects: Vec::new(),
+-            project_search_id: widget::Id::unique(),
+-            project_search_value: String::new(),
+-            project_search_result: None,
+-            project_search_has_focus: false,
+-            watcher_opt: None,
+-            modifiers: Modifiers::empty(),
+-        };
+-
+-        // Do not show nav bar by default. Will be opened by open_project if needed
+-        app.core.nav_bar_set_toggled(false);
+-        for arg in env::args().skip(1) {
+-            let path = PathBuf::from(arg);
+-            if path.is_dir() {
+-                app.open_project(path);
+-            } else {
+-                app.open_tab(Some(path));
+-            }
+-        }
+-
+-        app.update_nav_bar_placeholder();
+-
+-        // Open an empty file if no arguments provided
+-        if app.tab_model.iter().next().is_none() {
+-            app.open_tab(None);
+-        }
+-
+-        //TODO: try update_config here? It breaks loading system theme by default
+-        let command = app.update_tab();
+-        (app, command)
+-    }
+-
+-    // The default nav_bar widget needs to be condensed for cosmic-edit
+-    fn nav_bar(&self) -> Option<Element<'_, action::Action<Self::Message>>> {
+-        if !self.core().nav_bar_active() {
+-            return None;
+-        }
+-
+-        let nav_model = self.nav_model()?;
+-
+-        let cosmic_theme::Spacing {
+-            space_none,
+-            space_s,
+-            space_xxxs,
+-            ..
+-        } = self.core().system_theme().cosmic().spacing;
+-
+-        let mut nav = segmented_button::vertical(nav_model)
+-            .button_height(space_xxxs + 20 /* line height */ + space_xxxs)
+-            .button_padding([space_s, space_xxxs, space_s, space_xxxs])
+-            .button_spacing(space_xxxs)
+-            .on_activate(|entity| action::cosmic(cosmic::app::Action::NavBar(entity)))
+-            .spacing(space_none)
+-            .style(theme::SegmentedButton::FileNav)
+-            .apply(widget::container)
+-            .padding(space_s)
+-            .width(Length::Shrink);
+-
+-        if !self.core().is_condensed() {
+-            nav = nav.max_width(280);
+-        }
+-
+-        Some(
+-            nav.apply(widget::scrollable)
+-                .apply(widget::container)
+-                .height(Length::Fill)
+-                .class(theme::Container::custom(nav_bar::nav_bar_style))
+-                .into(),
+-        )
+-    }
+-
+-    fn nav_model(&self) -> Option<&nav_bar::Model> {
+-        Some(&self.nav_model)
+-    }
+-
+-    fn on_app_exit(&mut self) -> Option<Message> {
+-        Some(Message::Quit)
+-    }
+-
+-    fn on_context_drawer(&mut self) -> Task<Message> {
+-        // Focus correct widget
+-        self.update_focus()
+-    }
+-
+-    //TODO: currently the first escape unfocuses, and the second calls this function
+-    fn on_escape(&mut self) -> Task<Message> {
+-        if self.core.window.show_context {
+-            // Close context drawer if open
+-            self.core.window.show_context = false;
+-        } else if self.find_opt.is_some() {
+-            // Close find if open
+-            self.find_opt = None;
+-        }
+-
+-        // Focus correct widget
+-        self.update_focus()
+-    }
+-
+-    fn on_nav_select(&mut self, id: nav_bar::Id) -> Task<Message> {
+-        // Toggle open state and get clone of node data
+-        let node_opt = match self.nav_model.data_mut::<ProjectNode>(id) {
+-            Some(node) => {
+-                if let ProjectNode::Folder { open, .. } = node {
+-                    *open = !*open;
+-                }
+-                Some(node.clone())
+-            }
+-            None => None,
+-        };
+-
+-        match node_opt {
+-            Some(node) => {
+-                // Update icon
+-                self.nav_model.icon_set(id, node.icon(16));
+-
+-                match node {
+-                    ProjectNode::Folder { path, open, .. } => {
+-                        let position = self.nav_model.position(id).unwrap_or(0);
+-                        let indent = self.nav_model.indent(id).unwrap_or(0);
+-                        if open {
+-                            // Open folder
+-                            self.open_folder(path, position + 1, indent + 1);
+-                        } else {
+-                            // Close folder
+-                            while let Some(child_id) = self.nav_model.entity_at(position + 1) {
+-                                if self.nav_model.indent(child_id).unwrap_or(0) > indent {
+-                                    self.nav_model.remove(child_id);
+-                                } else {
+-                                    break;
+-                                }
+-                            }
+-                        }
+-
+-                        // Prevent nav bar from closing when selecting a
+-                        // folder in condensed mode.
+-                        self.core_mut().nav_bar_set_toggled(true);
+-
+-                        Task::none()
+-                    }
+-                    ProjectNode::File { path, .. } => {
+-                        //TODO: go to already open file if possible
+-                        self.update(Message::OpenFile(path))
+-                    }
+-                }
+-            }
+-            None => {
+-                // Open project
+-                self.update(Message::OpenProjectDialog)
+-            }
+-        }
+-    }
+-
+-    fn dialog(&self) -> Option<Element<'_, Self::Message>> {
+-        let dialog = self.dialog_page_opt.as_ref()?;
+-
+-        let cosmic_theme::Spacing { space_xxs, .. } = self.core().system_theme().cosmic().spacing;
+-
+-        match dialog {
+-            DialogPage::PromptSaveClose(entity) => {
+-                let save_button =
+-                    widget::button::suggested(fl!("save")).on_press(Message::Save(Some(*entity)));
+-                let discard_button = widget::button::destructive(fl!("discard"))
+-                    .on_press(Message::TabCloseForce(*entity));
+-                let cancel_button =
+-                    widget::button::text(fl!("cancel")).on_press(Message::DialogCancel);
+-                let dialog = widget::dialog()
+-                    .title(fl!("prompt-save-changes-title"))
+-                    .body(fl!("prompt-unsaved-changes"))
+-                    .icon(icon::from_name("dialog-warning-symbolic").size(64))
+-                    .primary_action(save_button)
+-                    .secondary_action(discard_button)
+-                    .tertiary_action(cancel_button);
+-                Some(dialog.into())
+-            }
+-            DialogPage::PromptSaveQuit(entities) => {
+-                let mut can_save_all = true;
+-                let mut column = widget::column::with_capacity(entities.len()).spacing(space_xxs);
+-                for entity in entities.iter() {
+-                    if let Some(Tab::Editor(tab)) = self.tab_model.data::<Tab>(*entity) {
+-                        let mut row = widget::row::with_capacity(3).align_y(Alignment::Center);
+-                        row = row.push(widget::text(tab.title()));
+-                        row = row.push(widget::space::horizontal());
+-                        if let Some(_path) = &tab.path_opt {
+-                            row = row.push(
+-                                widget::button::standard(fl!("save"))
+-                                    .on_press(Message::Save(Some(*entity))),
+-                            );
+-                            //TODO row = row.push(widget::text(format!("{}", path.display())));
+-                        } else {
+-                            row = row.push(
+-                                widget::button::standard(fl!("save-as"))
+-                                    .on_press(Message::SaveAsDialog(Some(*entity))),
+-                            );
+-                            can_save_all = false;
+-                        }
+-
+-                        column = column.push(row);
+-                    }
+-                }
+-
+-                let mut save_button = widget::button::suggested(fl!("save-all"));
+-                if can_save_all {
+-                    save_button = save_button.on_press(Message::SaveAll);
+-                }
+-                let discard_button =
+-                    widget::button::destructive(fl!("discard")).on_press(Message::QuitForce);
+-                let cancel_button =
+-                    widget::button::text(fl!("cancel")).on_press(Message::DialogCancel);
+-                let dialog = widget::dialog()
+-                    .title(fl!("prompt-save-changes-title"))
+-                    .body(fl!("prompt-unsaved-changes"))
+-                    .icon(icon::from_name("dialog-warning-symbolic").size(64))
+-                    .control(column)
+-                    .primary_action(save_button)
+-                    .secondary_action(discard_button)
+-                    .tertiary_action(cancel_button);
+-
+-                Some(dialog.into())
+-            }
+-        }
+-    }
+-
+-    fn update(&mut self, message: Message) -> Task<Message> {
+-        // Helper for updating config values efficiently
+-        macro_rules! config_set {
+-            ($name: ident, $value: expr) => {
+-                match &self.config_handler {
+-                    Some(config_handler) => {
+-                        if let Err(err) =
+-                            paste::paste! { self.config.[<set_ $name>](config_handler, $value) }
+-                        {
+-                            log::warn!("failed to save config {:?}: {}", stringify!($name), err);
+-                        }
+-                    }
+-                    None => {
+-                        self.config.$name = $value;
+-                        log::warn!(
+-                            "failed to save config {:?}: no config handler",
+-                            stringify!($name)
+-                        );
+-                    }
+-                }
+-            };
+-        }
+-        match message {
+-            Message::AppTheme(app_theme) => {
+-                config_set!(app_theme, app_theme);
+-                return self.update_config();
+-            }
+-            Message::AutoScroll(auto_scroll) => {
+-                self.auto_scroll = auto_scroll.map(|new| {
+-                    (
+-                        new,
+-                        self.auto_scroll
+-                            .map(|old| old.1.wrapping_add(1))
+-                            .unwrap_or_default(),
+-                    )
+-                });
+-            }
+-            Message::Config(config) => {
+-                if config != self.config {
+-                    log::info!("update config");
+-                    //TODO: update syntax theme by clearing tabs, only if needed
+-                    self.config = config;
+-                    return self.update_config();
+-                }
+-            }
+-            Message::ConfigState(config_state) => {
+-                if config_state != self.config_state {
+-                    log::info!("update config state");
+-                    self.config_state = config_state;
+-                }
+-            }
+-            Message::CloseFile => {
+-                return self.update(Message::TabClose(self.tab_model.active()));
+-            }
+-            Message::CloseProject(project_i) => {
+-                if project_i < self.projects.len() {
+-                    let (_project_name, project_path) = self.projects.remove(project_i);
+-                    self.update_watcher();
+-                    let mut position = 0;
+-                    let mut closing = false;
+-                    while let Some(id) = self.nav_model.entity_at(position) {
+-                        match self.nav_model.data::<ProjectNode>(id) {
+-                            Some(node) => {
+-                                if let ProjectNode::Folder { path, root, .. } = node {
+-                                    if path == &project_path {
+-                                        // Found the project root node, closing
+-                                        closing = true;
+-                                    } else if *root && closing {
+-                                        // Found another project root node after closing, breaking
+-                                        break;
+-                                    }
+-                                }
+-                            }
+-                            None => {
+-                                if closing {
+-                                    break;
+-                                }
+-                            }
+-                        }
+-                        if closing {
+-                            self.nav_model.remove(id);
+-                        } else {
+-                            position += 1;
+-                        }
+-                    }
+-                    self.update_nav_bar_placeholder();
+-                }
+-            }
+-            Message::CloseWindow(window_id) => {
+-                if Some(window_id) == self.core.main_window_id() {
+-                    return self.update(Message::Quit);
+-                }
+-            }
+-            Message::Copy => {
+-                if let Some(Tab::Editor(tab)) = self.active_tab() {
+-                    let editor = tab.editor.lock().unwrap();
+-                    let selection_opt = editor.copy_selection();
+-                    if let Some(selection) = selection_opt {
+-                        return clipboard::write(selection);
+-                    }
+-                }
+-            }
+-            Message::Cut => {
+-                if let Some(Tab::Editor(tab)) = self.active_tab() {
+-                    let selection_opt = {
+-                        let mut editor = tab.editor.lock().unwrap();
+-                        let selection_opt = editor.copy_selection();
+-                        editor.start_change();
+-                        editor.delete_selection();
+-                        editor.finish_change();
+-                        selection_opt
+-                    };
+-                    if let Some(selection) = selection_opt {
+-                        return Task::batch([
+-                            clipboard::write(selection),
+-                            self.update(Message::TabChanged(self.tab_model.active())),
+-                        ]);
+-                    }
+-                }
+-            }
+-            Message::DefaultFont(index) => {
+-                match self.font_names.get(index) {
+-                    Some(font_name) => {
+-                        if font_name != &self.config.font_name {
+-                            // Update font name from config
+-                            {
+-                                let mut font_system = font_system().write().unwrap();
+-                                font_system.raw().db_mut().set_monospace_family(font_name);
+-                            }
+-
+-                            // Reset line number cache
+-                            {
+-                                let mut line_number_cache =
+-                                    LINE_NUMBER_CACHE.get().unwrap().lock().unwrap();
+-                                line_number_cache.clear();
+-                            }
+-
+-                            // This does a complete reset of shaping data!
+-                            let entities: Vec<_> = self.tab_model.iter().collect();
+-                            for entity in entities {
+-                                if let Some(Tab::Editor(tab)) =
+-                                    self.tab_model.data_mut::<Tab>(entity)
+-                                {
+-                                    let mut editor = tab.editor.lock().unwrap();
+-                                    editor.with_buffer_mut(|buffer| {
+-                                        for line in buffer.lines.iter_mut() {
+-                                            line.reset();
+-                                        }
+-                                    });
+-                                }
+-                            }
++                            // This does a complete reset of shaping data!
++                            let entities: Vec<_> = self.tab_model.iter().collect();
++                            for entity in entities {
++                                if let Some(Tab::Editor(tab)) =
++                                    self.tab_model.data_mut::<Tab>(entity)
++                                {
++                                    let mut editor = tab.editor.lock().unwrap();
++                                    editor.with_buffer_mut(|buffer| {
++                                        for line in buffer.lines.iter_mut() {
++                                            line.reset();
++                                        }
++                                    });
++                                }
++                            }
  
-         let cosmic_theme::Spacing {
-@@ -2146,8 +2367,26 @@ impl Application for App {
+                             config_set!(font_name, font_name.to_string());
+                             return self.update_config();
+@@ -2146,8 +2028,26 @@ impl Application for App {
              Message::Modifiers(modifiers) => {
                  self.modifiers = modifiers;
              }
@@ -634,7 +1470,7 @@ index 4b9cbba..4195845 100644
                  return self.update_tab();
              }
              Message::NewWindow => {
-@@ -2751,6 +2990,17 @@ impl Application for App {
+@@ -2751,6 +2651,17 @@ impl Application for App {
                  }
              }
              Message::TabChanged(entity) => {
@@ -652,3 +1488,764 @@ index 4b9cbba..4195845 100644
                  if let Some(Tab::Editor(tab)) = self.tab_model.data::<Tab>(entity) {
                      let mut title = tab.title();
                      //TODO: better way of adding change indicator
+@@ -2785,209 +2696,577 @@ impl Application for App {
+                     }
+                 }
+             }
+-            Message::TabCloseForce(entity) => {
+-                // Activate closest item
+-                if self.tab_model.active() == entity
+-                    && let Some(position) = self.tab_model.position(entity)
+-                {
+-                    if position > 0 {
+-                        self.tab_model.activate_position(position - 1);
+-                    } else {
+-                        self.tab_model.activate_position(position + 1);
++            Message::TabCloseForce(entity) => {
++                // Activate closest item
++                if self.tab_model.active() == entity
++                    && let Some(position) = self.tab_model.position(entity)
++                {
++                    if position > 0 {
++                        self.tab_model.activate_position(position - 1);
++                    } else {
++                        self.tab_model.activate_position(position + 1);
++                    }
++                }
++
++                // Remove item
++                self.tab_model.remove(entity);
++                self.update_watcher();
++
++                // If that was the last tab, exit the application
++                if self.tab_model.iter().next().is_none() {
++                    return self.update(Message::QuitForce);
++                }
++
++                // Close PromptSaveClose dialog if open for this entity
++                if self.dialog_page_opt == Some(DialogPage::PromptSaveClose(entity)) {
++                    self.dialog_page_opt = None;
++                }
++
++                return self.update_tab();
++            }
++            Message::TabContextAction(entity, action) => {
++                if let Some(Tab::Editor(tab)) = self.tab_model.data_mut::<Tab>(entity) {
++                    // Close context menu
++                    tab.context_menu_open = false;
++                    // Run action's message
++                    return self.update(action.message(None));
++                }
++            }
++            Message::TabContextMenu(entity, open) => {
++                if let Some(Tab::Editor(tab)) = self.tab_model.data_mut::<Tab>(entity) {
++                    // Update context menu
++                    tab.context_menu_open = open;
++                }
++            }
++            Message::TabNext => {
++                let len = self.tab_model.iter().count();
++                // Next tab position. Wraps around to 0 (the first tab) if the last tab is active.
++                let pos = self
++                    .tab_model
++                    .position(self.tab_model.active())
++                    .map(|i| (i as usize + 1) % len)
++                    .expect("at least one tab is always open");
++
++                let entity = self.tab_model.iter().nth(pos);
++                if let Some(entity) = entity {
++                    return self.update(Message::TabActivate(entity));
++                }
++            }
++            Message::TabPrev => {
++                let pos = self
++                    .tab_model
++                    .position(self.tab_model.active())
++                    .and_then(|i| (i as usize).checked_sub(1))
++                    .unwrap_or_else(|| self.tab_model.iter().count().saturating_sub(1));
++
++                let entity = self.tab_model.iter().nth(pos);
++                if let Some(entity) = entity {
++                    return self.update(Message::TabActivate(entity));
++                }
++            }
++            Message::TabSetCursor(entity, cursor) => {
++                if let Some(Tab::Editor(tab)) = self.tab_model.data::<Tab>(entity) {
++                    let mut editor = tab.editor.lock().unwrap();
++                    editor.set_cursor(cursor);
++                }
++            }
++            Message::TabWidth(tab_width) => {
++                config_set!(tab_width, tab_width);
++                return self.update_config();
++            }
++            Message::Todo => {
++                log::warn!("TODO");
++            }
++            Message::ToggleAutoIndent => {
++                config_set!(auto_indent, !self.config.auto_indent);
++                return self.update_config();
++            }
++            Message::ToggleContextPage(context_page) => {
++                if self.context_page == context_page {
++                    self.core.window.show_context = !self.core.window.show_context;
++                } else {
++                    self.context_page = context_page;
++                    self.core.window.show_context = true;
++                }
++
++                self.project_search_has_focus = self.core.window.show_context
++                    && self.context_page == ContextPage::ProjectSearch;
++
++                // Execute commands for specific pages
++                if self.core.window.show_context && self.context_page == ContextPage::GitManagement
++                {
++                    return self.update(Message::UpdateGitProjectStatus);
++                }
++
++                // Ensure focus of correct input
++                return self.update_focus();
++            }
++            Message::ToggleHighlightCurrentLine => {
++                config_set!(highlight_current_line, !self.config.highlight_current_line);
++                // This forces a redraw of all buffers
++                let entities: Vec<_> = self.tab_model.iter().collect();
++                for entity in entities {
++                    if let Some(Tab::Editor(tab)) = self.tab_model.data_mut::<Tab>(entity) {
++                        let mut editor = tab.editor.lock().unwrap();
++                        editor.set_redraw(true);
++                    }
++                }
++
++                return self.update_config();
++            }
++            Message::ToggleLineNumbers => {
++                config_set!(line_numbers, !self.config.line_numbers);
++                // This forces a redraw of all buffers
++                let entities: Vec<_> = self.tab_model.iter().collect();
++                for entity in entities {
++                    if let Some(Tab::Editor(tab)) = self.tab_model.data_mut::<Tab>(entity) {
++                        let mut editor = tab.editor.lock().unwrap();
++                        editor.set_redraw(true);
++                    }
++                }
++
++                return self.update_config();
++            }
++            Message::ToggleWordWrap => {
++                config_set!(word_wrap, !self.config.word_wrap);
++                return self.update_config();
++            }
++            Message::Undo => {
++                if let Some(Tab::Editor(tab)) = self.active_tab() {
++                    {
++                        let mut editor = tab.editor.lock().unwrap();
++                        editor.undo();
++                    }
++
++                    return self.update(Message::TabChanged(self.tab_model.active()));
++                }
++            }
++            Message::UpdateGitProjectStatus => {
++                self.git_project_status = None;
++                let projects = self.projects.clone();
++                return Task::perform(
++                    async move {
++                        let mut project_status = Vec::new();
++                        for (project_name, project_path) in projects.iter() {
++                            //TODO: send errors to UI
++                            match GitRepository::new(project_path) {
++                                Ok(repo) => match repo.status().await {
++                                    Ok(status) => {
++                                        if !status.is_empty() {
++                                            project_status.push((
++                                                project_name.clone(),
++                                                project_path.clone(),
++                                                status,
++                                            ));
++                                        }
++                                    }
++                                    Err(err) => {
++                                        log::error!(
++                                            "failed to get status of {:?}: {}",
++                                            project_path,
++                                            err
++                                        );
++                                    }
++                                },
++                                Err(err) => {
++                                    log::error!(
++                                        "failed to open repository {:?}: {}",
++                                        project_path,
++                                        err
++                                    );
++                                }
++                            }
++                        }
++                        action::app(Message::GitProjectStatus(project_status))
++                    },
++                    |x| x,
++                );
++            }
++            Message::VimBindings(vim_bindings) => {
++                config_set!(vim_bindings, vim_bindings);
++                return self.update_config();
++            }
++            Message::Focus(window_id) => {
++                if Some(window_id) == self.core.main_window_id() {
++                    // focus the text box if context page is not shown
++                    if !self.core.window.show_context {
++                        return self.update_focus();
++                    }
++                }
++            }
++        }
++
++        Task::none()
++    }
++
++}
++
++/// Implement [`cosmic::Application`] to integrate with COSMIC.
++impl Application for App {
++    /// Default async executor to use with the app.
++    type Executor = executor::Default;
++
++    /// Argument received [`cosmic::Application::new`].
++    type Flags = Flags;
++
++    /// Message type specific to our [`App`].
++    type Message = Message;
++
++    /// The unique application ID to supply to the window manager.
++    const APP_ID: &'static str = "dev.asw.MacNotepad";
++
++    fn core(&self) -> &Core {
++        &self.core
++    }
++
++    fn core_mut(&mut self) -> &mut Core {
++        &mut self.core
++    }
++
++    /// Creates the application, and optionally emits command on initialize.
++    fn init(mut core: Core, flags: Self::Flags) -> (Self, Task<Self::Message>) {
++        core.window.context_is_overlay = false;
++
++        // Update font name from config
++        {
++            let mut font_system = font_system().write().unwrap();
++            font_system
++                .raw()
++                .db_mut()
++                .set_monospace_family(&flags.config.font_name);
++        }
++
++        let app_themes = vec![fl!("match-desktop"), fl!("dark"), fl!("light")];
++
++        let font_names = {
++            let mut font_names = Vec::new();
++            let mut font_system = font_system().write().unwrap();
++            for face in font_system.raw().db().faces() {
++                if face.monospaced {
++                    //TODO: get localized name if possible
++                    let font_name = face
++                        .families
++                        .first()
++                        .map_or_else(|| face.post_script_name.to_string(), |x| x.0.to_string());
++                    if !font_names.contains(&font_name) {
++                        font_names.push(font_name);
+                     }
+                 }
++            }
++            font_names.sort();
++            font_names
++        };
+ 
+-                // Remove item
+-                self.tab_model.remove(entity);
+-                self.update_watcher();
++        let mut font_size_names = Vec::new();
++        let mut font_sizes = Vec::new();
++        for font_size in 4..=32 {
++            font_size_names.push(format!("{}px", font_size));
++            font_sizes.push(font_size);
++        }
+ 
+-                // If that was the last tab, exit the application
+-                if self.tab_model.iter().next().is_none() {
+-                    return self.update(Message::QuitForce);
+-                }
++        let mut theme_names =
++            Vec::with_capacity(SYNTAX_SYSTEM.get().unwrap().theme_set.themes.len());
++        for theme_name in SYNTAX_SYSTEM.get().unwrap().theme_set.themes.keys() {
++            theme_names.push(theme_name.to_string());
++        }
+ 
+-                // Close PromptSaveClose dialog if open for this entity
+-                if self.dialog_page_opt == Some(DialogPage::PromptSaveClose(entity)) {
+-                    self.dialog_page_opt = None;
+-                }
++        let mut zoom_step_names = Vec::new();
++        let mut zoom_steps = Vec::new();
++        for zoom_step in [25, 50, 75, 100, 150, 200] {
++            zoom_step_names.push(format!("{}px", f32::from(zoom_step) / 100.0));
++            zoom_steps.push(zoom_step);
++        }
+ 
+-                return self.update_tab();
+-            }
+-            Message::TabContextAction(entity, action) => {
+-                if let Some(Tab::Editor(tab)) = self.tab_model.data_mut::<Tab>(entity) {
+-                    // Close context menu
+-                    tab.context_menu_open = false;
+-                    // Run action's message
+-                    return self.update(action.message(None));
+-                }
++        let about = About::default()
++            .name(fl!("cosmic-text-editor"))
++            .icon(icon::from_name(Self::APP_ID))
++            .version(env!("CARGO_PKG_VERSION"))
++            .author("System76")
++            .comments(fl!("comment"))
++            .license("GPL-3.0-only")
++            .license_url("https://spdx.org/licenses/GPL-3.0-only")
++            .developers([("System76", "info@system76.com")])
++            .links([
++                (fl!("repository"), "https://github.com/pop-os/cosmic-edit"),
++                (
++                    fl!("support"),
++                    "https://github.com/pop-os/cosmic-edit/issues",
++                ),
++            ]);
++
++        let mut app = App {
++            core,
++            about,
++            nav_model: nav_bar::Model::builder().build(),
++            tab_model: segmented_button::Model::builder().build(),
++            notes: Vec::new(),
++            note_search: String::new(),
++            config_handler: flags.config_handler,
++            config: flags.config,
++            config_state_handler: flags.config_state_handler,
++            config_state: flags.config_state,
++            key_binds: key_binds(),
++            zoom_step_names,
++            zoom_steps,
++            app_themes,
++            font_names,
++            font_size_names,
++            font_sizes,
++            theme_names,
++            context_page: ContextPage::Settings,
++            text_box_id: widget::Id::unique(),
++            auto_scroll: None,
++            dialog_opt: None,
++            dialog_page_opt: None,
++            find_opt: None,
++            find_replace_id: widget::Id::unique(),
++            find_replace_value: String::new(),
++            find_search_id: widget::Id::unique(),
++            find_search_value: String::new(),
++            git_project_status: None,
++            projects: Vec::new(),
++            project_search_id: widget::Id::unique(),
++            project_search_value: String::new(),
++            project_search_result: None,
++            project_search_has_focus: false,
++            watcher_opt: None,
++            modifiers: Modifiers::empty(),
++            app_menu: mac_appmenu::AppMenuHandle::new(Self::APP_ID, Vec::new()),
++        };
++
++        // Do not show nav bar by default. Will be opened by open_project if needed
++        app.core.nav_bar_set_toggled(false);
++        for arg in env::args().skip(1) {
++            let path = PathBuf::from(arg);
++            if path.is_dir() {
++                app.open_project(path);
++            } else {
++                app.open_tab(Some(path));
+             }
+-            Message::TabContextMenu(entity, open) => {
+-                if let Some(Tab::Editor(tab)) = self.tab_model.data_mut::<Tab>(entity) {
+-                    // Update context menu
+-                    tab.context_menu_open = open;
+-                }
++        }
++
++        app.update_nav_bar_placeholder();
++
++        // Notes mode: started without files, show the notes folder in the
++        // sidebar and open the most recently edited note (or a new one).
++        if app.tab_model.iter().next().is_none() {
++            if let Some(dir) = notes::dir() {
++                notes::ENABLED.store(true, std::sync::atomic::Ordering::Relaxed);
++                app.open_project(&dir);
++                app.core.nav_bar_set_toggled(true);
++                let note = notes::latest(&dir).or_else(|| notes::create(&dir));
++                app.open_tab(note);
++                app.notes = notes::list(&dir);
++            } else {
++                app.open_tab(None);
+             }
+-            Message::TabNext => {
+-                let len = self.tab_model.iter().count();
+-                // Next tab position. Wraps around to 0 (the first tab) if the last tab is active.
+-                let pos = self
+-                    .tab_model
+-                    .position(self.tab_model.active())
+-                    .map(|i| (i as usize + 1) % len)
+-                    .expect("at least one tab is always open");
++        }
++
++        //TODO: try update_config here? It breaks loading system theme by default
++        let command = app.update_tab();
++        app.sync_app_menu();
++        (app, command)
++    }
++
++    // The default nav_bar widget needs to be condensed for cosmic-edit
++    fn nav_bar(&self) -> Option<Element<'_, action::Action<Self::Message>>> {
++        if !self.core().nav_bar_active() {
++            return None;
++        }
++
++        if notes::ENABLED.load(std::sync::atomic::Ordering::Relaxed) {
++            return Some(self.notes_sidebar());
++        }
++
++        let nav_model = self.nav_model()?;
++
++        let cosmic_theme::Spacing {
++            space_none,
++            space_s,
++            space_xxxs,
++            ..
++        } = self.core().system_theme().cosmic().spacing;
++
++        let mut nav = segmented_button::vertical(nav_model)
++            .button_height(space_xxxs + 20 /* line height */ + space_xxxs)
++            .button_padding([space_s, space_xxxs, space_s, space_xxxs])
++            .button_spacing(space_xxxs)
++            .on_activate(|entity| action::cosmic(cosmic::app::Action::NavBar(entity)))
++            .spacing(space_none)
++            .style(theme::SegmentedButton::FileNav)
++            .apply(widget::container)
++            .padding(space_s)
++            .width(Length::Shrink);
++
++        if !self.core().is_condensed() {
++            nav = nav.max_width(280);
++        }
++
++        Some(
++            nav.apply(widget::scrollable)
++                .apply(widget::container)
++                .height(Length::Fill)
++                .class(theme::Container::custom(nav_bar::nav_bar_style))
++                .into(),
++        )
++    }
++
++    fn nav_model(&self) -> Option<&nav_bar::Model> {
++        Some(&self.nav_model)
++    }
++
++    fn on_app_exit(&mut self) -> Option<Message> {
++        Some(Message::Quit)
++    }
++
++    fn on_context_drawer(&mut self) -> Task<Message> {
++        // Focus correct widget
++        self.update_focus()
++    }
+ 
+-                let entity = self.tab_model.iter().nth(pos);
+-                if let Some(entity) = entity {
+-                    return self.update(Message::TabActivate(entity));
+-                }
+-            }
+-            Message::TabPrev => {
+-                let pos = self
+-                    .tab_model
+-                    .position(self.tab_model.active())
+-                    .and_then(|i| (i as usize).checked_sub(1))
+-                    .unwrap_or_else(|| self.tab_model.iter().count().saturating_sub(1));
++    //TODO: currently the first escape unfocuses, and the second calls this function
++    fn on_escape(&mut self) -> Task<Message> {
++        if self.core.window.show_context {
++            // Close context drawer if open
++            self.core.window.show_context = false;
++        } else if self.find_opt.is_some() {
++            // Close find if open
++            self.find_opt = None;
++        }
+ 
+-                let entity = self.tab_model.iter().nth(pos);
+-                if let Some(entity) = entity {
+-                    return self.update(Message::TabActivate(entity));
+-                }
+-            }
+-            Message::TabSetCursor(entity, cursor) => {
+-                if let Some(Tab::Editor(tab)) = self.tab_model.data::<Tab>(entity) {
+-                    let mut editor = tab.editor.lock().unwrap();
+-                    editor.set_cursor(cursor);
++        // Focus correct widget
++        self.update_focus()
++    }
++
++    fn on_nav_select(&mut self, id: nav_bar::Id) -> Task<Message> {
++        // Toggle open state and get clone of node data
++        let node_opt = match self.nav_model.data_mut::<ProjectNode>(id) {
++            Some(node) => {
++                if let ProjectNode::Folder { open, .. } = node {
++                    *open = !*open;
+                 }
++                Some(node.clone())
+             }
+-            Message::TabWidth(tab_width) => {
+-                config_set!(tab_width, tab_width);
+-                return self.update_config();
+-            }
+-            Message::Todo => {
+-                log::warn!("TODO");
+-            }
+-            Message::ToggleAutoIndent => {
+-                config_set!(auto_indent, !self.config.auto_indent);
+-                return self.update_config();
+-            }
+-            Message::ToggleContextPage(context_page) => {
+-                if self.context_page == context_page {
+-                    self.core.window.show_context = !self.core.window.show_context;
+-                } else {
+-                    self.context_page = context_page;
+-                    self.core.window.show_context = true;
+-                }
++            None => None,
++        };
+ 
+-                self.project_search_has_focus = self.core.window.show_context
+-                    && self.context_page == ContextPage::ProjectSearch;
++        match node_opt {
++            Some(node) => {
++                // Update icon
++                self.nav_model.icon_set(id, node.icon(16));
+ 
+-                // Execute commands for specific pages
+-                if self.core.window.show_context && self.context_page == ContextPage::GitManagement
+-                {
+-                    return self.update(Message::UpdateGitProjectStatus);
+-                }
++                match node {
++                    ProjectNode::Folder { path, open, .. } => {
++                        let position = self.nav_model.position(id).unwrap_or(0);
++                        let indent = self.nav_model.indent(id).unwrap_or(0);
++                        if open {
++                            // Open folder
++                            self.open_folder(path, position + 1, indent + 1);
++                        } else {
++                            // Close folder
++                            while let Some(child_id) = self.nav_model.entity_at(position + 1) {
++                                if self.nav_model.indent(child_id).unwrap_or(0) > indent {
++                                    self.nav_model.remove(child_id);
++                                } else {
++                                    break;
++                                }
++                            }
++                        }
+ 
+-                // Ensure focus of correct input
+-                return self.update_focus();
+-            }
+-            Message::ToggleHighlightCurrentLine => {
+-                config_set!(highlight_current_line, !self.config.highlight_current_line);
+-                // This forces a redraw of all buffers
+-                let entities: Vec<_> = self.tab_model.iter().collect();
+-                for entity in entities {
+-                    if let Some(Tab::Editor(tab)) = self.tab_model.data_mut::<Tab>(entity) {
+-                        let mut editor = tab.editor.lock().unwrap();
+-                        editor.set_redraw(true);
+-                    }
+-                }
++                        // Prevent nav bar from closing when selecting a
++                        // folder in condensed mode.
++                        self.core_mut().nav_bar_set_toggled(true);
+ 
+-                return self.update_config();
+-            }
+-            Message::ToggleLineNumbers => {
+-                config_set!(line_numbers, !self.config.line_numbers);
+-                // This forces a redraw of all buffers
+-                let entities: Vec<_> = self.tab_model.iter().collect();
+-                for entity in entities {
+-                    if let Some(Tab::Editor(tab)) = self.tab_model.data_mut::<Tab>(entity) {
+-                        let mut editor = tab.editor.lock().unwrap();
+-                        editor.set_redraw(true);
++                        Task::none()
++                    }
++                    ProjectNode::File { path, .. } => {
++                        //TODO: go to already open file if possible
++                        self.update(Message::OpenFile(path))
+                     }
+                 }
+-
+-                return self.update_config();
+             }
+-            Message::ToggleWordWrap => {
+-                config_set!(word_wrap, !self.config.word_wrap);
+-                return self.update_config();
++            None => {
++                // Open project
++                self.update(Message::OpenProjectDialog)
+             }
+-            Message::Undo => {
+-                if let Some(Tab::Editor(tab)) = self.active_tab() {
+-                    {
+-                        let mut editor = tab.editor.lock().unwrap();
+-                        editor.undo();
+-                    }
++        }
++    }
+ 
+-                    return self.update(Message::TabChanged(self.tab_model.active()));
+-                }
++    fn dialog(&self) -> Option<Element<'_, Self::Message>> {
++        let dialog = self.dialog_page_opt.as_ref()?;
++
++        let cosmic_theme::Spacing { space_xxs, .. } = self.core().system_theme().cosmic().spacing;
++
++        match dialog {
++            DialogPage::PromptSaveClose(entity) => {
++                let save_button =
++                    widget::button::suggested(fl!("save")).on_press(Message::Save(Some(*entity)));
++                let discard_button = widget::button::destructive(fl!("discard"))
++                    .on_press(Message::TabCloseForce(*entity));
++                let cancel_button =
++                    widget::button::text(fl!("cancel")).on_press(Message::DialogCancel);
++                let dialog = widget::dialog()
++                    .title(fl!("prompt-save-changes-title"))
++                    .body(fl!("prompt-unsaved-changes"))
++                    .icon(icon::from_name("dialog-warning-symbolic").size(64))
++                    .primary_action(save_button)
++                    .secondary_action(discard_button)
++                    .tertiary_action(cancel_button);
++                Some(dialog.into())
+             }
+-            Message::UpdateGitProjectStatus => {
+-                self.git_project_status = None;
+-                let projects = self.projects.clone();
+-                return Task::perform(
+-                    async move {
+-                        let mut project_status = Vec::new();
+-                        for (project_name, project_path) in projects.iter() {
+-                            //TODO: send errors to UI
+-                            match GitRepository::new(project_path) {
+-                                Ok(repo) => match repo.status().await {
+-                                    Ok(status) => {
+-                                        if !status.is_empty() {
+-                                            project_status.push((
+-                                                project_name.clone(),
+-                                                project_path.clone(),
+-                                                status,
+-                                            ));
+-                                        }
+-                                    }
+-                                    Err(err) => {
+-                                        log::error!(
+-                                            "failed to get status of {:?}: {}",
+-                                            project_path,
+-                                            err
+-                                        );
+-                                    }
+-                                },
+-                                Err(err) => {
+-                                    log::error!(
+-                                        "failed to open repository {:?}: {}",
+-                                        project_path,
+-                                        err
+-                                    );
+-                                }
+-                            }
++            DialogPage::PromptSaveQuit(entities) => {
++                let mut can_save_all = true;
++                let mut column = widget::column::with_capacity(entities.len()).spacing(space_xxs);
++                for entity in entities.iter() {
++                    if let Some(Tab::Editor(tab)) = self.tab_model.data::<Tab>(*entity) {
++                        let mut row = widget::row::with_capacity(3).align_y(Alignment::Center);
++                        row = row.push(widget::text(tab.title()));
++                        row = row.push(widget::space::horizontal());
++                        if let Some(_path) = &tab.path_opt {
++                            row = row.push(
++                                widget::button::standard(fl!("save"))
++                                    .on_press(Message::Save(Some(*entity))),
++                            );
++                            //TODO row = row.push(widget::text(format!("{}", path.display())));
++                        } else {
++                            row = row.push(
++                                widget::button::standard(fl!("save-as"))
++                                    .on_press(Message::SaveAsDialog(Some(*entity))),
++                            );
++                            can_save_all = false;
+                         }
+-                        action::app(Message::GitProjectStatus(project_status))
+-                    },
+-                    |x| x,
+-                );
+-            }
+-            Message::VimBindings(vim_bindings) => {
+-                config_set!(vim_bindings, vim_bindings);
+-                return self.update_config();
+-            }
+-            Message::Focus(window_id) => {
+-                if Some(window_id) == self.core.main_window_id() {
+-                    // focus the text box if context page is not shown
+-                    if !self.core.window.show_context {
+-                        return self.update_focus();
++
++                        column = column.push(row);
+                     }
+                 }
++
++                let mut save_button = widget::button::suggested(fl!("save-all"));
++                if can_save_all {
++                    save_button = save_button.on_press(Message::SaveAll);
++                }
++                let discard_button =
++                    widget::button::destructive(fl!("discard")).on_press(Message::QuitForce);
++                let cancel_button =
++                    widget::button::text(fl!("cancel")).on_press(Message::DialogCancel);
++                let dialog = widget::dialog()
++                    .title(fl!("prompt-save-changes-title"))
++                    .body(fl!("prompt-unsaved-changes"))
++                    .icon(icon::from_name("dialog-warning-symbolic").size(64))
++                    .control(column)
++                    .primary_action(save_button)
++                    .secondary_action(discard_button)
++                    .tertiary_action(cancel_button);
++
++                Some(dialog.into())
+             }
+         }
+-
+-        Task::none()
+     }
+ 
++    fn update(&mut self, message: Message) -> Task<Message> {
++        let task = self.update_inner(message);
++        self.sync_app_menu();
++        task
++    }
+     fn context_drawer(&self) -> Option<context_drawer::ContextDrawer<'_, Message>> {
+         if !self.core.window.show_context {
+             return None;
+@@ -3460,6 +3739,8 @@ impl Application for App {
+                 Some(dialog) => dialog.subscription(),
+                 None => Subscription::none(),
+             },
++            Subscription::run_with(self.app_menu.clone(), mac_appmenu::activate_stream)
++                .map(Message::AppMenuActivate),
+         ];
+ 
+         if let Some(auto_scroll) = self.auto_scroll {

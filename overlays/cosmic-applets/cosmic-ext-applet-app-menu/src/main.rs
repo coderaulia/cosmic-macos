@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+mod dbus_menu;
 mod desktop_lookup;
 mod wayland;
 
@@ -19,7 +20,7 @@ use cosmic::{
         widget::{column, row},
         window,
     },
-    widget::{button, container, icon, space, text},
+    widget::{button, container, icon, mouse_area, scrollable, space, text},
 };
 use cosmic_ext_mac_applet_style::{
     PillVariant, bold_panel_font,
@@ -28,8 +29,11 @@ use cosmic_ext_mac_applet_style::{
     mac_pill_button, mac_popover_container_sized, mac_text_pill_button, panel_text_size,
 };
 use cosmic_protocols::toplevel_info::v1::client::zcosmic_toplevel_handle_v1::State as ToplevelState;
+use mac_appmenu::{MenuLayout, MenuSpec};
 use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc;
 
+use crate::dbus_menu::{DbusMenuCommand, DbusMenuUpdate, RemoteMenuTarget};
 use crate::desktop_lookup::{
     DesktopAppInfo, ResolvedApp, elide_to_max_width, load_system_desktop_entries,
     resolve_active_app, split_new_window_action,
@@ -39,6 +43,8 @@ use crate::wayland::{WaylandRequest, WaylandUpdate, WorkspaceEntry};
 const APP_ID: &str = "dev.asw.CosmicExtAppletAppMenu";
 const MAX_APP_PILL_WIDTH: f32 = 220.0;
 const POPOVER_WIDTH: f32 = 250.0;
+const REMOTE_POPOVER_MIN_WIDTH: f32 = 260.0;
+const REMOTE_POPOVER_MAX_WIDTH: f32 = 340.0;
 const ABOUT_APP_WINDOW_SIZE: Size = Size::new(340.0, 260.0);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, CosmicConfigEntry)]
@@ -59,6 +65,7 @@ impl Default for AppMenuConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MenuKind {
     App,
+    Remote(usize),
     Window,
 }
 
@@ -71,6 +78,8 @@ enum WindowMenuPage {
 #[derive(Debug, Clone)]
 enum Message {
     ToggleMenu(MenuKind),
+    HoverMenu(MenuKind),
+    ActivateRemoteItem(String),
     SetWindowMenuPage(WindowMenuPage),
     OpenAboutApp,
     CloseAboutApp,
@@ -85,6 +94,7 @@ enum Message {
     MoveToWorkspace(usize),
     CloseWindow,
     Wayland(Box<WaylandUpdate>),
+    DbusMenu(Box<DbusMenuUpdate>),
     Closed(window::Id),
 }
 
@@ -101,6 +111,11 @@ struct AppMenu {
     last_active_handle: Option<ExtForeignToplevelHandleV1>,
     workspaces: Vec<WorkspaceEntry>,
     wayland_tx: Option<calloop::channel::Sender<WaylandRequest>>,
+    dbus_tx: Option<mpsc::UnboundedSender<DbusMenuCommand>>,
+    remote_target: Option<RemoteMenuTarget>,
+    remote_bus_name: Option<String>,
+    remote_layout: MenuLayout,
+    last_queried_target: Option<RemoteMenuTarget>,
 }
 
 impl AppMenu {
@@ -145,6 +160,42 @@ impl AppMenu {
             })
             .map(|(h, _)| h.clone())
             .collect()
+    }
+
+    fn sync_remote_menu_target(&mut self) {
+        let target = self.current_active_toplevel().map(|tl| {
+            let resolved = resolve_active_app(
+                &tl.app_id,
+                &tl.title,
+                &self.desktop_entries,
+                &self.config.default_app_name,
+            );
+            RemoteMenuTarget {
+                app_id: tl.app_id.clone(),
+                desktop_id: resolved.desktop.map(|d| d.id),
+            }
+        });
+
+        if target != self.last_queried_target {
+            self.last_queried_target = target.clone();
+            if target.is_none() {
+                self.remote_target = None;
+                self.remote_bus_name = None;
+                self.remote_layout.clear();
+                if matches!(self.active_menu, Some(MenuKind::Remote(_))) {
+                    self.active_menu = None;
+                }
+            }
+            if let Some(tx) = &self.dbus_tx {
+                let _ = tx.send(DbusMenuCommand::SetTarget(target));
+            }
+        }
+    }
+
+    fn remote_layout_has_window_menu(&self) -> bool {
+        self.remote_layout.iter().any(|menu| {
+            menu.id.eq_ignore_ascii_case("window") || menu.label.eq_ignore_ascii_case("window")
+        })
     }
 
     fn close_popup_task(&mut self) -> app::Task<Message> {
@@ -334,6 +385,14 @@ impl AppMenu {
         mac_popover_container_sized(&self.core.applet, content, 230.0, 260.0).into()
     }
 
+    fn view_remote_menu(&self, idx: usize) -> Element<'_, Message> {
+        let Some(menu) = self.remote_layout.get(idx) else {
+            return self.view_app_menu();
+        };
+
+        render_remote_menu_popover(&self.core.applet, menu)
+    }
+
     fn view_about_app_window(&self) -> Element<'_, Message> {
         let resolved = self
             .about_snapshot
@@ -429,6 +488,11 @@ impl cosmic::Application for AppMenu {
             last_active_handle: None,
             workspaces: Vec::new(),
             wayland_tx: None,
+            dbus_tx: None,
+            remote_target: None,
+            remote_bus_name: None,
+            remote_layout: Vec::new(),
+            last_queried_target: None,
         };
         (app, Task::none())
     }
@@ -444,7 +508,7 @@ impl cosmic::Application for AppMenu {
                     return self.close_popup_task();
                 }
                 if self.popup.is_some() {
-                    // Switch directly between App and Window menus inside the open popup.
+                    // Switch directly between menu pills inside the open popup.
                     self.active_menu = Some(kind);
                     self.window_page = WindowMenuPage::Main;
                     return Task::none();
@@ -455,9 +519,24 @@ impl cosmic::Application for AppMenu {
                     |app: &mut AppMenu, id| {
                         app.popup.replace(id);
                     },
-                    Some(POPOVER_WIDTH),
+                    None,
                     None,
                 ));
+            }
+            Message::HoverMenu(kind) => {
+                if self.popup.is_some() && self.active_menu != Some(kind) {
+                    self.active_menu = Some(kind);
+                    self.window_page = WindowMenuPage::Main;
+                }
+            }
+            Message::ActivateRemoteItem(item_id) => {
+                if let (Some(bus_name), Some(tx)) = (&self.remote_bus_name, &self.dbus_tx) {
+                    let _ = tx.send(DbusMenuCommand::Activate {
+                        bus_name: bus_name.clone(),
+                        item_id,
+                    });
+                }
+                return self.close_popup_task();
             }
             Message::SetWindowMenuPage(page) => {
                 self.window_page = page;
@@ -610,12 +689,14 @@ impl cosmic::Application for AppMenu {
                         self.last_active_handle = Some(info.foreign_toplevel.clone());
                     }
                     self.toplevels.insert(info.foreign_toplevel.clone(), info);
+                    self.sync_remote_menu_target();
                 }
                 WaylandUpdate::ToplevelRemove(handle) => {
                     self.toplevels.remove(&handle);
                     if self.last_active_handle.as_ref() == Some(&handle) {
                         self.last_active_handle = None;
                     }
+                    self.sync_remote_menu_target();
                 }
                 WaylandUpdate::Workspaces(ws) => {
                     self.workspaces = ws;
@@ -639,11 +720,45 @@ impl cosmic::Application for AppMenu {
                     self.wayland_tx = None;
                 }
             },
+            Message::DbusMenu(upd) => match *upd {
+                DbusMenuUpdate::Init(tx) => {
+                    self.dbus_tx = Some(tx);
+                    self.last_queried_target = None;
+                    self.sync_remote_menu_target();
+                }
+                DbusMenuUpdate::Layout {
+                    target,
+                    bus_name,
+                    layout,
+                } => {
+                    if self.last_queried_target.as_ref() == Some(&target) {
+                        self.remote_target = Some(target);
+                        self.remote_bus_name = Some(bus_name);
+                        self.remote_layout = layout;
+                        if let Some(MenuKind::Remote(idx)) = self.active_menu
+                            && idx >= self.remote_layout.len()
+                        {
+                            self.active_menu = Some(MenuKind::App);
+                        }
+                    }
+                }
+                DbusMenuUpdate::Cleared { target } => {
+                    if self.last_queried_target.as_ref() == Some(&target) {
+                        self.remote_target = None;
+                        self.remote_bus_name = None;
+                        self.remote_layout.clear();
+                        if matches!(self.active_menu, Some(MenuKind::Remote(_))) {
+                            self.active_menu = Some(MenuKind::App);
+                        }
+                    }
+                }
+            },
             Message::Closed(id) => {
                 if self.popup == Some(id) {
                     self.popup = None;
                     self.active_menu = None;
                     self.window_page = WindowMenuPage::Main;
+                    self.sync_remote_menu_target();
                 } else if self.about_window == Some(id) {
                     self.about_window = None;
                     self.about_snapshot = None;
@@ -660,19 +775,42 @@ impl cosmic::Application for AppMenu {
         let is_window_open = self.popup.is_some() && self.active_menu == Some(MenuKind::Window);
 
         let app_label = text(elided).size(panel_text_size()).font(bold_panel_font());
-        let app_pill = mac_pill_button(
-            container(app_label).max_width(MAX_APP_PILL_WIDTH),
-            is_app_open,
-            PillVariant::Text,
+        let app_pill = mouse_area(
+            mac_pill_button(
+                container(app_label).max_width(MAX_APP_PILL_WIDTH),
+                is_app_open,
+                PillVariant::Text,
+            )
+            .on_press_down(Message::ToggleMenu(MenuKind::App)),
         )
-        .on_press_down(Message::ToggleMenu(MenuKind::App));
+        .on_enter(Message::HoverMenu(MenuKind::App));
 
-        let window_pill = mac_text_pill_button("Window", false, is_window_open)
-            .on_press_down(Message::ToggleMenu(MenuKind::Window));
-
-        let pills = row![app_pill, window_pill]
+        let mut pills = row![app_pill]
             .spacing(2)
             .align_y(Alignment::Center);
+
+        if !self.remote_layout.is_empty() {
+            for (idx, menu) in self.remote_layout.iter().enumerate() {
+                let kind = MenuKind::Remote(idx);
+                let is_open = self.popup.is_some() && self.active_menu == Some(kind);
+                let pill = mac_text_pill_button(&menu.label, false, is_open)
+                    .on_press_down(Message::ToggleMenu(kind));
+                pills = pills.push(mouse_area(pill).on_enter(Message::HoverMenu(kind)));
+            }
+            if !self.remote_layout_has_window_menu() {
+                let window_pill = mac_text_pill_button("Window", false, is_window_open)
+                    .on_press_down(Message::ToggleMenu(MenuKind::Window));
+                pills = pills.push(
+                    mouse_area(window_pill).on_enter(Message::HoverMenu(MenuKind::Window)),
+                );
+            }
+        } else {
+            let window_pill = mac_text_pill_button("Window", false, is_window_open)
+                .on_press_down(Message::ToggleMenu(MenuKind::Window));
+            pills = pills.push(
+                mouse_area(window_pill).on_enter(Message::HoverMenu(MenuKind::Window)),
+            );
+        }
 
         self.core
             .applet
@@ -684,6 +822,7 @@ impl cosmic::Application for AppMenu {
         if self.popup == Some(id) {
             match self.active_menu {
                 Some(MenuKind::Window) => self.view_window_menu(),
+                Some(MenuKind::Remote(idx)) => self.view_remote_menu(idx),
                 _ => self.view_app_menu(),
             }
         } else if self.about_window == Some(id) {
@@ -694,12 +833,69 @@ impl cosmic::Application for AppMenu {
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        wayland::subscription().map(|u| Message::Wayland(Box::new(u)))
+        Subscription::batch([
+            wayland::subscription().map(|u| Message::Wayland(Box::new(u))),
+            dbus_menu::subscription().map(|u| Message::DbusMenu(Box::new(u))),
+        ])
     }
 
     fn style(&self) -> Option<cosmic::iced::theme::Style> {
         Some(cosmic::applet::style())
     }
+}
+
+fn render_remote_menu_popover<'a>(
+    applet: &cosmic::applet::Context,
+    menu: &'a MenuSpec,
+) -> Element<'a, Message> {
+    let any_checked = menu.items.iter().any(|item| !item.is_separator() && item.checked);
+    let mut items = column![].padding([6, 0]);
+
+    for item in &menu.items {
+        if item.is_separator() {
+            items = items.push(mac_menu_divider());
+            continue;
+        }
+
+        let mut row_items = row![].align_y(Alignment::Center).spacing(8);
+        if any_checked {
+            let check_slot: Element<'_, Message> = if item.checked {
+                checkmark_icon(12).into()
+            } else {
+                space::horizontal().width(12).into()
+            };
+            row_items = row_items.push(container(check_slot).width(Length::Fixed(14.0)));
+        }
+
+        row_items = row_items
+            .push(text::body(&item.label))
+            .push(space::horizontal().width(Length::Fill));
+
+        if !item.shortcut.is_empty() {
+            row_items = row_items.push(text::caption(&item.shortcut).class(cosmic::theme::Text::Default));
+        }
+
+        let btn = mac_menu_item(row_items);
+        items = items.push(if item.enabled {
+            btn.on_press(Message::ActivateRemoteItem(item.id.clone()))
+        } else {
+            btn
+        });
+    }
+
+    let content: Element<'_, Message> = if menu.items.len() > 16 {
+        scrollable(items).height(Length::Shrink).into()
+    } else {
+        items.into()
+    };
+
+    mac_popover_container_sized(
+        applet,
+        content,
+        REMOTE_POPOVER_MIN_WIDTH,
+        REMOTE_POPOVER_MAX_WIDTH,
+    )
+    .into()
 }
 
 fn main() -> cosmic::iced::Result {

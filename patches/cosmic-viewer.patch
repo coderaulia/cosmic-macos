@@ -175,23 +175,1761 @@ index b8ae5de..b038a2b 100644
 +iced_widget = { path = "../../libcosmic-mac/iced/widget" }
 +iced_winit = { path = "../../libcosmic-mac/iced/winit" }
 +libcosmic = { path = "../../libcosmic-mac" }
+diff --git a/cosmic-viewer/Cargo.toml b/cosmic-viewer/Cargo.toml
+index 9e73950..cf8bef7 100644
+--- a/cosmic-viewer/Cargo.toml
++++ b/cosmic-viewer/Cargo.toml
+@@ -48,6 +48,7 @@ viewer-tools = { path = "../viewer-tools" }
+ 
+ tokio.workspace = true
+ tracing.workspace = true
++mac-appmenu = { path = "../../mac-suite/mac-appmenu" }
+ 
+ [lints]
+ workspace = true
 diff --git a/cosmic-viewer/src/app.rs b/cosmic-viewer/src/app.rs
-index 9cb0b66..252009f 100644
+index 9cb0b66..a492f31 100644
 --- a/cosmic-viewer/src/app.rs
 +++ b/cosmic-viewer/src/app.rs
-@@ -1384,7 +1384,7 @@ impl CosmicViewer {
+@@ -146,6 +146,7 @@ pub struct CosmicViewer {
+     was_narrow: bool,
+     toasts: Toasts<ViewerMessage>,
+     about: About,
++    app_menu: mac_appmenu::AppMenuHandle,
  }
  
- impl Application for CosmicViewer {
--    const APP_ID: &'static str = "com.system76.CosmicViewer";
-+    const APP_ID: &'static str = "dev.asw.MacViewer";
+ impl CosmicViewer {
+@@ -1381,895 +1382,440 @@ impl CosmicViewer {
  
-     type Executor = cosmic::executor::Default;
-     type Flags = Option<PathBuf>;
-@@ -1544,6 +1544,15 @@ impl Application for CosmicViewer {
-         )]
+         widget::settings::view_column(vec![appearance.into()]).into()
+     }
+-}
+-
+-impl Application for CosmicViewer {
+-    const APP_ID: &'static str = "com.system76.CosmicViewer";
+-
+-    type Executor = cosmic::executor::Default;
+-    type Flags = Option<PathBuf>;
+-    type Message = ViewerMessage;
+-
+-    fn core(&self) -> &Core {
+-        &self.core
+-    }
+ 
+-    fn core_mut(&mut self) -> &mut Core {
+-        &mut self.core
++    fn sync_app_menu(&self) {
++        let layout = crate::app_menu::app_menu_layout(
++            &self.key_binds,
++            crate::app_menu::AppMenuState {
++                can_undo: self.viewport.can_undo(),
++                can_redo: self.viewport.can_redo(),
++                has_image: self.viewport.image().is_some(),
++                is_fullscreen: self.is_fullscreen,
++            },
++        );
++        self.app_menu.set_layout(layout);
      }
  
++    // reason: central message dispatch; one match arm per variant, kept colocated.
+     #[allow(clippy::too_many_lines)]
+-    fn init(mut core: Core, flags: Self::Flags) -> (Self, Task<Action<Self::Message>>) {
+-        let mut tasks = Vec::new();
+-
+-        let config = viewer_config::config()
+-            .ok()
+-            .as_ref()
+-            .and_then(|h| ViewerConfig::get_entry(h).ok())
+-            .unwrap_or_default();
+-
+-        let scroll_id = Id::unique();
+-
+-        let families = load_font_families();
+-        let default_family = match cosmic::font::default().family {
+-            font::Family::Name(name) => name,
+-            _ => "Sans",
+-        };
+-        let font_index = families.iter().position(|&fam| fam == default_family);
+-
+-        let initial_color = config
+-            .last_color
+-            .map(|c| Color::from_rgba(c[0], c[1], c[2], c[3]));
+-        let app_themes = vec![fl!("match-desktop"), fl!("dark"), fl!("light")];
+-        core.nav_bar_set_toggled(config.show_navbar && flags.as_ref().is_none_or(|p| p.is_dir()));
+-        let mut viewer = Self {
+-            core,
+-            cur_scroll: None,
+-            hovered_item: None,
+-            key_binds: key_binds::init_keybinds(),
+-            config,
+-            app_themes,
+-            nav: NavState::new(),
+-            nav_bar_model: nav_bar::Model::default(),
+-            cache: ImageCache::with_defaults(),
+-            nav_handles: Vec::new(),
+-            scroll_id,
+-            viewport: ViewportManager::default(),
+-            context_page: None,
+-            context_menu_position: None,
+-            annotate_tool: AnnotateTool::default(),
+-            annotate_color: initial_color.map(AnnotateColor).unwrap_or_default(),
+-            annotate_stroke_size: 2.,
+-            crop_ratio: CropRatio::Custom,
+-            crop_ratio_popup: false,
+-            text_editing: false,
+-            move_target: None,
+-            move_start: None,
+-            font_families: load_font_families(),
+-            shape_popup: false,
+-            stroke_popup: false,
+-            color_picker: cosmic::widget::ColorPickerModel::new(
+-                "Hex",
+-                "RGB",
+-                None,
+-                initial_color.or(Some(Color::BLACK)),
+-            )
+-            .width(Length::Fixed(248.0))
+-            .height(Length::Fixed(148.0)),
+-            has_custom_color: false,
+-            selected_shape: AnnotateTool::Rectangle,
+-            text_font_family: default_family,
+-            text_font_index: font_index,
+-            text_font_size: pt_to_px(24.0),
+-            text_bold: false,
+-            text_italic: false,
+-            text_underline: false,
+-            text_alignment: Horizontal::Left,
+-            text_style_model: segmented_button::Model::builder()
+-                .insert(|btn| {
+-                    btn.icon(icon_cache_get("format-text-bold-symbolic").icon())
+-                        .data(TextStyle::Bold)
+-                })
+-                .insert(|btn| {
+-                    btn.icon(icon_cache_get("format-text-italic-symbolic").icon())
+-                        .data(TextStyle::Italic)
+-                })
+-                .insert(|btn| {
+-                    btn.icon(icon_cache_get("format-text-underline-symbolic").icon())
+-                        .data(TextStyle::Underline)
+-                })
+-                .build(),
+-            text_align_model: segmented_button::Model::builder()
+-                .insert(|btn| {
+-                    btn.icon(icon::from_name("format-justify-left-symbolic").icon())
+-                        .data(Horizontal::Left)
+-                        .activate()
+-                })
+-                .insert(|btn| {
+-                    btn.icon(icon::from_name("format-justify-center-symbolic").icon())
+-                        .data(Horizontal::Center)
+-                })
+-                .insert(|btn| {
+-                    btn.icon(icon::from_name("format-justify-right-symbolic").icon())
+-                        .data(Horizontal::Right)
+-                })
+-                .build(),
+-            show_text_format_menu: false,
+-            window_width: Some(0.0),
+-            is_fullscreen: false,
+-            saved_nav_toggled: false,
+-            wallpaper_dialog: None,
+-            delete_dialog: None,
+-            unsaved_dialog: None,
+-            available_outputs: Vec::new(),
+-            watcher_rescan_pending: false,
+-            was_narrow: false,
+-            toasts: Toasts::new(ViewerMessage::CloseToast),
+-            about: About::default()
+-                .name(fl!("app-name"))
+-                .icon(icon::from_name(Self::APP_ID))
+-                .version(env!("CARGO_PKG_VERSION"))
+-                .author("Bryan Hyland and System76")
+-                .comments(fl!("app-description"))
+-                .license("GPL-3.0-only")
+-                .developers([("System76", "info@system76.com")])
+-                .links([
+-                    (fl!("repository"), "https://github.com/pop-os/cosmic-viewer"),
+-                    (
+-                        fl!("support"),
+-                        "https://github.com/pop-os/cosmic-viewer/issues",
+-                    ),
+-                ]),
+-        };
+-
+-        if let Some(path) = flags {
+-            tasks.push(viewer.open_path(path));
++    fn update_inner(&mut self, message: ViewerMessage) -> Task<Action<ViewerMessage>> {
++        // Helper for updating config values efficiently
++        macro_rules! config_set {
++            ($name: ident, $value: expr) => {
++                match viewer_config::config() {
++                    Ok(config_handler) => {
++                        if let Err(err) =
++                            paste::paste! { self.config.[<set_ $name>](&config_handler, $value) }
++                        {
++                            tracing::warn!(
++                                "failed to save config {:?}: {}",
++                                stringify!($name),
++                                err
++                            );
++                        }
++                    }
++                    Err(err) => {
++                        self.config.$name = $value;
++                        tracing::warn!(
++                            "failed to save config {:?}: no config handler - {err:?}",
++                            stringify!($name)
++                        );
++                    }
++                }
++            };
+         }
+-        let theme = viewer.config.app_theme.theme();
+-
+-        tasks.push(cosmic::command::set_theme(theme));
+-
+-        (viewer, Task::batch(tasks))
+-    }
+-
+-    fn header_start(&self) -> Vec<Element<'_, Self::Message>> {
+-        let has_image = self.viewport.image().is_some();
++        let mut tasks = vec![];
+ 
+-        vec![menu_bar(
+-            &self.core,
+-            &self.key_binds,
+-            self.viewport.can_undo(),
+-            self.viewport.can_redo(),
+-            has_image,
+-        )]
+-    }
++        match message {
++            ViewerMessage::AppMenuActivate(item_id) => {
++                if let Some(action) = crate::app_menu::action_from_id(&item_id) {
++                    return self.update_inner(action.message());
++                }
++            }
++            ViewerMessage::AppTheme(app_theme) => {
++                config_set!(app_theme, app_theme);
++                let theme = self.config.app_theme.theme();
+ 
+-    fn context_drawer(&self) -> Option<context_drawer::ContextDrawer<'_, Self::Message>> {
+-        let page = self.context_page?;
+-        let content = match page {
+-            ContextMessage::ImageDetails => self.image_details_page(),
+-            ContextMessage::About => {
+-                return Some(context_drawer::about(
+-                    &self.about,
+-                    |s| Self::Message::LaunchUrl(s.to_string()),
+-                    Self::Message::Context(ContextMessage::About),
+-                ));
++                return cosmic::command::set_theme(theme);
+             }
+-            ContextMessage::Settings => {
+-                let content = self.settings();
+-                return Some(
+-                    context_drawer::context_drawer(content, ViewerMessage::Context(page))
+-                        .title(fl!("settings"))
+-                        .into(),
+-                );
++            ViewerMessage::Copy => {
++                self.context_menu_position = None;
+             }
+-        };
+-
+-        let drawer = context_drawer::context_drawer(content, ViewerMessage::Context(page))
+-            .title(fl!("menu-image-details"));
+-        Some(drawer)
+-    }
+-
+-    fn nav_model(&self) -> Option<&nav_bar::Model> {
+-        Some(&self.nav_bar_model)
+-    }
+-
+-    // reason: thumbnail size is a small in-range pixel count; exact as f32.
+-    #[allow(clippy::cast_precision_loss)]
+-    fn nav_bar(&self) -> Option<Element<'_, Action<Self::Message>>> {
+-        if !self.core().nav_bar_active() {
+-            return None;
+-        }
+-
+-        let thumbnail_size = self.config.thumbnail_size.pixels();
+-        let t = theme::active();
+-        let t = t.cosmic();
+-        let space_xxs = f32::from(t.spacing.space_xxs);
+-        let space_s = f32::from(t.spacing.space_s);
+-        let panel_width = space_xxs.mul_add(2.0, thumbnail_size as f32) + 36.0;
+-
+-        let active = self.nav.index().unwrap_or(0);
+-
+-        let items = self
+-            .nav
+-            .images()
+-            .iter()
+-            .enumerate()
+-            .map(|(img, p)| {
+-                let handle = self
+-                    .nav_handles
+-                    .get(img)
+-                    .and_then(std::clone::Clone::clone)
+-                    .unwrap_or_else(|| Handle::from_rgba(1, 1, vec![0, 0, 0, 0]));
+-
+-                let mut btn = container(
+-                    button::image(handle)
+-                        .selected(img == active)
+-                        .height(Length::Fill)
+-                        .width(Length::Fill)
+-                        .id(Id::new(format!("img-{}-{img}", p.to_string_lossy())))
+-                        .on_press(Action::App(ViewerMessage::Nav(NavMessage::GridActivate(
+-                            img,
+-                        )))),
+-                )
+-                .width(thumbnail_size as f32)
+-                .height(thumbnail_size as f32)
+-                .align_x(Horizontal::Center)
+-                .align_y(Vertical::Center);
+-
+-                if self.hovered_item.is_some_and(|h| h == img) {
+-                    btn = btn.style(|theme| {
+-                        let cosmic = theme.cosmic();
++            ViewerMessage::CopyToClipboard => {
++                self.context_menu_position = None;
++                if let Some(path) = self.nav.current().cloned()
++                    && let Some(mime) = path
++                        .extension()
++                        .and_then(|ext| ext.to_str())
++                        .and_then(image_mime_type)
++                    && let Ok(data) = std::fs::read(&path)
++                {
++                    return clipboard::write_data(ClipboardImage {
++                        data,
++                        mime: mime.to_string(),
++                    });
++                }
++            }
++            ViewerMessage::CopyFilePath => {
++                self.context_menu_position = None;
++                if let Some(path) = self.nav.current() {
++                    return cosmic::iced::clipboard::write(path.display().to_string());
++                }
++            }
++            // No-op messages: reserved menu actions with no current behavior.
++            ViewerMessage::Cut | ViewerMessage::Paste | ViewerMessage::Cancelled => {}
++            ViewerMessage::OpenFileDialog => {
++                if self.guard_unsaved(ViewerMessage::OpenFileDialog) {
++                    return Task::none();
++                }
++                return future(async move {
++                    let dialog = file_chooser::open::Dialog::new()
++                        .title("Open Image")
++                        .filter(
++                            FileFilter::new("All")
++                                .extension("jpg")
++                                .extension("JPG")
++                                .extension("jpeg")
++                                .extension("JPEG")
++                                .extension("png")
++                                .extension("PNG")
++                                .extension("gif")
++                                .extension("GIF")
++                                .extension("webp")
++                                .extension("WEBP")
++                                .extension("bmp")
++                                .extension("BMP")
++                                .extension("tiff")
++                                .extension("TIFF")
++                                .extension("tif")
++                                .extension("TIF")
++                                .extension("ico")
++                                .extension("ICO")
++                                .extension("avif")
++                                .extension("AVIF")
++                                .extension("hdr")
++                                .extension("HDR")
++                                .extension("svg")
++                                .extension("SVG")
++                                .extension("heif")
++                                .extension("HEIF")
++                                .extension("heic")
++                                .extension("HEIC"),
++                        )
++                        .filter(
++                            FileFilter::new("JPEG")
++                                .extension("jpg")
++                                .extension("jpeg")
++                                .extension("JPEG")
++                                .extension("JPG"),
++                        )
++                        .filter(FileFilter::new("png").extension("png").extension("PNG"))
++                        .filter(FileFilter::new("gif").extension("gif").extension("GIF"))
++                        .filter(FileFilter::new("webp").extension("webp").extension("WEBP"))
++                        .filter(FileFilter::new("bmp").extension("bmp").extension("BMP"))
++                        .filter(
++                            FileFilter::new("tiff")
++                                .extension("tiff")
++                                .extension("tif")
++                                .extension("TIFF")
++                                .extension("TIF"),
++                        )
++                        .filter(FileFilter::new("avif").extension("avif").extension("AVIF"))
++                        .filter(FileFilter::new("ico").extension("ico").extension("ICO"))
++                        .filter(FileFilter::new("hdr").extension("hdr").extension("HDR"));
+ 
+-                        let component = &cosmic.list_button;
+-                        container::Style {
+-                            icon_color: Some(component.on.into()),
+-                            text_color: Some(component.on.into()),
+-                            background: Some(Background::Color(
+-                                cosmic.primary(theme.transparent).component.hover.into(),
+-                            )),
+-                            border: Border {
+-                                radius: cosmic.radius_s().map(|x| x + 1.0).into(),
+-                                width: 0.0,
+-                                color: Color::TRANSPARENT,
+-                            },
+-                            ..Default::default()
++                    match dialog.open_file().await {
++                        Ok(response) => response.url().to_file_path().map_or_else(
++                            |()| Action::App(ViewerMessage::Cancelled),
++                            |path| Action::App(ViewerMessage::Open(path)),
++                        ),
++                        Err(file_chooser::Error::Cancelled) => {
++                            Action::App(ViewerMessage::Cancelled)
+                         }
+-                    })
++                        Err(e) => {
++                            tracing::error!("File dialog error: {e}");
++                            Action::App(ViewerMessage::Cancelled)
++                        }
++                    }
++                });
++            }
++            ViewerMessage::OpenFolderDialog => {
++                if self.guard_unsaved(ViewerMessage::OpenFolderDialog) {
++                    return Task::none();
+                 }
+-                let btn = mouse_area(btn)
+-                    .on_enter(cosmic::Action::App(ViewerMessage::HoverItem(Some(img))))
+-                    .on_exit(cosmic::Action::App(ViewerMessage::HoverItem(None)))
+-                    .on_press(Action::App(ViewerMessage::Nav(NavMessage::GridActivate(
+-                        img,
+-                    ))));
++                return future(async move {
++                    let dialog = file_chooser::open::Dialog::new().title("Open Folder");
+ 
+-                sensor(btn)
+-                    .on_show(move |_| {
+-                        Action::App(ViewerMessage::Nav(NavMessage::NavThumbnailShow(img)))
++                    match dialog.open_folder().await {
++                        Ok(response) => response.url().to_file_path().map_or_else(
++                            |()| Action::App(ViewerMessage::Cancelled),
++                            |path| Action::App(ViewerMessage::Open(path)),
++                        ),
++                        Err(file_chooser::Error::Cancelled) => {
++                            Action::App(ViewerMessage::Cancelled)
++                        }
++                        Err(e) => {
++                            tracing::error!("Folder dialog error: {e}");
++                            Action::App(ViewerMessage::Cancelled)
++                        }
++                    }
++                });
++            }
++            ViewerMessage::Open(path) => tasks.push(self.open_path(path)),
++            ViewerMessage::OpenRecent(_idx) => {}
++            ViewerMessage::OpenContaining => {
++                if let Some(dir) = self.nav.dir()
++                    && let Err(e) = open::that(dir)
++                {
++                    tracing::error!("Failed to open containing folder: {e}");
++                }
++            }
++            ViewerMessage::Save => {
++                if let (Some(image), Some(path)) = (self.flatten_image(), self.nav.current()) {
++                    if let Err(e) = image.save(path) {
++                        tracing::error!("Failed to save image: {e}");
++                    } else {
++                        self.viewport.revert_all();
++                        self.cache.remove_full(path);
++                        self.viewport.cancel_tool();
++                        self.text_editing = false;
++                        tasks.push(self.load_full_image(path.clone()));
++                    }
++                }
++            }
++            ViewerMessage::SaveAs => {
++                let current = self.nav.current();
++                let suggested = current
++                    .and_then(|path| {
++                        path.file_name()
++                            .map(|name| name.to_string_lossy().to_string())
+                     })
+-                    .on_hide(Action::App(ViewerMessage::Nav(
+-                        NavMessage::NavThumbnailHide(img),
+-                    )))
+-                    .into()
+-            })
+-            .collect::<Vec<Element<'_, Action<ViewerMessage>>>>();
+-
+-        let nav_grid = container(
+-            grid(items)
+-                .spacing(space_s)
+-                .columns(1)
+-                .height(Length::Shrink),
+-        )
+-        .padding([0., space_xxs, 0., 0.]);
+-
+-        let scrollable = scrollable(container(nav_grid).padding(space_xxs))
+-            .on_scroll(|v| Action::App(ViewerMessage::NavScroll(v)))
+-            .id(self.scroll_id.clone());
++                    .unwrap_or_else(|| "image.png".to_string());
++                let directory =
++                    current.and_then(|path| path.parent().map(std::path::Path::to_path_buf));
+ 
+-        let nav_width = if self.is_narrow() {
+-            // Narrow mode: overlay the view, filling window width minus a space_xxs gutter.
+-            self.window_width.map_or(Length::Fill, |w| {
+-                Length::Fixed((w - space_xxs).max(panel_width))
+-            })
+-        } else {
+-            Length::Fixed(panel_width)
+-        };
++                return future(async move {
++                    let mut dialog = file_chooser::save::Dialog::new()
++                        .title("Save Image As...".to_string())
++                        .file_name(suggested);
++                    if let Some(directory) = directory {
++                        dialog = dialog.directory(directory);
++                    }
+ 
+-        Some(
+-            container(scrollable)
+-                .width(nav_width)
+-                .height(Length::Fill)
+-                .class(theme::Container::custom(nav_bar::nav_bar_style))
+-                .into(),
+-        )
+-    }
++                    match dialog.save_file().await {
++                        Ok(response) => response
++                            .url()
++                            .expect("save dialog response carries a valid URL")
++                            .to_file_path()
++                            .map_or_else(
++                                |()| Action::App(ViewerMessage::Cancelled),
++                                |path| Action::App(ViewerMessage::SavedAs(path)),
++                            ),
++                        Err(file_chooser::Error::Cancelled) => {
++                            Action::App(ViewerMessage::Cancelled)
++                        }
++                        Err(e) => {
++                            tracing::error!("Save dialog error: {e}");
++                            Action::App(ViewerMessage::Cancelled)
++                        }
++                    }
++                });
++            }
++            ViewerMessage::SavedAs(path) => {
++                if let Some(image) = self.flatten_image()
++                    && let Err(e) = image.save(&path)
++                {
++                    tracing::error!("Failed to save image: {e}");
++                }
+ 
+-    // reason: top-level declarative view tree; splitting would fragment the layout.
+-    #[allow(clippy::too_many_lines)]
+-    fn view(&self) -> Element<'_, Self::Message> {
+-        let has_image = self.viewport.image().is_some();
+-        let content: Element<'_, Self::Message> = if has_image {
+-            self.viewport.element().map(ViewerMessage::Canvas)
+-        } else {
+-            Column::new()
+-                .push(Space::new().height(Length::Fill))
+-                .push(text("No image selected").center())
+-                .push(Space::new().height(Length::Fill))
+-                .align_x(Horizontal::Center)
+-                .width(Length::Fill)
+-                .height(Length::Fill)
+-                .into()
+-        };
+-
+-        let spacing = cosmic::theme::active().cosmic().spacing;
+-
+-        let nav_collapsed = !self.core().nav_bar_active();
+-        let cur_idx = self.nav.index().unwrap_or(0);
+-
+-        let image_area: Element<'_, Self::Message> = if nav_collapsed && has_image {
+-            let has_prev = cur_idx > 0;
+-            let has_next = cur_idx + 1 < self.nav.total();
+-
+-            let nav_btn = |icon_name: &'static str,
+-                           msg: ViewerMessage,
+-                           enabled: bool|
+-             -> Element<'_, Self::Message> {
+-                let mut btn = button::icon(icon::from_name(icon_name).size(24))
+-                    .class(cosmic::theme::Button::Icon);
+-                if enabled {
+-                    btn = btn.on_press(msg);
++                self.viewport.cancel_tool();
++                self.viewport.revert_all();
++                return self.resolve_pending();
++            }
++            ViewerMessage::Quit => {
++                return iced::exit();
++            }
++            ViewerMessage::CloseRequested => {
++                if self.has_unsaved_edits() {
++                    self.unsaved_dialog = Some(PendingAction::Quit);
++                } else {
++                    return self.update(ViewerMessage::Quit);
+                 }
+-                container(btn).center_y(Length::Fill).into()
+-            };
+-
+-            Row::new()
+-                .push(nav_btn(
+-                    "go-previous-symbolic",
+-                    ViewerMessage::Nav(NavMessage::GridActivate(cur_idx.saturating_sub(1))),
+-                    has_prev,
+-                ))
+-                .push(container(content).width(Length::Fill).height(Length::Fill))
+-                .push(nav_btn(
+-                    "go-next-symbolic",
+-                    ViewerMessage::Nav(NavMessage::GridActivate(
+-                        (cur_idx + 1).min(self.nav.total().saturating_sub(1)),
+-                    )),
+-                    has_next,
+-                ))
+-                .align_y(Alignment::Center)
+-                .width(Length::Fill)
+-                .height(Length::Fill)
+-                .into()
+-        } else {
+-            container(content)
+-                .width(Length::Fill)
+-                .height(Length::Fill)
+-                .into()
+-        };
+-
+-        let main = Column::new()
+-            .push(image_area)
+-            .push_maybe(has_image.then(|| {
+-                container(self.build_toolbar())
+-                    .center_x(Length::Fill)
+-                    .padding([spacing.space_xxs, 0, spacing.space_xxs, 0])
+-            }))
+-            .width(Length::Fill)
+-            .height(Length::Fill);
+-
+-        let mut pop = widget::popover(main);
+-        if let Some(point) = self.context_menu_position
+-            && self.wallpaper_dialog.is_none()
+-            && self.delete_dialog.is_none()
+-        {
+-            pop = pop
+-                .popup(Self::build_context_menu_element())
+-                .position(widget::popover::Position::Point(point))
+-                .on_close(ViewerMessage::Canvas(CanvasMessage::ContextMenu(None)));
+-        }
+-
+-        let view: Element<'_, Self::Message> = pop.into();
+-
+-        if let Some(ref path) = self.wallpaper_dialog {
+-            let path = path.clone();
+-            let spacing = cosmic::theme::active().cosmic().spacing;
+-
+-            let mut btn_col = Column::new().spacing(spacing.space_s);
+-            btn_col = btn_col.push(button::standard(fl!("wallpaper-all-displays")).on_press(
+-                ViewerMessage::SetWallpaperOn(path.clone(), crate::message::WallpaperTarget::All),
+-            ));
+-            for output in &self.available_outputs {
+-                btn_col = btn_col.push(button::standard(output.clone()).on_press(
+-                    ViewerMessage::SetWallpaperOn(
+-                        path.clone(),
+-                        crate::message::WallpaperTarget::Output(output.clone()),
+-                    ),
+-                ));
+             }
+-
+-            let dialog: Element<'_, Self::Message> = container(
+-                container(
+-                    Column::new()
+-                        .push(text::title4(fl!("wallpaper-dialog-title")))
+-                        .push(btn_col)
+-                        .push(
+-                            button::text(fl!("wallpaper-cancel"))
+-                                .on_press(ViewerMessage::CloseWallpaperDialog),
+-                        )
+-                        .spacing(spacing.space_s)
+-                        .align_x(Alignment::Center),
+-                )
+-                .padding(spacing.space_m)
+-                .class(cosmic::theme::Container::Dialog(true)),
+-            )
+-            .width(Length::Fill)
+-            .height(Length::Fill)
+-            .center_x(Length::Fill)
+-            .center_y(Length::Fill)
+-            .into();
+-
+-            let backdrop = cosmic::widget::mouse_area(
+-                container(Space::new().width(Length::Fill).height(Length::Fill))
+-                    .width(Length::Fill)
+-                    .height(Length::Fill)
+-                    .class(cosmic::theme::Container::Transparent),
+-            )
+-            .on_press(ViewerMessage::CloseWallpaperDialog);
+-
+-            return toaster(&self.toasts, stack![view, backdrop, dialog]);
+-        }
+-
+-        toaster(&self.toasts, view)
+-    }
+-
+-    fn dialog(&self) -> Option<Element<'_, Self::Message>> {
+-        if self.unsaved_dialog.is_some() {
+-            let mut row = widget::row::with_capacity(3).align_y(Alignment::Center);
+-            row = row.push(widget::text(
+-                self.nav
+-                    .current()
+-                    .and_then(|d| Some(d.file_name()?.to_string_lossy().to_string()))
+-                    .unwrap_or_default(),
+-            ));
+-            row = row.push(widget::space::horizontal());
+-            row = row.push(
+-                widget::button::standard(fl!("unsaved-save-as"))
+-                    .on_press(ViewerMessage::Unsaved(UnsavedChoice::SaveAs)),
+-            );
+-            let save_button = widget::button::suggested(fl!("unsaved-save"))
+-                .on_press(ViewerMessage::Unsaved(UnsavedChoice::Save));
+-            let discard_button = widget::button::destructive(fl!("unsaved-discard"))
+-                .on_press(ViewerMessage::Unsaved(UnsavedChoice::Discard));
+-            let cancel_button = widget::button::text(fl!("unsaved-cancel"))
+-                .on_press(ViewerMessage::Unsaved(UnsavedChoice::Cancel));
+-            let dialog = widget::dialog()
+-                .title(fl!("unsaved-dialog-title"))
+-                .body(fl!("unsaved-dialog-body"))
+-                .icon(icon::from_name("dialog-warning-symbolic").size(64))
+-                .control(row)
+-                .primary_action(save_button)
+-                .secondary_action(discard_button)
+-                .tertiary_action(cancel_button);
+-            return Some(dialog.into());
+-        }
+-        None
+-    }
+-    // reason: central message dispatch; one match arm per variant, kept colocated.
+-    #[allow(clippy::too_many_lines)]
+-    fn update(&mut self, message: Self::Message) -> Task<Action<Self::Message>> {
+-        // Helper for updating config values efficiently
+-        macro_rules! config_set {
+-            ($name: ident, $value: expr) => {
+-                match viewer_config::config() {
+-                    Ok(config_handler) => {
+-                        if let Err(err) =
+-                            paste::paste! { self.config.[<set_ $name>](&config_handler, $value) }
+-                        {
+-                            tracing::warn!(
+-                                "failed to save config {:?}: {}",
+-                                stringify!($name),
+-                                err
+-                            );
++            ViewerMessage::Unsaved(choice) => match choice {
++                UnsavedChoice::Save => {
++                    let save = self.update(ViewerMessage::Save);
++                    return Task::batch([save, self.resolve_pending()]);
++                }
++                UnsavedChoice::SaveAs => return self.update(ViewerMessage::SaveAs),
++                UnsavedChoice::Discard => {
++                    self.viewport.cancel_tool();
++                    self.viewport.revert_all();
++                    self.text_editing = false;
++                    return self.resolve_pending();
++                }
++                UnsavedChoice::Cancel => {
++                    self.unsaved_dialog = None;
++                }
++            },
++            ViewerMessage::TextPaste(text) => {
++                if self.text_editing && !text.is_empty() {
++                    if let Some(preview) = self.viewport.preview_mut()
++                        && let Some(t) = preview.as_any_mut().downcast_mut::<TextPreview>()
++                    {
++                        t.insert_with_attrs(&text);
++                    }
++                    self.viewport.rebuild_display();
++                }
++            }
++            ViewerMessage::WatcherEvent(evt) => {
++                match &evt {
++                    WatcherEvent::Modified(path) if path.exists() => {
++                        self.cache.remove_full(path);
++                        self.cache.remove_thumbnail(path);
++                    }
++                    WatcherEvent::Modified(path) | WatcherEvent::Removed(path) => {
++                        self.cache.clear_pending(path);
++                        self.cache.clear_pending_thumbnail(path);
++                        self.cache.remove_full(path);
++                        self.cache.remove_thumbnail(path);
++                        if self.nav.current() == Some(path) {
++                            self.nav.deselect();
+                         }
+                     }
+-                    Err(err) => {
+-                        self.config.$name = $value;
+-                        tracing::warn!(
+-                            "failed to save config {:?}: no config handler - {err:?}",
+-                            stringify!($name)
+-                        );
++                    WatcherEvent::Created(_) => {}
++                    WatcherEvent::Error(err) => {
++                        tracing::warn!("watcher error: {err}");
+                     }
+                 }
+-            };
+-        }
+-        let mut tasks = vec![];
+-
+-        match message {
+-            ViewerMessage::AppTheme(app_theme) => {
+-                config_set!(app_theme, app_theme);
+-                let theme = self.config.app_theme.theme();
+ 
+-                return cosmic::command::set_theme(theme);
++                if !matches!(evt, WatcherEvent::Error(_)) && !self.watcher_rescan_pending {
++                    self.watcher_rescan_pending = true;
++                    tasks.push(future(async {
++                        tokio::time::sleep(Duration::from_millis(200)).await;
++                        Action::App(ViewerMessage::WatcherRescan)
++                    }));
++                }
+             }
+-            ViewerMessage::Copy => {
+-                self.context_menu_position = None;
++            ViewerMessage::WatcherRescan => {
++                self.watcher_rescan_pending = false;
++                tasks.push(self.reload_image_list());
+             }
+-            ViewerMessage::CopyToClipboard => {
++            ViewerMessage::SetWallpaper => {
+                 self.context_menu_position = None;
+-                if let Some(path) = self.nav.current().cloned()
+-                    && let Some(mime) = path
+-                        .extension()
+-                        .and_then(|ext| ext.to_str())
+-                        .and_then(image_mime_type)
+-                    && let Ok(data) = std::fs::read(&path)
+-                {
+-                    return clipboard::write_data(ClipboardImage {
+-                        data,
+-                        mime: mime.to_string(),
+-                    });
+-                }
+-            }
+-            ViewerMessage::CopyFilePath => {
+-                self.context_menu_position = None;
+-                if let Some(path) = self.nav.current() {
+-                    return cosmic::iced::clipboard::write(path.display().to_string());
+-                }
+-            }
+-            // No-op messages: reserved menu actions with no current behavior.
+-            ViewerMessage::Cut | ViewerMessage::Paste | ViewerMessage::Cancelled => {}
+-            ViewerMessage::OpenFileDialog => {
+-                if self.guard_unsaved(ViewerMessage::OpenFileDialog) {
+-                    return Task::none();
+-                }
+-                return future(async move {
+-                    let dialog = file_chooser::open::Dialog::new()
+-                        .title("Open Image")
+-                        .filter(
+-                            FileFilter::new("All")
+-                                .extension("jpg")
+-                                .extension("JPG")
+-                                .extension("jpeg")
+-                                .extension("JPEG")
+-                                .extension("png")
+-                                .extension("PNG")
+-                                .extension("gif")
+-                                .extension("GIF")
+-                                .extension("webp")
+-                                .extension("WEBP")
+-                                .extension("bmp")
+-                                .extension("BMP")
+-                                .extension("tiff")
+-                                .extension("TIFF")
+-                                .extension("tif")
+-                                .extension("TIF")
+-                                .extension("ico")
+-                                .extension("ICO")
+-                                .extension("avif")
+-                                .extension("AVIF")
+-                                .extension("hdr")
+-                                .extension("HDR")
+-                                .extension("svg")
+-                                .extension("SVG")
+-                                .extension("heif")
+-                                .extension("HEIF")
+-                                .extension("heic")
+-                                .extension("HEIC"),
+-                        )
+-                        .filter(
+-                            FileFilter::new("JPEG")
+-                                .extension("jpg")
+-                                .extension("jpeg")
+-                                .extension("JPEG")
+-                                .extension("JPG"),
+-                        )
+-                        .filter(FileFilter::new("png").extension("png").extension("PNG"))
+-                        .filter(FileFilter::new("gif").extension("gif").extension("GIF"))
+-                        .filter(FileFilter::new("webp").extension("webp").extension("WEBP"))
+-                        .filter(FileFilter::new("bmp").extension("bmp").extension("BMP"))
+-                        .filter(
+-                            FileFilter::new("tiff")
+-                                .extension("tiff")
+-                                .extension("tif")
+-                                .extension("TIFF")
+-                                .extension("TIF"),
+-                        )
+-                        .filter(FileFilter::new("avif").extension("avif").extension("AVIF"))
+-                        .filter(FileFilter::new("ico").extension("ico").extension("ICO"))
+-                        .filter(FileFilter::new("hdr").extension("hdr").extension("HDR"));
+-
+-                    match dialog.open_file().await {
+-                        Ok(response) => response.url().to_file_path().map_or_else(
+-                            |()| Action::App(ViewerMessage::Cancelled),
+-                            |path| Action::App(ViewerMessage::Open(path)),
+-                        ),
+-                        Err(file_chooser::Error::Cancelled) => {
+-                            Action::App(ViewerMessage::Cancelled)
+-                        }
+-                        Err(e) => {
+-                            tracing::error!("File dialog error: {e}");
+-                            Action::App(ViewerMessage::Cancelled)
++                if let Some(path) = self.nav.current().cloned() {
++                    #[cfg(target_os = "linux")]
++                    {
++                        if is_cosmic_desktop() {
++                            match self.config.wallpaper_behavior {
++                                viewer_config::WallpaperBehavior::Ask => {
++                                    self.available_outputs = get_cosmic_outputs();
++                                    if self.available_outputs.len() <= 1 {
++                                        return future(async move {
++                                            let result = set_wallpaper_cosmic_on(&path, None);
++                                            Action::App(ViewerMessage::WallpaperResult(result))
++                                        });
++                                    }
++                                    self.wallpaper_dialog = Some(path);
++                                }
++                                viewer_config::WallpaperBehavior::AllDisplays => {
++                                    return future(async move {
++                                        let result = set_wallpaper_cosmic_on(&path, None);
++                                        Action::App(ViewerMessage::WallpaperResult(result))
++                                    });
++                                }
++                                viewer_config::WallpaperBehavior::CurrentDisplay => {
++                                    let outputs = get_cosmic_outputs();
++                                    let output = outputs.first().cloned();
++                                    return future(async move {
++                                        let result =
++                                            set_wallpaper_cosmic_on(&path, output.as_deref());
++                                        Action::App(ViewerMessage::WallpaperResult(result))
++                                    });
++                                }
++                            }
++                        } else {
++                            // Non-COSMIC Linux: set on all outputs
++                            return future(async move {
++                                let result = set_wallpaper_cosmic_on(&path, None);
++                                Action::App(ViewerMessage::WallpaperResult(result))
++                            });
+                         }
+                     }
+-                });
+-            }
+-            ViewerMessage::OpenFolderDialog => {
+-                if self.guard_unsaved(ViewerMessage::OpenFolderDialog) {
+-                    return Task::none();
++                    #[cfg(not(target_os = "linux"))]
++                    {
++                        let result = set_wallpaper_portable(&path);
++                        return self.update(ViewerMessage::WallpaperResult(result));
++                    }
+                 }
++            }
++            ViewerMessage::SetWallpaperOn(path, target) => {
++                self.wallpaper_dialog = None;
++                let output = match target {
++                    crate::message::WallpaperTarget::All => None,
++                    crate::message::WallpaperTarget::Output(name) => Some(name),
++                };
+                 return future(async move {
+-                    let dialog = file_chooser::open::Dialog::new().title("Open Folder");
+-
+-                    match dialog.open_folder().await {
+-                        Ok(response) => response.url().to_file_path().map_or_else(
+-                            |()| Action::App(ViewerMessage::Cancelled),
+-                            |path| Action::App(ViewerMessage::Open(path)),
+-                        ),
+-                        Err(file_chooser::Error::Cancelled) => {
+-                            Action::App(ViewerMessage::Cancelled)
+-                        }
+-                        Err(e) => {
+-                            tracing::error!("Folder dialog error: {e}");
+-                            Action::App(ViewerMessage::Cancelled)
+-                        }
+-                    }
++                    let result = set_wallpaper_cosmic_on(&path, output.as_deref());
++                    Action::App(ViewerMessage::WallpaperResult(result))
+                 });
+             }
+-            ViewerMessage::Open(path) => tasks.push(self.open_path(path)),
+-            ViewerMessage::OpenRecent(_idx) => {}
+-            ViewerMessage::OpenContaining => {
+-                if let Some(dir) = self.nav.dir()
+-                    && let Err(e) = open::that(dir)
+-                {
+-                    tracing::error!("Failed to open containing folder: {e}");
++            ViewerMessage::CloseWallpaperDialog => {
++                self.wallpaper_dialog = None;
++            }
++            ViewerMessage::WallpaperResult(result) => {
++                if let Err(err) = result {
++                    tracing::error!("Failed to set wallpaper: {err}");
+                 }
+             }
+-            ViewerMessage::Save => {
+-                if let (Some(image), Some(path)) = (self.flatten_image(), self.nav.current()) {
+-                    if let Err(e) = image.save(path) {
+-                        tracing::error!("Failed to save image: {e}");
++            ViewerMessage::MoveToTrash => {
++                self.context_menu_position = None;
++                if let Some(path) = self.nav.current().cloned() {
++                    let next_idx = self.nav.index().and_then(|idx| {
++                        if idx > 0 {
++                            Some(idx - 1)
++                        } else if self.nav.total() > 1 {
++                            Some(1)
++                        } else {
++                            None
++                        }
++                    });
++                    if let Some(idx) = next_idx {
++                        tasks.push(self.update(ViewerMessage::Nav(NavMessage::GridActivate(idx))));
+                     } else {
+-                        self.viewport.revert_all();
+-                        self.cache.remove_full(path);
+-                        self.viewport.cancel_tool();
+-                        self.text_editing = false;
+-                        tasks.push(self.load_full_image(path.clone()));
++                        self.viewport.set_image(None, None);
+                     }
++
++                    // Trash the file
++                    let file_name = path
++                        .file_name()
++                        .and_then(|name| name.to_str())
++                        .unwrap_or("file")
++                        .to_string();
++                    let paths: Arc<[PathBuf]> = Arc::from(vec![path.clone()]);
++
++                    tasks.push(future(async move {
++                        let result = trash::delete(&path)
++                            .map_err(|e| format!("Failed to move to trash: {e}"));
++                        Action::App(ViewerMessage::TrashResult(result))
++                    }));
++
++                    let label = format!("Moved {file_name} to trash");
++                    // Auto-dismiss (the Task `push` returns) needs libcosmic's "tokio" feature.
++                    let toast = toaster::Toast::new(label)
++                        .action(fl!("toast-undo"), move |id| {
++                            ViewerMessage::UndoTrash(id, paths.clone())
++                        })
++                        .duration(toaster::Duration::Long);
++                    tasks.push(self.toasts.push(toast).map(Action::App));
+                 }
+             }
+-            ViewerMessage::SaveAs => {
+-                let current = self.nav.current();
+-                let suggested = current
+-                    .and_then(|path| {
+-                        path.file_name()
+-                            .map(|name| name.to_string_lossy().to_string())
+-                    })
+-                    .unwrap_or_else(|| "image.png".to_string());
+-                let directory =
+-                    current.and_then(|path| path.parent().map(std::path::Path::to_path_buf));
++            ViewerMessage::UndoTrash(toast_id, recently_trashed) => {
++                self.toasts.remove(toast_id);
+ 
+-                return future(async move {
+-                    let mut dialog = file_chooser::save::Dialog::new()
+-                        .title("Save Image As...".to_string())
+-                        .file_name(suggested);
+-                    if let Some(directory) = directory {
+-                        dialog = dialog.directory(directory);
+-                    }
+-
+-                    match dialog.save_file().await {
+-                        Ok(response) => response
+-                            .url()
+-                            .expect("save dialog response carries a valid URL")
+-                            .to_file_path()
+-                            .map_or_else(
+-                                |()| Action::App(ViewerMessage::Cancelled),
+-                                |path| Action::App(ViewerMessage::SavedAs(path)),
+-                            ),
+-                        Err(file_chooser::Error::Cancelled) => {
+-                            Action::App(ViewerMessage::Cancelled)
+-                        }
+-                        Err(e) => {
+-                            tracing::error!("Save dialog error: {e}");
+-                            Action::App(ViewerMessage::Cancelled)
+-                        }
+-                    }
+-                });
+-            }
+-            ViewerMessage::SavedAs(path) => {
+-                if let Some(image) = self.flatten_image()
+-                    && let Err(e) = image.save(&path)
+-                {
+-                    tracing::error!("Failed to save image: {e}");
+-                }
+-
+-                self.viewport.cancel_tool();
+-                self.viewport.revert_all();
+-                return self.resolve_pending();
+-            }
+-            ViewerMessage::Quit => {
+-                return iced::exit();
+-            }
+-            ViewerMessage::CloseRequested => {
+-                if self.has_unsaved_edits() {
+-                    self.unsaved_dialog = Some(PendingAction::Quit);
+-                } else {
+-                    return self.update(ViewerMessage::Quit);
+-                }
+-            }
+-            ViewerMessage::Unsaved(choice) => match choice {
+-                UnsavedChoice::Save => {
+-                    let save = self.update(ViewerMessage::Save);
+-                    return Task::batch([save, self.resolve_pending()]);
+-                }
+-                UnsavedChoice::SaveAs => return self.update(ViewerMessage::SaveAs),
+-                UnsavedChoice::Discard => {
+-                    self.viewport.cancel_tool();
+-                    self.viewport.revert_all();
+-                    self.text_editing = false;
+-                    return self.resolve_pending();
+-                }
+-                UnsavedChoice::Cancel => {
+-                    self.unsaved_dialog = None;
+-                }
+-            },
+-            ViewerMessage::TextPaste(text) => {
+-                if self.text_editing && !text.is_empty() {
+-                    if let Some(preview) = self.viewport.preview_mut()
+-                        && let Some(t) = preview.as_any_mut().downcast_mut::<TextPreview>()
+-                    {
+-                        t.insert_with_attrs(&text);
+-                    }
+-                    self.viewport.rebuild_display();
+-                }
+-            }
+-            ViewerMessage::WatcherEvent(evt) => {
+-                match &evt {
+-                    WatcherEvent::Modified(path) if path.exists() => {
+-                        self.cache.remove_full(path);
+-                        self.cache.remove_thumbnail(path);
+-                    }
+-                    WatcherEvent::Modified(path) | WatcherEvent::Removed(path) => {
+-                        self.cache.clear_pending(path);
+-                        self.cache.clear_pending_thumbnail(path);
+-                        self.cache.remove_full(path);
+-                        self.cache.remove_thumbnail(path);
+-                        if self.nav.current() == Some(path) {
+-                            self.nav.deselect();
+-                        }
+-                    }
+-                    WatcherEvent::Created(_) => {}
+-                    WatcherEvent::Error(err) => {
+-                        tracing::warn!("watcher error: {err}");
+-                    }
+-                }
+-
+-                if !matches!(evt, WatcherEvent::Error(_)) && !self.watcher_rescan_pending {
+-                    self.watcher_rescan_pending = true;
+-                    tasks.push(future(async {
+-                        tokio::time::sleep(Duration::from_millis(200)).await;
+-                        Action::App(ViewerMessage::WatcherRescan)
+-                    }));
+-                }
+-            }
+-            ViewerMessage::WatcherRescan => {
+-                self.watcher_rescan_pending = false;
+-                tasks.push(self.reload_image_list());
+-            }
+-            ViewerMessage::SetWallpaper => {
+-                self.context_menu_position = None;
+-                if let Some(path) = self.nav.current().cloned() {
+-                    #[cfg(target_os = "linux")]
+-                    {
+-                        if is_cosmic_desktop() {
+-                            match self.config.wallpaper_behavior {
+-                                viewer_config::WallpaperBehavior::Ask => {
+-                                    self.available_outputs = get_cosmic_outputs();
+-                                    if self.available_outputs.len() <= 1 {
+-                                        return future(async move {
+-                                            let result = set_wallpaper_cosmic_on(&path, None);
+-                                            Action::App(ViewerMessage::WallpaperResult(result))
+-                                        });
+-                                    }
+-                                    self.wallpaper_dialog = Some(path);
+-                                }
+-                                viewer_config::WallpaperBehavior::AllDisplays => {
+-                                    return future(async move {
+-                                        let result = set_wallpaper_cosmic_on(&path, None);
+-                                        Action::App(ViewerMessage::WallpaperResult(result))
+-                                    });
+-                                }
+-                                viewer_config::WallpaperBehavior::CurrentDisplay => {
+-                                    let outputs = get_cosmic_outputs();
+-                                    let output = outputs.first().cloned();
+-                                    return future(async move {
+-                                        let result =
+-                                            set_wallpaper_cosmic_on(&path, output.as_deref());
+-                                        Action::App(ViewerMessage::WallpaperResult(result))
+-                                    });
+-                                }
+-                            }
+-                        } else {
+-                            // Non-COSMIC Linux: set on all outputs
+-                            return future(async move {
+-                                let result = set_wallpaper_cosmic_on(&path, None);
+-                                Action::App(ViewerMessage::WallpaperResult(result))
+-                            });
+-                        }
+-                    }
+-                    #[cfg(not(target_os = "linux"))]
+-                    {
+-                        let result = set_wallpaper_portable(&path);
+-                        return self.update(ViewerMessage::WallpaperResult(result));
+-                    }
+-                }
+-            }
+-            ViewerMessage::SetWallpaperOn(path, target) => {
+-                self.wallpaper_dialog = None;
+-                let output = match target {
+-                    crate::message::WallpaperTarget::All => None,
+-                    crate::message::WallpaperTarget::Output(name) => Some(name),
+-                };
+-                return future(async move {
+-                    let result = set_wallpaper_cosmic_on(&path, output.as_deref());
+-                    Action::App(ViewerMessage::WallpaperResult(result))
+-                });
+-            }
+-            ViewerMessage::CloseWallpaperDialog => {
+-                self.wallpaper_dialog = None;
+-            }
+-            ViewerMessage::WallpaperResult(result) => {
+-                if let Err(err) = result {
+-                    tracing::error!("Failed to set wallpaper: {err}");
+-                }
+-            }
+-            ViewerMessage::MoveToTrash => {
+-                self.context_menu_position = None;
+-                if let Some(path) = self.nav.current().cloned() {
+-                    let next_idx = self.nav.index().and_then(|idx| {
+-                        if idx > 0 {
+-                            Some(idx - 1)
+-                        } else if self.nav.total() > 1 {
+-                            Some(1)
+-                        } else {
+-                            None
+-                        }
+-                    });
+-                    if let Some(idx) = next_idx {
+-                        tasks.push(self.update(ViewerMessage::Nav(NavMessage::GridActivate(idx))));
+-                    } else {
+-                        self.viewport.set_image(None, None);
+-                    }
+-
+-                    // Trash the file
+-                    let file_name = path
+-                        .file_name()
+-                        .and_then(|name| name.to_str())
+-                        .unwrap_or("file")
+-                        .to_string();
+-                    let paths: Arc<[PathBuf]> = Arc::from(vec![path.clone()]);
+-
+-                    tasks.push(future(async move {
+-                        let result = trash::delete(&path)
+-                            .map_err(|e| format!("Failed to move to trash: {e}"));
+-                        Action::App(ViewerMessage::TrashResult(result))
+-                    }));
+-
+-                    let label = format!("Moved {file_name} to trash");
+-                    // Auto-dismiss (the Task `push` returns) needs libcosmic's "tokio" feature.
+-                    let toast = toaster::Toast::new(label)
+-                        .action(fl!("toast-undo"), move |id| {
+-                            ViewerMessage::UndoTrash(id, paths.clone())
+-                        })
+-                        .duration(toaster::Duration::Long);
+-                    tasks.push(self.toasts.push(toast).map(Action::App));
+-                }
+-            }
+-            ViewerMessage::UndoTrash(toast_id, recently_trashed) => {
+-                self.toasts.remove(toast_id);
+-
+-                tasks.push(future(async move {
+-                    // Rescan trash to find matching TrashItem entries
+-                    let mut items_to_restore = Vec::new();
++                tasks.push(future(async move {
++                    // Rescan trash to find matching TrashItem entries
++                    let mut items_to_restore = Vec::new();
+ 
+                     if let Ok(trash_items) = trash::os_limited::list() {
+                         for path in &*recently_trashed {
+@@ -3821,263 +3367,762 @@ impl Application for CosmicViewer {
+                         self.text_underline = !self.text_underline;
+                         let underline = self.text_underline;
+ 
+-                        if let Some(d) = self
+-                            .viewport
+-                            .select_target
+-                            .and_then(|i| self.viewport.operations_mut().get_mut(i))
+-                        {
+-                            if let Some(o) = d.as_any_mut().downcast_mut::<TextOperation>() {
+-                                let mut p = o.to_preview();
+-                                p.select_all();
+-                                p.apply_attr_to_selection(|a| a.metadata(usize::from(underline)));
+-                                if let Some(committed) = p.commit() {
+-                                    *d = committed;
+-                                }
+-                            }
+-                        }
++                        if let Some(d) = self
++                            .viewport
++                            .select_target
++                            .and_then(|i| self.viewport.operations_mut().get_mut(i))
++                        {
++                            if let Some(o) = d.as_any_mut().downcast_mut::<TextOperation>() {
++                                let mut p = o.to_preview();
++                                p.select_all();
++                                p.apply_attr_to_selection(|a| a.metadata(usize::from(underline)));
++                                if let Some(committed) = p.commit() {
++                                    *d = committed;
++                                }
++                            }
++                        }
++
++                        if let Some(preview) = self.viewport.preview_mut()
++                            && let Some(text) = preview.as_any_mut().downcast_mut::<TextPreview>()
++                        {
++                            if text.has_selection() {
++                                text.apply_attr_to_selection(|a| {
++                                    a.metadata(usize::from(underline))
++                                });
++                            }
++                            text.underline = self.text_underline;
++                        }
++                        self.viewport.rebuild_display();
++                        self.sync_text_format_models();
++                    }
++                    EditMessage::TextAlignment(alignment) => {
++                        self.text_alignment = alignment;
++
++                        if let Some(d) = self
++                            .viewport
++                            .select_target
++                            .and_then(|i| self.viewport.operations_mut().get_mut(i))
++                        {
++                            if let Some(o) = d.as_any_mut().downcast_mut::<TextOperation>() {
++                                let mut p = o.to_preview();
++                                p.set_line_alignment(alignment);
++                                if let Some(committed) = p.commit() {
++                                    *d = committed;
++                                }
++                            }
++                        }
++
++                        if let Some(preview) = self.viewport.preview_mut()
++                            && let Some(text) = preview.as_any_mut().downcast_mut::<TextPreview>()
++                        {
++                            text.set_line_alignment(alignment);
++                        }
++                        self.viewport.rebuild_display();
++                        self.sync_text_format_models();
++                    }
++                    EditMessage::TextFontSize(idx) => {
++                        if let Some(&size_pt) = FONT_SIZE_PRESETS_PT.get(idx) {
++                            let size_px = pt_to_px(size_pt);
++
++                            if let Some(d) = self
++                                .viewport
++                                .select_target
++                                .and_then(|i| self.viewport.operations_mut().get_mut(i))
++                            {
++                                if let Some(o) = d.as_any_mut().downcast_mut::<TextOperation>() {
++                                    let mut p = o.to_preview();
++                                    p.select_all();
++                                    p.update_font_size(size_px);
++                                    if let Some(committed) = p.commit() {
++                                        *d = committed;
++                                    }
++                                }
++                            }
++
++                            self.text_font_size = size_px;
++                            if let Some(preview) = self.viewport.preview_mut()
++                                && let Some(text) =
++                                    preview.as_any_mut().downcast_mut::<TextPreview>()
++                            {
++                                text.update_font_size(size_px);
++                            }
++                            self.viewport.rebuild_display();
++                        }
++                    }
++                    EditMessage::TextFontFamily(idx) => {
++                        self.text_font_index = Some(idx);
++                        let fam = self.font_families[idx];
++                        self.text_font_family = fam;
++
++                        if let Some(d) = self
++                            .viewport
++                            .select_target
++                            .and_then(|i| self.viewport.operations_mut().get_mut(i))
++                        {
++                            if let Some(o) = d.as_any_mut().downcast_mut::<TextOperation>() {
++                                let mut p = o.to_preview();
++                                p.select_all();
++                                p.apply_attr_to_selection(|a| {
++                                    a.family(cosmic_text::Family::Name(fam))
++                                });
++                                if let Some(committed) = p.commit() {
++                                    *d = committed;
++                                }
++                            }
++                        }
++
++                        if let Some(preview) = self.viewport.preview_mut()
++                            && let Some(text) = preview.as_any_mut().downcast_mut::<TextPreview>()
++                        {
++                            if text.has_selection() {
++                                text.apply_attr_to_selection(|a| {
++                                    a.family(cosmic_text::Family::Name(fam))
++                                });
++                            }
++                            text.font_family = fam;
++                        }
++                        self.viewport.rebuild_display();
++                    }
++                    EditMessage::TextStyleActivated(entity) => {
++                        let msg = match self.text_style_model.data::<TextStyle>(entity).copied() {
++                            Some(TextStyle::Bold) => Some(EditMessage::TextBold),
++                            Some(TextStyle::Italic) => Some(EditMessage::TextItalic),
++                            Some(TextStyle::Underline) => Some(EditMessage::TextUnderline),
++                            None => None,
++                        };
++
++                        if let Some(msg) = msg {
++                            return self.update(ViewerMessage::Edit(msg));
++                        }
++                    }
++                    EditMessage::TextAlignActivated(entity) => {
++                        if let Some(alignment) =
++                            self.text_align_model.data::<Horizontal>(entity).copied()
++                        {
++                            return self.update(ViewerMessage::Edit(EditMessage::TextAlignment(
++                                alignment,
++                            )));
++                        }
++                    }
++                    EditMessage::TextCancel => {
++                        self.viewport.cancel_tool();
++                        self.viewport.select_target = None;
++                        self.text_editing = false;
++                    }
++                    EditMessage::TextApply => {
++                        self.viewport.apply_tool();
++                        self.viewport.select_target = None;
++                        self.text_editing = false;
++                    }
++                    EditMessage::ToggleMoveMode => {
++                        self.viewport.move_mode = !self.viewport.move_mode;
++                        self.move_target = None;
++                        self.viewport.select_target = None;
++                        self.move_start = None;
++                    }
++                    EditMessage::Undo => {
++                        self.viewport.select_target = None;
++                        if let Some(op) = self.viewport.undo() {
++                            if let Some(rotate) = op.as_any().downcast_ref::<RotateOperation>() {
++                                let inverse = rotate.direction.inverse();
++                                let image_size = self.viewport.image_size().unwrap_or(Size::ZERO);
++
++                                for op in self.viewport.operations_mut() {
++                                    op.transform_rotate(inverse, image_size);
++                                }
++
++                                if let Some(img) = self.viewport.working_image_mut() {
++                                    *img = match inverse {
++                                        RotateDirection::Left => img.rotate270(),
++                                        RotateDirection::Right => img.rotate90(),
++                                    };
++                                }
++                                self.rebuild_working_image();
++                            } else if let Some(crop) = op.as_any().downcast_ref::<CropOperation>() {
++                                let region = crop.region;
++
++                                for op in self.viewport.operations_mut() {
++                                    op.transform_crop(Rectangle::new(
++                                        Point::new(-region.x, -region.y),
++                                        Size::ZERO,
++                                    ));
++                                }
++
++                                self.rebuild_working_image();
++
++                                // Reset the crop preview to the restored image size
++                                if let Some(new_size) = self.viewport.image_size()
++                                    && let Some(preview) = self.viewport.preview_mut()
++                                    && let Some(selection) =
++                                        preview.as_any_mut().downcast_mut::<CropSelection>()
++                                {
++                                    let ratio = selection.ratio;
++                                    selection.activate(ratio, new_size);
++                                    return self.update(ViewerMessage::Canvas(CanvasMessage::Pan(
++                                        Default::default(),
++                                    )));
++                                }
++                            } else {
++                                self.viewport.rebuild_display();
++                            }
++                        }
++                    }
++                    EditMessage::Redo => {
++                        self.viewport.select_target = None;
++
++                        if let Some(op) = self.viewport.redo() {
++                            if let Some(rotate) = op.as_any().downcast_ref::<RotateOperation>() {
++                                let direction = rotate.direction;
++                                let image_size = self.viewport.image_size().unwrap_or(Size::ZERO);
++
++                                for op in self.viewport.operations_mut() {
++                                    op.transform_rotate(direction, image_size);
++                                }
++
++                                self.rebuild_working_image();
++                            } else if let Some(crop) = op.as_any().downcast_ref::<CropOperation>() {
++                                let region = crop.region;
++
++                                for op in self.viewport.operations_mut() {
++                                    op.transform_crop(region);
++                                }
++
++                                self.rebuild_working_image();
++                            } else {
++                                self.viewport.rebuild_display();
++                            }
++                        }
++                    }
++                    EditMessage::RevertAll => {
++                        self.viewport.select_target = None;
++                        self.viewport.revert_all()
++                    }
++                }
++            }
++            ViewerMessage::Surface(action) => {
++                return cosmic::task::message(cosmic::Action::Surface(action));
++            }
++            ViewerMessage::ShowNavbar(show_navbar) => {
++                config_set!(show_navbar, show_navbar);
++            }
++            ViewerMessage::NavScroll(viewport) => {
++                self.cur_scroll = Some(viewport);
++            }
++            ViewerMessage::LaunchUrl(url) => match open::that_detached(&url) {
++                Ok(()) => {}
++                Err(err) => {
++                    tracing::warn!("failed to open {:?}: {}", url, err);
++                }
++            },
++            ViewerMessage::HoverItem(img) => {
++                self.hovered_item = img;
++            }
++        }
++
++        if tasks.is_empty() {
++            Task::none()
++        } else {
++            Task::batch(tasks)
++        }
++    }
++}
++
++impl Application for CosmicViewer {
++    const APP_ID: &'static str = "dev.asw.MacViewer";
++
++    type Executor = cosmic::executor::Default;
++    type Flags = Option<PathBuf>;
++    type Message = ViewerMessage;
++
++    fn core(&self) -> &Core {
++        &self.core
++    }
++
++    fn core_mut(&mut self) -> &mut Core {
++        &mut self.core
++    }
++
++    #[allow(clippy::too_many_lines)]
++    fn init(mut core: Core, flags: Self::Flags) -> (Self, Task<Action<Self::Message>>) {
++        let mut tasks = Vec::new();
++
++        let config = viewer_config::config()
++            .ok()
++            .as_ref()
++            .and_then(|h| ViewerConfig::get_entry(h).ok())
++            .unwrap_or_default();
++
++        let scroll_id = Id::unique();
++
++        let families = load_font_families();
++        let default_family = match cosmic::font::default().family {
++            font::Family::Name(name) => name,
++            _ => "Sans",
++        };
++        let font_index = families.iter().position(|&fam| fam == default_family);
++
++        let initial_color = config
++            .last_color
++            .map(|c| Color::from_rgba(c[0], c[1], c[2], c[3]));
++        let app_themes = vec![fl!("match-desktop"), fl!("dark"), fl!("light")];
++        core.nav_bar_set_toggled(config.show_navbar && flags.as_ref().is_none_or(|p| p.is_dir()));
++        let mut viewer = Self {
++            core,
++            cur_scroll: None,
++            hovered_item: None,
++            key_binds: key_binds::init_keybinds(),
++            config,
++            app_themes,
++            nav: NavState::new(),
++            nav_bar_model: nav_bar::Model::default(),
++            cache: ImageCache::with_defaults(),
++            nav_handles: Vec::new(),
++            scroll_id,
++            viewport: ViewportManager::default(),
++            context_page: None,
++            context_menu_position: None,
++            annotate_tool: AnnotateTool::default(),
++            annotate_color: initial_color.map(AnnotateColor).unwrap_or_default(),
++            annotate_stroke_size: 2.,
++            crop_ratio: CropRatio::Custom,
++            crop_ratio_popup: false,
++            text_editing: false,
++            move_target: None,
++            move_start: None,
++            font_families: load_font_families(),
++            shape_popup: false,
++            stroke_popup: false,
++            color_picker: cosmic::widget::ColorPickerModel::new(
++                "Hex",
++                "RGB",
++                None,
++                initial_color.or(Some(Color::BLACK)),
++            )
++            .width(Length::Fixed(248.0))
++            .height(Length::Fixed(148.0)),
++            has_custom_color: false,
++            selected_shape: AnnotateTool::Rectangle,
++            text_font_family: default_family,
++            text_font_index: font_index,
++            text_font_size: pt_to_px(24.0),
++            text_bold: false,
++            text_italic: false,
++            text_underline: false,
++            text_alignment: Horizontal::Left,
++            text_style_model: segmented_button::Model::builder()
++                .insert(|btn| {
++                    btn.icon(icon_cache_get("format-text-bold-symbolic").icon())
++                        .data(TextStyle::Bold)
++                })
++                .insert(|btn| {
++                    btn.icon(icon_cache_get("format-text-italic-symbolic").icon())
++                        .data(TextStyle::Italic)
++                })
++                .insert(|btn| {
++                    btn.icon(icon_cache_get("format-text-underline-symbolic").icon())
++                        .data(TextStyle::Underline)
++                })
++                .build(),
++            text_align_model: segmented_button::Model::builder()
++                .insert(|btn| {
++                    btn.icon(icon::from_name("format-justify-left-symbolic").icon())
++                        .data(Horizontal::Left)
++                        .activate()
++                })
++                .insert(|btn| {
++                    btn.icon(icon::from_name("format-justify-center-symbolic").icon())
++                        .data(Horizontal::Center)
++                })
++                .insert(|btn| {
++                    btn.icon(icon::from_name("format-justify-right-symbolic").icon())
++                        .data(Horizontal::Right)
++                })
++                .build(),
++            show_text_format_menu: false,
++            window_width: Some(0.0),
++            is_fullscreen: false,
++            saved_nav_toggled: false,
++            wallpaper_dialog: None,
++            delete_dialog: None,
++            unsaved_dialog: None,
++            available_outputs: Vec::new(),
++            watcher_rescan_pending: false,
++            was_narrow: false,
++            toasts: Toasts::new(ViewerMessage::CloseToast),
++            about: About::default()
++                .name(fl!("app-name"))
++                .icon(icon::from_name(Self::APP_ID))
++                .version(env!("CARGO_PKG_VERSION"))
++                .author("Bryan Hyland and System76")
++                .comments(fl!("app-description"))
++                .license("GPL-3.0-only")
++                .developers([("System76", "info@system76.com")])
++                .links([
++                    (fl!("repository"), "https://github.com/pop-os/cosmic-viewer"),
++                    (
++                        fl!("support"),
++                        "https://github.com/pop-os/cosmic-viewer/issues",
++                    ),
++                ]),
++            app_menu: mac_appmenu::AppMenuHandle::new(Self::APP_ID, Vec::new()),
++        };
++
++        if let Some(path) = flags {
++            tasks.push(viewer.open_path(path));
++        }
++        let theme = viewer.config.app_theme.theme();
++
++        tasks.push(cosmic::command::set_theme(theme));
++        viewer.sync_app_menu();
++
++        (viewer, Task::batch(tasks))
++    }
++
++    fn header_start(&self) -> Vec<Element<'_, Self::Message>> {
++        let has_image = self.viewport.image().is_some();
++
++        vec![menu_bar(
++            &self.core,
++            &self.key_binds,
++            self.viewport.can_undo(),
++            self.viewport.can_redo(),
++            has_image,
++        )]
++    }
++
 +    fn header_end(&self) -> Vec<Element<'_, Self::Message>> {
 +        // Preview-style toolbar in the title bar.
 +        if self.viewport.image().is_some() {
@@ -201,13 +1939,421 @@ index 9cb0b66..252009f 100644
 +        }
 +    }
 +
-     fn context_drawer(&self) -> Option<context_drawer::ContextDrawer<'_, Self::Message>> {
-         let page = self.context_page?;
-         let content = match page {
-@@ -1748,13 +1757,22 @@ impl Application for CosmicViewer {
-                 .into()
-         };
++    fn context_drawer(&self) -> Option<context_drawer::ContextDrawer<'_, Self::Message>> {
++        let page = self.context_page?;
++        let content = match page {
++            ContextMessage::ImageDetails => self.image_details_page(),
++            ContextMessage::About => {
++                return Some(context_drawer::about(
++                    &self.about,
++                    |s| Self::Message::LaunchUrl(s.to_string()),
++                    Self::Message::Context(ContextMessage::About),
++                ));
++            }
++            ContextMessage::Settings => {
++                let content = self.settings();
++                return Some(
++                    context_drawer::context_drawer(content, ViewerMessage::Context(page))
++                        .title(fl!("settings"))
++                        .into(),
++                );
++            }
++        };
++
++        let drawer = context_drawer::context_drawer(content, ViewerMessage::Context(page))
++            .title(fl!("menu-image-details"));
++        Some(drawer)
++    }
  
+-                        if let Some(preview) = self.viewport.preview_mut()
+-                            && let Some(text) = preview.as_any_mut().downcast_mut::<TextPreview>()
+-                        {
+-                            if text.has_selection() {
+-                                text.apply_attr_to_selection(|a| {
+-                                    a.metadata(usize::from(underline))
+-                                });
+-                            }
+-                            text.underline = self.text_underline;
+-                        }
+-                        self.viewport.rebuild_display();
+-                        self.sync_text_format_models();
+-                    }
+-                    EditMessage::TextAlignment(alignment) => {
+-                        self.text_alignment = alignment;
++    fn nav_model(&self) -> Option<&nav_bar::Model> {
++        Some(&self.nav_bar_model)
++    }
+ 
+-                        if let Some(d) = self
+-                            .viewport
+-                            .select_target
+-                            .and_then(|i| self.viewport.operations_mut().get_mut(i))
+-                        {
+-                            if let Some(o) = d.as_any_mut().downcast_mut::<TextOperation>() {
+-                                let mut p = o.to_preview();
+-                                p.set_line_alignment(alignment);
+-                                if let Some(committed) = p.commit() {
+-                                    *d = committed;
+-                                }
+-                            }
+-                        }
++    // reason: thumbnail size is a small in-range pixel count; exact as f32.
++    #[allow(clippy::cast_precision_loss)]
++    fn nav_bar(&self) -> Option<Element<'_, Action<Self::Message>>> {
++        if !self.core().nav_bar_active() {
++            return None;
++        }
+ 
+-                        if let Some(preview) = self.viewport.preview_mut()
+-                            && let Some(text) = preview.as_any_mut().downcast_mut::<TextPreview>()
+-                        {
+-                            text.set_line_alignment(alignment);
+-                        }
+-                        self.viewport.rebuild_display();
+-                        self.sync_text_format_models();
+-                    }
+-                    EditMessage::TextFontSize(idx) => {
+-                        if let Some(&size_pt) = FONT_SIZE_PRESETS_PT.get(idx) {
+-                            let size_px = pt_to_px(size_pt);
++        let thumbnail_size = self.config.thumbnail_size.pixels();
++        let t = theme::active();
++        let t = t.cosmic();
++        let space_xxs = f32::from(t.spacing.space_xxs);
++        let space_s = f32::from(t.spacing.space_s);
++        let panel_width = space_xxs.mul_add(2.0, thumbnail_size as f32) + 36.0;
+ 
+-                            if let Some(d) = self
+-                                .viewport
+-                                .select_target
+-                                .and_then(|i| self.viewport.operations_mut().get_mut(i))
+-                            {
+-                                if let Some(o) = d.as_any_mut().downcast_mut::<TextOperation>() {
+-                                    let mut p = o.to_preview();
+-                                    p.select_all();
+-                                    p.update_font_size(size_px);
+-                                    if let Some(committed) = p.commit() {
+-                                        *d = committed;
+-                                    }
+-                                }
+-                            }
++        let active = self.nav.index().unwrap_or(0);
+ 
+-                            self.text_font_size = size_px;
+-                            if let Some(preview) = self.viewport.preview_mut()
+-                                && let Some(text) =
+-                                    preview.as_any_mut().downcast_mut::<TextPreview>()
+-                            {
+-                                text.update_font_size(size_px);
+-                            }
+-                            self.viewport.rebuild_display();
+-                        }
+-                    }
+-                    EditMessage::TextFontFamily(idx) => {
+-                        self.text_font_index = Some(idx);
+-                        let fam = self.font_families[idx];
+-                        self.text_font_family = fam;
++        let items = self
++            .nav
++            .images()
++            .iter()
++            .enumerate()
++            .map(|(img, p)| {
++                let handle = self
++                    .nav_handles
++                    .get(img)
++                    .and_then(std::clone::Clone::clone)
++                    .unwrap_or_else(|| Handle::from_rgba(1, 1, vec![0, 0, 0, 0]));
+ 
+-                        if let Some(d) = self
+-                            .viewport
+-                            .select_target
+-                            .and_then(|i| self.viewport.operations_mut().get_mut(i))
+-                        {
+-                            if let Some(o) = d.as_any_mut().downcast_mut::<TextOperation>() {
+-                                let mut p = o.to_preview();
+-                                p.select_all();
+-                                p.apply_attr_to_selection(|a| {
+-                                    a.family(cosmic_text::Family::Name(fam))
+-                                });
+-                                if let Some(committed) = p.commit() {
+-                                    *d = committed;
+-                                }
+-                            }
+-                        }
++                let mut btn = container(
++                    button::image(handle)
++                        .selected(img == active)
++                        .height(Length::Fill)
++                        .width(Length::Fill)
++                        .id(Id::new(format!("img-{}-{img}", p.to_string_lossy())))
++                        .on_press(Action::App(ViewerMessage::Nav(NavMessage::GridActivate(
++                            img,
++                        )))),
++                )
++                .width(thumbnail_size as f32)
++                .height(thumbnail_size as f32)
++                .align_x(Horizontal::Center)
++                .align_y(Vertical::Center);
+ 
+-                        if let Some(preview) = self.viewport.preview_mut()
+-                            && let Some(text) = preview.as_any_mut().downcast_mut::<TextPreview>()
+-                        {
+-                            if text.has_selection() {
+-                                text.apply_attr_to_selection(|a| {
+-                                    a.family(cosmic_text::Family::Name(fam))
+-                                });
+-                            }
+-                            text.font_family = fam;
+-                        }
+-                        self.viewport.rebuild_display();
+-                    }
+-                    EditMessage::TextStyleActivated(entity) => {
+-                        let msg = match self.text_style_model.data::<TextStyle>(entity).copied() {
+-                            Some(TextStyle::Bold) => Some(EditMessage::TextBold),
+-                            Some(TextStyle::Italic) => Some(EditMessage::TextItalic),
+-                            Some(TextStyle::Underline) => Some(EditMessage::TextUnderline),
+-                            None => None,
+-                        };
++                if self.hovered_item.is_some_and(|h| h == img) {
++                    btn = btn.style(|theme| {
++                        let cosmic = theme.cosmic();
+ 
+-                        if let Some(msg) = msg {
+-                            return self.update(ViewerMessage::Edit(msg));
+-                        }
+-                    }
+-                    EditMessage::TextAlignActivated(entity) => {
+-                        if let Some(alignment) =
+-                            self.text_align_model.data::<Horizontal>(entity).copied()
+-                        {
+-                            return self.update(ViewerMessage::Edit(EditMessage::TextAlignment(
+-                                alignment,
+-                            )));
++                        let component = &cosmic.list_button;
++                        container::Style {
++                            icon_color: Some(component.on.into()),
++                            text_color: Some(component.on.into()),
++                            background: Some(Background::Color(
++                                cosmic.primary(theme.transparent).component.hover.into(),
++                            )),
++                            border: Border {
++                                radius: cosmic.radius_s().map(|x| x + 1.0).into(),
++                                width: 0.0,
++                                color: Color::TRANSPARENT,
++                            },
++                            ..Default::default()
+                         }
+-                    }
+-                    EditMessage::TextCancel => {
+-                        self.viewport.cancel_tool();
+-                        self.viewport.select_target = None;
+-                        self.text_editing = false;
+-                    }
+-                    EditMessage::TextApply => {
+-                        self.viewport.apply_tool();
+-                        self.viewport.select_target = None;
+-                        self.text_editing = false;
+-                    }
+-                    EditMessage::ToggleMoveMode => {
+-                        self.viewport.move_mode = !self.viewport.move_mode;
+-                        self.move_target = None;
+-                        self.viewport.select_target = None;
+-                        self.move_start = None;
+-                    }
+-                    EditMessage::Undo => {
+-                        self.viewport.select_target = None;
+-                        if let Some(op) = self.viewport.undo() {
+-                            if let Some(rotate) = op.as_any().downcast_ref::<RotateOperation>() {
+-                                let inverse = rotate.direction.inverse();
+-                                let image_size = self.viewport.image_size().unwrap_or(Size::ZERO);
++                    })
++                }
++                let btn = mouse_area(btn)
++                    .on_enter(cosmic::Action::App(ViewerMessage::HoverItem(Some(img))))
++                    .on_exit(cosmic::Action::App(ViewerMessage::HoverItem(None)))
++                    .on_press(Action::App(ViewerMessage::Nav(NavMessage::GridActivate(
++                        img,
++                    ))));
+ 
+-                                for op in self.viewport.operations_mut() {
+-                                    op.transform_rotate(inverse, image_size);
+-                                }
++                sensor(btn)
++                    .on_show(move |_| {
++                        Action::App(ViewerMessage::Nav(NavMessage::NavThumbnailShow(img)))
++                    })
++                    .on_hide(Action::App(ViewerMessage::Nav(
++                        NavMessage::NavThumbnailHide(img),
++                    )))
++                    .into()
++            })
++            .collect::<Vec<Element<'_, Action<ViewerMessage>>>>();
+ 
+-                                if let Some(img) = self.viewport.working_image_mut() {
+-                                    *img = match inverse {
+-                                        RotateDirection::Left => img.rotate270(),
+-                                        RotateDirection::Right => img.rotate90(),
+-                                    };
+-                                }
+-                                self.rebuild_working_image();
+-                            } else if let Some(crop) = op.as_any().downcast_ref::<CropOperation>() {
+-                                let region = crop.region;
++        let nav_grid = container(
++            grid(items)
++                .spacing(space_s)
++                .columns(1)
++                .height(Length::Shrink),
++        )
++        .padding([0., space_xxs, 0., 0.]);
+ 
+-                                for op in self.viewport.operations_mut() {
+-                                    op.transform_crop(Rectangle::new(
+-                                        Point::new(-region.x, -region.y),
+-                                        Size::ZERO,
+-                                    ));
+-                                }
++        let scrollable = scrollable(container(nav_grid).padding(space_xxs))
++            .on_scroll(|v| Action::App(ViewerMessage::NavScroll(v)))
++            .id(self.scroll_id.clone());
+ 
+-                                self.rebuild_working_image();
++        let nav_width = if self.is_narrow() {
++            // Narrow mode: overlay the view, filling window width minus a space_xxs gutter.
++            self.window_width.map_or(Length::Fill, |w| {
++                Length::Fixed((w - space_xxs).max(panel_width))
++            })
++        } else {
++            Length::Fixed(panel_width)
++        };
+ 
+-                                // Reset the crop preview to the restored image size
+-                                if let Some(new_size) = self.viewport.image_size()
+-                                    && let Some(preview) = self.viewport.preview_mut()
+-                                    && let Some(selection) =
+-                                        preview.as_any_mut().downcast_mut::<CropSelection>()
+-                                {
+-                                    let ratio = selection.ratio;
+-                                    selection.activate(ratio, new_size);
+-                                    return self.update(ViewerMessage::Canvas(CanvasMessage::Pan(
+-                                        Default::default(),
+-                                    )));
+-                                }
+-                            } else {
+-                                self.viewport.rebuild_display();
+-                            }
+-                        }
+-                    }
+-                    EditMessage::Redo => {
+-                        self.viewport.select_target = None;
++        Some(
++            container(scrollable)
++                .width(nav_width)
++                .height(Length::Fill)
++                .class(theme::Container::custom(nav_bar::nav_bar_style))
++                .into(),
++        )
++    }
+ 
+-                        if let Some(op) = self.viewport.redo() {
+-                            if let Some(rotate) = op.as_any().downcast_ref::<RotateOperation>() {
+-                                let direction = rotate.direction;
+-                                let image_size = self.viewport.image_size().unwrap_or(Size::ZERO);
++    // reason: top-level declarative view tree; splitting would fragment the layout.
++    #[allow(clippy::too_many_lines)]
++    fn view(&self) -> Element<'_, Self::Message> {
++        let has_image = self.viewport.image().is_some();
++        let content: Element<'_, Self::Message> = if has_image {
++            self.viewport.element().map(ViewerMessage::Canvas)
++        } else {
++            Column::new()
++                .push(Space::new().height(Length::Fill))
++                .push(text("No image selected").center())
++                .push(Space::new().height(Length::Fill))
++                .align_x(Horizontal::Center)
++                .width(Length::Fill)
++                .height(Length::Fill)
++                .into()
++        };
+ 
+-                                for op in self.viewport.operations_mut() {
+-                                    op.transform_rotate(direction, image_size);
+-                                }
++        let spacing = cosmic::theme::active().cosmic().spacing;
+ 
+-                                self.rebuild_working_image();
+-                            } else if let Some(crop) = op.as_any().downcast_ref::<CropOperation>() {
+-                                let region = crop.region;
++        let nav_collapsed = !self.core().nav_bar_active();
++        let cur_idx = self.nav.index().unwrap_or(0);
+ 
+-                                for op in self.viewport.operations_mut() {
+-                                    op.transform_crop(region);
+-                                }
++        let image_area: Element<'_, Self::Message> = if nav_collapsed && has_image {
++            let has_prev = cur_idx > 0;
++            let has_next = cur_idx + 1 < self.nav.total();
+ 
+-                                self.rebuild_working_image();
+-                            } else {
+-                                self.viewport.rebuild_display();
+-                            }
+-                        }
+-                    }
+-                    EditMessage::RevertAll => {
+-                        self.viewport.select_target = None;
+-                        self.viewport.revert_all()
+-                    }
++            let nav_btn = |icon_name: &'static str,
++                           msg: ViewerMessage,
++                           enabled: bool|
++             -> Element<'_, Self::Message> {
++                let mut btn = button::icon(icon::from_name(icon_name).size(24))
++                    .class(cosmic::theme::Button::Icon);
++                if enabled {
++                    btn = btn.on_press(msg);
+                 }
+-            }
+-            ViewerMessage::Surface(action) => {
+-                return cosmic::task::message(cosmic::Action::Surface(action));
+-            }
+-            ViewerMessage::ShowNavbar(show_navbar) => {
+-                config_set!(show_navbar, show_navbar);
+-            }
+-            ViewerMessage::NavScroll(viewport) => {
+-                self.cur_scroll = Some(viewport);
+-            }
+-            ViewerMessage::LaunchUrl(url) => match open::that_detached(&url) {
+-                Ok(()) => {}
+-                Err(err) => {
+-                    tracing::warn!("failed to open {:?}: {}", url, err);
++                container(btn).center_y(Length::Fill).into()
++            };
++
++            Row::new()
++                .push(nav_btn(
++                    "go-previous-symbolic",
++                    ViewerMessage::Nav(NavMessage::GridActivate(cur_idx.saturating_sub(1))),
++                    has_prev,
++                ))
++                .push(container(content).width(Length::Fill).height(Length::Fill))
++                .push(nav_btn(
++                    "go-next-symbolic",
++                    ViewerMessage::Nav(NavMessage::GridActivate(
++                        (cur_idx + 1).min(self.nav.total().saturating_sub(1)),
++                    )),
++                    has_next,
++                ))
++                .align_y(Alignment::Center)
++                .width(Length::Fill)
++                .height(Length::Fill)
++                .into()
++        } else {
++            container(content)
++                .width(Length::Fill)
++                .height(Length::Fill)
++                .into()
++        };
++
 +        // Preview-style: the image sits on a dark backdrop, and the toolbar
 +        // lives in the title bar (see `header_end`) instead of floating below.
 +        let _ = spacing;
@@ -220,18 +2366,338 @@ index 9cb0b66..252009f 100644
 +                        cosmic::iced::Color::from_rgb(0.11, 0.11, 0.12),
 +                    )),
 +                    ..Default::default()
-+                }
+                 }
+-            },
+-            ViewerMessage::HoverItem(img) => {
+-                self.hovered_item = img;
 +            }));
-         let main = Column::new()
-             .push(image_area)
--            .push_maybe(has_image.then(|| {
--                container(self.build_toolbar())
--                    .center_x(Length::Fill)
--                    .padding([spacing.space_xxs, 0, spacing.space_xxs, 0])
--            }))
-             .width(Length::Fill)
-             .height(Length::Fill);
++        let main = Column::new()
++            .push(image_area)
++            .width(Length::Fill)
++            .height(Length::Fill);
++
++        let mut pop = widget::popover(main);
++        if let Some(point) = self.context_menu_position
++            && self.wallpaper_dialog.is_none()
++            && self.delete_dialog.is_none()
++        {
++            pop = pop
++                .popup(Self::build_context_menu_element())
++                .position(widget::popover::Position::Point(point))
++                .on_close(ViewerMessage::Canvas(CanvasMessage::ContextMenu(None)));
++        }
++
++        let view: Element<'_, Self::Message> = pop.into();
++
++        if let Some(ref path) = self.wallpaper_dialog {
++            let path = path.clone();
++            let spacing = cosmic::theme::active().cosmic().spacing;
++
++            let mut btn_col = Column::new().spacing(spacing.space_s);
++            btn_col = btn_col.push(button::standard(fl!("wallpaper-all-displays")).on_press(
++                ViewerMessage::SetWallpaperOn(path.clone(), crate::message::WallpaperTarget::All),
++            ));
++            for output in &self.available_outputs {
++                btn_col = btn_col.push(button::standard(output.clone()).on_press(
++                    ViewerMessage::SetWallpaperOn(
++                        path.clone(),
++                        crate::message::WallpaperTarget::Output(output.clone()),
++                    ),
++                ));
+             }
++
++            let dialog: Element<'_, Self::Message> = container(
++                container(
++                    Column::new()
++                        .push(text::title4(fl!("wallpaper-dialog-title")))
++                        .push(btn_col)
++                        .push(
++                            button::text(fl!("wallpaper-cancel"))
++                                .on_press(ViewerMessage::CloseWallpaperDialog),
++                        )
++                        .spacing(spacing.space_s)
++                        .align_x(Alignment::Center),
++                )
++                .padding(spacing.space_m)
++                .class(cosmic::theme::Container::Dialog(true)),
++            )
++            .width(Length::Fill)
++            .height(Length::Fill)
++            .center_x(Length::Fill)
++            .center_y(Length::Fill)
++            .into();
++
++            let backdrop = cosmic::widget::mouse_area(
++                container(Space::new().width(Length::Fill).height(Length::Fill))
++                    .width(Length::Fill)
++                    .height(Length::Fill)
++                    .class(cosmic::theme::Container::Transparent),
++            )
++            .on_press(ViewerMessage::CloseWallpaperDialog);
++
++            return toaster(&self.toasts, stack![view, backdrop, dialog]);
+         }
  
+-        if tasks.is_empty() {
+-            Task::none()
+-        } else {
+-            Task::batch(tasks)
++        toaster(&self.toasts, view)
++    }
++
++    fn dialog(&self) -> Option<Element<'_, Self::Message>> {
++        if self.unsaved_dialog.is_some() {
++            let mut row = widget::row::with_capacity(3).align_y(Alignment::Center);
++            row = row.push(widget::text(
++                self.nav
++                    .current()
++                    .and_then(|d| Some(d.file_name()?.to_string_lossy().to_string()))
++                    .unwrap_or_default(),
++            ));
++            row = row.push(widget::space::horizontal());
++            row = row.push(
++                widget::button::standard(fl!("unsaved-save-as"))
++                    .on_press(ViewerMessage::Unsaved(UnsavedChoice::SaveAs)),
++            );
++            let save_button = widget::button::suggested(fl!("unsaved-save"))
++                .on_press(ViewerMessage::Unsaved(UnsavedChoice::Save));
++            let discard_button = widget::button::destructive(fl!("unsaved-discard"))
++                .on_press(ViewerMessage::Unsaved(UnsavedChoice::Discard));
++            let cancel_button = widget::button::text(fl!("unsaved-cancel"))
++                .on_press(ViewerMessage::Unsaved(UnsavedChoice::Cancel));
++            let dialog = widget::dialog()
++                .title(fl!("unsaved-dialog-title"))
++                .body(fl!("unsaved-dialog-body"))
++                .icon(icon::from_name("dialog-warning-symbolic").size(64))
++                .control(row)
++                .primary_action(save_button)
++                .secondary_action(discard_button)
++                .tertiary_action(cancel_button);
++            return Some(dialog.into());
+         }
++        None
++    }
++    fn update(&mut self, message: Self::Message) -> Task<Action<Self::Message>> {
++        let task = self.update_inner(message);
++        self.sync_app_menu();
++        task
+     }
+ 
+     fn on_app_exit(&mut self) -> Option<Self::Message> {
+@@ -4110,6 +4155,8 @@ impl Application for CosmicViewer {
+                 _ => None,
+             }),
+             watcher_sub,
++            Subscription::run_with(self.app_menu.clone(), mac_appmenu::activate_stream)
++                .map(ViewerMessage::AppMenuActivate),
+         ])
+     }
+ }
+diff --git a/cosmic-viewer/src/app_menu.rs b/cosmic-viewer/src/app_menu.rs
+new file mode 100644
+index 0000000..1e88b83
+--- /dev/null
++++ b/cosmic-viewer/src/app_menu.rs
+@@ -0,0 +1,175 @@
++// SPDX-License-Identifier: GPL-3.0-only
++
++use std::collections::HashMap;
++
++use cosmic::widget::menu::key_bind::KeyBind;
++use mac_appmenu::{MenuItemSpec, MenuLayout, MenuSpec, format_shortcut};
++
++use crate::fl;
++use crate::key_binds::MenuAction;
++
++#[derive(Clone, Copy, Debug)]
++#[allow(clippy::struct_excessive_bools)]
++pub struct AppMenuState {
++    pub can_undo: bool,
++    pub can_redo: bool,
++    pub has_image: bool,
++    pub is_fullscreen: bool,
++}
++
++fn shortcut_for(key_binds: &HashMap<KeyBind, MenuAction>, action: MenuAction) -> String {
++    key_binds
++        .iter()
++        .find_map(|(kb, bound)| (*bound == action).then(|| format_shortcut(&kb.to_string())))
++        .unwrap_or_default()
++}
++
++fn file_menu(key_binds: &HashMap<KeyBind, MenuAction>, has_image: bool) -> MenuSpec {
++    let sc = |action| shortcut_for(key_binds, action);
++    MenuSpec::new(
++        "file",
++        fl!("menu-file"),
++        vec![
++            MenuItemSpec::action("file.open_file", fl!("menu-open-file"))
++                .shortcut_raw(sc(MenuAction::OpenFile)),
++            MenuItemSpec::action("file.open_folder", fl!("menu-open-folder"))
++                .shortcut_raw(sc(MenuAction::OpenFolder)),
++            MenuItemSpec::action("file.open_containing", fl!("menu-open-containing"))
++                .shortcut_raw(sc(MenuAction::OpenContaining))
++                .enabled(has_image),
++            MenuItemSpec::separator(),
++            MenuItemSpec::action("file.save", fl!("menu-save"))
++                .shortcut_raw(sc(MenuAction::Save))
++                .enabled(has_image),
++            MenuItemSpec::action("file.save_as", fl!("menu-save-as"))
++                .shortcut_raw(sc(MenuAction::SaveAs))
++                .enabled(has_image),
++            MenuItemSpec::separator(),
++            MenuItemSpec::action("file.set_wallpaper", fl!("menu-set-wallpaper"))
++                .shortcut_raw(sc(MenuAction::SetWallpaper))
++                .enabled(has_image),
++            MenuItemSpec::action("file.move_to_trash", fl!("menu-move-to-trash"))
++                .shortcut_raw(sc(MenuAction::MoveToTrash))
++                .enabled(has_image),
++            MenuItemSpec::separator(),
++            MenuItemSpec::action("file.image_details", fl!("menu-image-details"))
++                .shortcut_raw(sc(MenuAction::ImageDetails))
++                .enabled(has_image),
++            MenuItemSpec::action("file.settings", fl!("settings"))
++                .shortcut_raw(sc(MenuAction::Settings)),
++            MenuItemSpec::action("file.about", fl!("menu-about"))
++                .shortcut_raw(sc(MenuAction::About)),
++            MenuItemSpec::separator(),
++            MenuItemSpec::action("file.quit", fl!("menu-quit")).shortcut_raw(sc(MenuAction::Quit)),
++        ],
++    )
++}
++
++fn edit_menu(key_binds: &HashMap<KeyBind, MenuAction>, state: AppMenuState) -> MenuSpec {
++    let sc = |action| shortcut_for(key_binds, action);
++    let can_revert = state.can_undo || state.can_redo;
++    MenuSpec::new(
++        "edit",
++        fl!("menu-edit"),
++        vec![
++            MenuItemSpec::action("edit.undo", fl!("menu-undo"))
++                .shortcut_raw(sc(MenuAction::Undo))
++                .enabled(state.can_undo),
++            MenuItemSpec::action("edit.redo", fl!("menu-redo"))
++                .shortcut_raw(sc(MenuAction::Redo))
++                .enabled(state.can_redo),
++            MenuItemSpec::action("edit.revert_all", fl!("menu-revert-all"))
++                .shortcut_raw(sc(MenuAction::RevertAll))
++                .enabled(can_revert),
++            MenuItemSpec::separator(),
++            MenuItemSpec::action("edit.cut", fl!("menu-cut")).shortcut_raw(sc(MenuAction::Cut)),
++            MenuItemSpec::action("edit.copy", fl!("menu-copy")).shortcut_raw(sc(MenuAction::Copy)),
++            MenuItemSpec::action("edit.paste", fl!("menu-paste"))
++                .shortcut_raw(sc(MenuAction::Paste)),
++            MenuItemSpec::action("edit.copy_to_clipboard", fl!("menu-copy-to-clipboard"))
++                .shortcut_raw(sc(MenuAction::CopyToClipboard))
++                .enabled(state.has_image),
++            MenuItemSpec::separator(),
++            MenuItemSpec::action("edit.rotate_left", fl!("menu-rotate-left"))
++                .shortcut_raw(sc(MenuAction::RotateLeft))
++                .enabled(state.has_image),
++            MenuItemSpec::action("edit.rotate_right", fl!("menu-rotate-right"))
++                .shortcut_raw(sc(MenuAction::RotateRight))
++                .enabled(state.has_image),
++        ],
++    )
++}
++
++fn view_menu(key_binds: &HashMap<KeyBind, MenuAction>, state: AppMenuState) -> MenuSpec {
++    let sc = |action| shortcut_for(key_binds, action);
++    MenuSpec::new(
++        "view",
++        fl!("menu-view"),
++        vec![
++            MenuItemSpec::action("view.zoom_in", fl!("menu-zoom-in"))
++                .shortcut_raw(sc(MenuAction::ZoomIn))
++                .enabled(state.has_image),
++            MenuItemSpec::action("view.zoom_out", fl!("menu-zoom-out"))
++                .shortcut_raw(sc(MenuAction::ZoomOut))
++                .enabled(state.has_image),
++            MenuItemSpec::action("view.actual_size", fl!("menu-actual-size"))
++                .shortcut_raw(sc(MenuAction::ActualSize))
++                .enabled(state.has_image),
++            MenuItemSpec::action("view.fit_to_view", fl!("menu-fit-to-view"))
++                .shortcut_raw(sc(MenuAction::FitToView))
++                .enabled(state.has_image),
++            MenuItemSpec::separator(),
++            MenuItemSpec::checkbox(
++                "view.fullscreen",
++                fl!("menu-fullscreen"),
++                state.is_fullscreen,
++            )
++            .shortcut_raw(sc(MenuAction::Fullscreen)),
++        ],
++    )
++}
++
++#[must_use]
++#[allow(clippy::implicit_hasher)]
++pub fn app_menu_layout(
++    key_binds: &HashMap<KeyBind, MenuAction>,
++    state: AppMenuState,
++) -> MenuLayout {
++    vec![
++        file_menu(key_binds, state.has_image),
++        edit_menu(key_binds, state),
++        view_menu(key_binds, state),
++    ]
++}
++
++#[must_use]
++pub fn action_from_id(id: &str) -> Option<MenuAction> {
++    match id {
++        "file.open_file" => Some(MenuAction::OpenFile),
++        "file.open_folder" => Some(MenuAction::OpenFolder),
++        "file.open_containing" => Some(MenuAction::OpenContaining),
++        "file.save" => Some(MenuAction::Save),
++        "file.save_as" => Some(MenuAction::SaveAs),
++        "file.set_wallpaper" => Some(MenuAction::SetWallpaper),
++        "file.move_to_trash" => Some(MenuAction::MoveToTrash),
++        "file.image_details" => Some(MenuAction::ImageDetails),
++        "file.settings" => Some(MenuAction::Settings),
++        "file.about" => Some(MenuAction::About),
++        "file.quit" => Some(MenuAction::Quit),
++        "edit.undo" => Some(MenuAction::Undo),
++        "edit.redo" => Some(MenuAction::Redo),
++        "edit.revert_all" => Some(MenuAction::RevertAll),
++        "edit.cut" => Some(MenuAction::Cut),
++        "edit.copy" => Some(MenuAction::Copy),
++        "edit.paste" => Some(MenuAction::Paste),
++        "edit.copy_to_clipboard" => Some(MenuAction::CopyToClipboard),
++        "edit.rotate_left" => Some(MenuAction::RotateLeft),
++        "edit.rotate_right" => Some(MenuAction::RotateRight),
++        "view.zoom_in" => Some(MenuAction::ZoomIn),
++        "view.zoom_out" => Some(MenuAction::ZoomOut),
++        "view.actual_size" => Some(MenuAction::ActualSize),
++        "view.fit_to_view" => Some(MenuAction::FitToView),
++        "view.fullscreen" => Some(MenuAction::Fullscreen),
++        _ => None,
++    }
++}
+diff --git a/cosmic-viewer/src/main.rs b/cosmic-viewer/src/main.rs
+index 530f1a8..5fddc55 100644
+--- a/cosmic-viewer/src/main.rs
++++ b/cosmic-viewer/src/main.rs
+@@ -1,6 +1,7 @@
+ // SPDX-License-Identifier: GPL-3.0-only
+ 
+ pub mod app;
++pub mod app_menu;
+ pub mod icon_cache;
+ pub mod key_binds;
+ pub mod localize;
+diff --git a/cosmic-viewer/src/message.rs b/cosmic-viewer/src/message.rs
+index 482ed96..58e4888 100644
+--- a/cosmic-viewer/src/message.rs
++++ b/cosmic-viewer/src/message.rs
+@@ -43,6 +43,7 @@ pub enum UnsavedChoice {
+ 
+ #[derive(Debug, Clone)]
+ pub enum ViewerMessage {
++    AppMenuActivate(String),
+     AppTheme(AppTheme),
+     Copy,
+     CopyToClipboard,
 diff --git a/viewer-config/src/lib.rs b/viewer-config/src/lib.rs
 index 5f963ab..190a3f5 100644
 --- a/viewer-config/src/lib.rs

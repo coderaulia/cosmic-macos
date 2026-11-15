@@ -13,8 +13,10 @@ cosmic-ext-mac-applet-style = { path = "../cosmic-ext-mac-applet-style" }
 cosmic-protocols.workspace = true
 futures.workspace = true
 libcosmic.workspace = true
+mac-appmenu = { path = "../../apps/mac-suite/mac-appmenu" }
 serde.workspace = true
 tokio.workspace = true
 tracing-log.workspace = true
 tracing-subscriber.workspace = true
 tracing.workspace = true
+zbus.workspace = true
