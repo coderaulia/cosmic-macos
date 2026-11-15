@@ -42,7 +42,7 @@ for entry in "${APPLETS[@]}"; do
   IFS='|' read -r bin_name app_id <<<"$entry"
   echo "==> building $bin_name"
   (cd "$WORKSPACE" && cargo build --release -p "$bin_name")
-  [ "$WORKSPACE/target/release/$bin_name" -nt "$0" ] || [ -n "$(find "$WORKSPACE/target/release/$bin_name" -mmin -30 2>/dev/null)" ] || { echo "the build output for $bin_name is old; the build may have gone elsewhere" >&2; exit 1; }
+  [ -x "$WORKSPACE/target/release/$bin_name" ] || { echo "no build output for $bin_name in $WORKSPACE/target; the build may have gone elsewhere" >&2; exit 1; }
   install -Dm755 "$WORKSPACE/target/release/$bin_name" "$BIN_DIR/$bin_name"
   sed "s|^Exec=.*|Exec=$BIN_DIR/$bin_name|" \
     "$WORKSPACE/$bin_name/data/$app_id.desktop" >"$APPS_DIR/$app_id.desktop"
