@@ -30,7 +30,7 @@ use cosmic::theme::Container;
 use cosmic::widget::{button, mouse_area, space::vertical as vertical_space, text};
 use cosmic::{Element, app};
 
-use crate::config::{Mode, Options, SaveTo, Timer};
+use crate::config::{AudioSource, Mode, Options, SaveTo, Timer};
 use crate::flow::Request;
 use crate::geometry::{Rect, window_at};
 use crate::wayland::Snapshot;
@@ -43,8 +43,15 @@ const MIN_SELECTION: f32 = 4.0;
 /// surface on the active output.
 const OUTPUT_WAIT: Duration = Duration::from_millis(1500);
 
+/// Result of the overlay session.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Outcome {
+    Screenshot(Request),
+    Record(Request),
+}
+
 /// Result handed back to `main` once the event loop ends.
-static RESULT: Mutex<Option<Request>> = Mutex::new(None);
+static RESULT: Mutex<Option<Outcome>> = Mutex::new(None);
 
 #[derive(Clone)]
 pub struct Flags {
@@ -56,7 +63,7 @@ pub struct Flags {
 }
 
 /// Run the overlay; `None` means cancelled.
-pub fn run(flags: Flags) -> Option<Request> {
+pub fn run(flags: Flags) -> Option<Outcome> {
     let settings = app::Settings::default()
         .antialiasing(false)
         .client_decorations(false)
@@ -71,16 +78,18 @@ pub fn run(flags: Flags) -> Option<Request> {
 
 #[derive(Clone, Debug)]
 pub enum Message {
-    Output(wayland::OutputEvent, WlOutput),
+    Output(Box<wayland::OutputEvent>, WlOutput),
     FallbackSurface,
     Moved(SurfaceId, Point),
     Pressed(SurfaceId),
     Released,
     Key(Key),
     SetMode(Mode),
+    SetRecordMode(Mode),
     ToggleOptions,
     SetSaveTo(SaveTo),
     SetTimer(Timer),
+    SetAudio(AudioSource),
     TogglePointer,
     Confirm,
     Cancel,
@@ -100,6 +109,7 @@ pub struct Overlay {
     created: HashSet<usize>,
     options: Options,
     mode: Mode,
+    recording: bool,
     toolbar: bool,
     options_open: bool,
     /// Surface the pointer was last seen on (hosts the toolbar).
@@ -204,6 +214,7 @@ impl Overlay {
 
     /// Space: region <-> window.
     fn toggle_window_mode(&mut self) {
+        self.recording = false;
         self.mode = if self.mode == Mode::Window { Mode::Region } else { Mode::Window };
         self.reset_selection();
     }
@@ -214,7 +225,7 @@ impl Overlay {
         self.hovered = None;
     }
 
-    fn finish(&mut self, result: Option<Request>) -> Task {
+    fn finish(&mut self, result: Option<Outcome>) -> Task {
         if self.closing {
             return Task::none();
         }
@@ -234,7 +245,12 @@ impl Overlay {
         };
         self.options.save();
         let request = Request { output: self.snapshot.outputs[oi].name.clone(), rect };
-        self.finish(Some(request))
+        let outcome = if self.recording {
+            Outcome::Record(request)
+        } else {
+            Outcome::Screenshot(request)
+        };
+        self.finish(Some(outcome))
     }
 
     fn set_options(&mut self, f: impl FnOnce(&mut Options)) {
@@ -243,26 +259,35 @@ impl Overlay {
     }
 
     fn toolbar_view(&self) -> Element<'_, Message> {
-        let mode_button = |label: &'static str, mode: Mode| {
-            let b = if self.mode == mode { button::suggested(label) } else { button::standard(label) };
-            b.on_press(Message::SetMode(mode))
+        let mode_button = |label: &'static str, mode: Mode, rec: bool| {
+            let active = self.recording == rec && self.mode == mode;
+            let b = if active { button::suggested(label) } else { button::standard(label) };
+            b.on_press(if rec {
+                Message::SetRecordMode(mode)
+            } else {
+                Message::SetMode(mode)
+            })
         };
+        let confirm_label = if self.recording { "Record" } else { "Capture" };
         let mut bar = column![
             row![
-                mode_button("Entire Screen", Mode::Screen),
-                mode_button("Window", Mode::Window),
-                mode_button("Portion", Mode::Region),
-                text::body("  "),
+                mode_button("Entire Screen", Mode::Screen, false),
+                mode_button("Window", Mode::Window, false),
+                mode_button("Portion", Mode::Region, false),
+                text::body(" "),
+                mode_button("Record Entire Screen", Mode::Screen, true),
+                mode_button("Record Selected Portion", Mode::Region, true),
+                text::body(" "),
                 if self.options_open {
                     button::suggested("Options")
                 } else {
                     button::standard("Options")
                 }
                 .on_press(Message::ToggleOptions),
-                button::suggested("Capture").on_press(Message::Confirm),
+                button::suggested(confirm_label).on_press(Message::Confirm),
                 button::text("Cancel").on_press(Message::Cancel),
             ]
-            .spacing(8)
+            .spacing(6)
             .align_y(Vertical::Center),
         ]
         .spacing(10)
@@ -281,13 +306,17 @@ impl Overlay {
                 row![text::body("Timer").width(80)].spacing(6).align_y(Vertical::Center),
                 |r, t| r.push(pick(self.options.timer == *t, t.label(), Message::SetTimer(*t))),
             );
+            let audio_row = AudioSource::ALL.iter().fold(
+                row![text::body("Audio").width(80)].spacing(6).align_y(Vertical::Center),
+                |r, a| r.push(pick(self.options.audio == *a, a.label(), Message::SetAudio(*a))),
+            );
             let pointer_row = row![
                 text::body("Pointer").width(80),
                 pick(self.options.show_pointer, "Show Mouse Pointer", Message::TogglePointer),
             ]
             .spacing(6)
             .align_y(Vertical::Center);
-            bar = bar.push(save_row).push(timer_row).push(pointer_row);
+            bar = bar.push(save_row).push(timer_row).push(audio_row).push(pointer_row);
         }
 
         let card = container(bar).padding(12).class(Container::custom(|t| {
@@ -409,6 +438,7 @@ impl cosmic::Application for Overlay {
             created: HashSet::new(),
             options: flags.options,
             mode: flags.mode,
+            recording: false,
             toolbar: flags.toolbar,
             options_open: false,
             active: None,
@@ -437,16 +467,16 @@ impl cosmic::Application for Overlay {
 
     fn update(&mut self, message: Message) -> Task {
         match message {
-            Message::Output(wayland::OutputEvent::Created(info), output) => {
-                let Some(info) = info else { return Task::none() };
-                match self.output_index(info.name.as_deref(), info.logical_size) {
-                    Some(i) if !self.created.contains(&i) => {
-                        return self.open_surface(i, IcedOutput::Output(output));
+            Message::Output(ev, output) => {
+                if let wayland::OutputEvent::Created(Some(info)) = *ev {
+                    match self.output_index(info.name.as_deref(), info.logical_size) {
+                        Some(i) if !self.created.contains(&i) => {
+                            return self.open_surface(i, IcedOutput::Output(output));
+                        }
+                        _ => {}
                     }
-                    _ => {}
                 }
             }
-            Message::Output(..) => {}
             Message::FallbackSurface => {
                 // No per-output events arrived: use the active output and
                 // assume the first capture belongs to it.
@@ -512,12 +542,23 @@ impl cosmic::Application for Overlay {
                 _ => {}
             },
             Message::SetMode(m) => {
-                self.mode = m;
-                self.reset_selection();
+                self.recording = false;
+                if self.mode != m {
+                    self.mode = m;
+                    self.reset_selection();
+                }
+            }
+            Message::SetRecordMode(m) => {
+                self.recording = true;
+                if self.mode != m {
+                    self.mode = m;
+                    self.reset_selection();
+                }
             }
             Message::ToggleOptions => self.options_open = !self.options_open,
             Message::SetSaveTo(s) => self.set_options(|o| o.save_to = s),
             Message::SetTimer(t) => self.set_options(|o| o.timer = t),
+            Message::SetAudio(a) => self.set_options(|o| o.audio = a),
             Message::TogglePointer => self.set_options(|o| o.show_pointer = !o.show_pointer),
             Message::Confirm => return self.confirm(),
             Message::Cancel => return self.finish(None),
@@ -540,7 +581,7 @@ impl cosmic::Application for Overlay {
         listen_raw(|event, _status: Status, _id| match event {
             cosmic::iced::Event::PlatformSpecific(PlatformSpecific::Wayland(
                 wayland::Event::Output(ev, output),
-            )) => Some(Message::Output(ev, output)),
+            )) => Some(Message::Output(Box::new(ev), output)),
             cosmic::iced::Event::Keyboard(cosmic::iced::keyboard::Event::KeyPressed {
                 key, ..
             }) => Some(Message::Key(key)),

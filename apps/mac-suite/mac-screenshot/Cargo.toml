@@ -6,6 +6,7 @@ license = "GPL-3.0-only"
 description = "macOS-style screenshot tool: capture overlay, toolbar and floating thumbnail"
 
 [dependencies]
+ashpd = { version = "0.12.3", default-features = false, features = ["tokio"] }
 cctk = { git = "https://github.com/pop-os/cosmic-protocols", package = "cosmic-client-toolkit", rev = "c0cff4d" }
 clap = { version = "4", features = ["derive"] }
 futures-util = "0.3"
@@ -13,7 +14,7 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 jiff.workspace = true
 libcosmic.workspace = true
 memmap2 = "0.9"
-rustix = { version = "1", features = ["fs"] }
+rustix = { version = "1", features = ["fs", "process"] }
 thiserror = "2"
 tokio.workspace = true
 tracing.workspace = true

@@ -30,6 +30,19 @@ pub fn home() -> PathBuf {
     std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."))
 }
 
+/// A directory only this user can write to: `$XDG_RUNTIME_DIR`, or else a
+/// private (0700) folder under `~/.cache`. Never the shared `/tmp`.
+pub fn private_runtime_dir() -> Option<PathBuf> {
+    if let Some(dir) = std::env::var_os("XDG_RUNTIME_DIR").filter(|d| !d.is_empty()) {
+        return Some(PathBuf::from(dir));
+    }
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+    let dir = PathBuf::from(std::env::var_os("HOME")?).join(".cache/mac-suite");
+    std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&dir).ok()?;
+    let meta = std::fs::symlink_metadata(&dir).ok()?;
+    (meta.is_dir() && meta.permissions().mode() & 0o077 == 0).then_some(dir)
+}
+
 /// Resolve `key` (e.g. `XDG_DESKTOP_DIR`) from the text of `user-dirs.dirs`.
 pub fn parse_user_dir(text: &str, key: &str, home: &Path) -> Option<PathBuf> {
     text.lines().find_map(|line| {
@@ -66,6 +79,12 @@ pub fn target_dir(save_to: SaveTo) -> Option<PathBuf> {
     }
 }
 
+/// Target directory for screen recordings: `~/Videos/Screen Recordings` (or
+/// `$XDG_VIDEOS_DIR/Screen Recordings`).
+pub fn recordings_dir() -> PathBuf {
+    user_dir("XDG_VIDEOS_DIR", "Videos").join("Screen Recordings")
+}
+
 /// `Screenshot 2026-11-15 at 14.03.09.png`; `suffix` disambiguates multiple
 /// captures in the same second (e.g. one per output).
 pub fn file_name(stamp: &str, suffix: Option<usize>) -> String {
@@ -75,19 +94,34 @@ pub fn file_name(stamp: &str, suffix: Option<usize>) -> String {
     }
 }
 
+/// `Screen Recording 2026-11-15 at 14.03.09.mp4`; `suffix` disambiguates
+/// multiple recordings started in the same second.
+pub fn recording_file_name(stamp: &str, suffix: Option<usize>) -> String {
+    match suffix {
+        Some(n) if n > 1 => format!("Screen Recording {stamp} ({n}).mp4"),
+        _ => format!("Screen Recording {stamp}.mp4"),
+    }
+}
+
 pub fn timestamp() -> String {
     jiff::Zoned::now().strftime("%Y-%m-%d at %H.%M.%S").to_string()
 }
 
-/// First non-existing path for `name` in `dir` ("name (2).png", ...).
+/// First non-existing path for `name` in `dir` ("name (2).ext", ...).
 pub fn unique_path(dir: &Path, name: &str) -> PathBuf {
     let first = dir.join(name);
     if !first.exists() {
         return first;
     }
-    let stem = name.strip_suffix(".png").unwrap_or(name);
+    let (stem, ext) = match name.rsplit_once('.') {
+        Some((s, e)) if !s.is_empty() && !e.is_empty() => (s, Some(e)),
+        _ => (name, None),
+    };
     (2..)
-        .map(|n| dir.join(format!("{stem} ({n}).png")))
+        .map(|n| match ext {
+            Some(e) => dir.join(format!("{stem} ({n}).{e}")),
+            None => dir.join(format!("{stem} ({n})")),
+        })
         .find(|p| !p.exists())
         .expect("infinite iterator")
 }
@@ -273,6 +307,14 @@ mod tests {
             file_name("2026-11-15 at 14.03.09", Some(2)),
             "Screenshot 2026-11-15 at 14.03.09 (2).png"
         );
+        assert_eq!(
+            recording_file_name("2026-11-15 at 14.03.09", None),
+            "Screen Recording 2026-11-15 at 14.03.09.mp4"
+        );
+        assert_eq!(
+            recording_file_name("2026-11-15 at 14.03.09", Some(2)),
+            "Screen Recording 2026-11-15 at 14.03.09 (2).mp4"
+        );
     }
 
     #[test]
@@ -297,6 +339,9 @@ mod tests {
         let a = unique_path(&dir, "S.png");
         std::fs::write(&a, b"x").unwrap();
         assert_eq!(unique_path(&dir, "S.png"), dir.join("S (2).png"));
+        let v = unique_path(&dir, "Rec.mp4");
+        std::fs::write(&v, b"x").unwrap();
+        assert_eq!(unique_path(&dir, "Rec.mp4"), dir.join("Rec (2).mp4"));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

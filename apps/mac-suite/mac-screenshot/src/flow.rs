@@ -37,12 +37,13 @@ pub fn run_request(
     options: Options,
 ) -> Result<Option<PathBuf>, Error> {
     let fresh;
-    let snap = if options.timer.seconds() > 0 || frozen.is_none() {
-        std::thread::sleep(Duration::from_secs(options.timer.seconds()));
-        fresh = wayland::snapshot(false, options.show_pointer)?;
-        &fresh
-    } else {
-        frozen.expect("checked above")
+    let snap = match frozen {
+        Some(f) if options.timer.seconds() == 0 => f,
+        _ => {
+            std::thread::sleep(Duration::from_secs(options.timer.seconds()));
+            fresh = wayland::snapshot(false, options.show_pointer)?;
+            &fresh
+        }
     };
     let shot = snap
         .outputs
@@ -51,7 +52,7 @@ pub fn run_request(
         .or_else(|| snap.outputs.first())
         .ok_or_else(|| Error::Msg("no output".into()))?;
     let img = crop(shot, req.rect).ok_or_else(|| Error::Msg("empty selection".into()))?;
-    deliver(&img, options, None)
+    deliver(&img, &options, None)
 }
 
 /// Capture every output (macOS Cmd+Shift+3 style); one file per output.
@@ -67,20 +68,20 @@ pub fn run_screens(options: Options) -> Result<Vec<PathBuf>, Error> {
             break;
         }
         let suffix = many.then_some(i + 1);
-        if let Some(p) = deliver_at(&shot.image, options, &stamp, suffix)? {
+        if let Some(p) = deliver_at(&shot.image, &options, &stamp, suffix)? {
             paths.push(p);
         }
     }
     Ok(paths)
 }
 
-pub fn deliver(img: &RgbaImage, options: Options, suffix: Option<usize>) -> Result<Option<PathBuf>, Error> {
+pub fn deliver(img: &RgbaImage, options: &Options, suffix: Option<usize>) -> Result<Option<PathBuf>, Error> {
     deliver_at(img, options, &output::timestamp(), suffix)
 }
 
 fn deliver_at(
     img: &RgbaImage,
-    options: Options,
+    options: &Options,
     stamp: &str,
     suffix: Option<usize>,
 ) -> Result<Option<PathBuf>, Error> {

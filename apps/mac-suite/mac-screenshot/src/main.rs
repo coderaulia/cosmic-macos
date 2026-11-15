@@ -6,16 +6,22 @@ mod config;
 mod flow;
 mod geometry;
 mod output;
+mod record;
 mod ui;
 mod wayland;
 
+use std::io::Write;
+use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use clap::Parser;
 
 use config::{Mode, Options};
 use flow::Request;
+use record::{RecordTarget, Recorder};
+use ui::overlay::Outcome;
 
 #[derive(Parser, Debug)]
 #[command(name = "mac-screenshot", version, about = "macOS-style screenshot tool")]
@@ -53,9 +59,12 @@ fn main() {
         ui::thumbnail::run(path);
         return;
     }
-    // One capture at a time: a second shortcut press while the overlay is up
-    // (or a capture is in flight) must not stack another overlay.
-    let Some(_lock) = single_instance() else { return };
+    // One capture at a time: a second shortcut press stops an active screen
+    // recording (via the control socket), or exits silently if an overlay is open.
+    let Some(_lock) = single_instance() else {
+        let _ = try_stop_active_recording();
+        return;
+    };
     if let Err(e) = capture(&cli) {
         flow::notify(&e.to_string());
         std::process::exit(1);
@@ -83,7 +92,7 @@ fn capture(cli: &Cli) -> Result<(), output::Error> {
         }
     };
 
-    let Some(Request { output, rect }) = ui::overlay::run(ui::overlay::Flags {
+    let Some(outcome) = ui::overlay::run(ui::overlay::Flags {
         snapshot: snapshot.clone(),
         options,
         mode,
@@ -93,12 +102,45 @@ fn capture(cli: &Cli) -> Result<(), output::Error> {
     };
     // The toolbar may have changed the options.
     let options = Options::load();
-    flow::run_request(&Request { output, rect }, Some(&snapshot), options)?;
+    match outcome {
+        Outcome::Screenshot(req) => {
+            flow::run_request(&req, Some(&snapshot), options)?;
+        }
+        Outcome::Record(req) => {
+            run_recording(req, &snapshot, options)?;
+        }
+    }
+    Ok(())
+}
+
+fn run_recording(
+    req: Request,
+    snapshot: &wayland::Snapshot,
+    options: Options,
+) -> Result<(), output::Error> {
+    if options.timer.seconds() > 0 {
+        std::thread::sleep(Duration::from_secs(options.timer.seconds()));
+    }
+    let shot = snapshot
+        .outputs
+        .iter()
+        .find(|o| o.name == req.output)
+        .or_else(|| snapshot.outputs.first())
+        .ok_or_else(|| output::Error::Msg("no output".into()))?;
+    let target = RecordTarget {
+        output: shot.name.clone(),
+        logical_size: shot.logical_size,
+        pixel_size: (shot.image.width(), shot.image.height()),
+        rect: req.rect,
+    };
+    let recorder = Recorder::start(&target, options)?;
+    let path = ui::recording::run(control_socket_path(), recorder)?;
+    flow::spawn_thumbnail(&path);
     Ok(())
 }
 
 fn screens(options: Options) -> Result<(), output::Error> {
-    match flow::run_screens(options) {
+    match flow::run_screens(options.clone()) {
         Ok(_) => Ok(()),
         Err(e) => {
             tracing::warn!("screencopy failed ({e}); falling back to the portal");
@@ -112,28 +154,25 @@ fn portal_fallback(options: Options) -> Result<(), output::Error> {
     let tmp = output::portal_screenshot()?;
     let img = image::open(&tmp)?.to_rgba8();
     let _ = std::fs::remove_file(&tmp);
-    flow::deliver(&img, options, None)?;
+    flow::deliver(&img, &options, None)?;
     Ok(())
 }
 
-/// A directory only this user can write to: `$XDG_RUNTIME_DIR`, or else a
-/// private (0700) folder under `~/.cache`. Never the shared `/tmp`.
-fn private_runtime_dir() -> Option<PathBuf> {
-    if let Some(dir) = std::env::var_os("XDG_RUNTIME_DIR").filter(|d| !d.is_empty()) {
-        return Some(PathBuf::from(dir));
-    }
-    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
-    let dir = PathBuf::from(std::env::var_os("HOME")?).join(".cache/mac-suite");
-    std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&dir).ok()?;
-    let meta = std::fs::symlink_metadata(&dir).ok()?;
-    (meta.is_dir() && meta.permissions().mode() & 0o077 == 0).then_some(dir)
+fn control_socket_path() -> Option<PathBuf> {
+    output::private_runtime_dir().map(|dir| dir.join("mac-screenshot.sock"))
+}
+
+fn try_stop_active_recording() -> bool {
+    let Some(path) = control_socket_path() else { return false };
+    let Ok(mut stream) = UnixStream::connect(&path) else { return false };
+    stream.write_all(b"stop\n").is_ok()
 }
 
 /// Take an exclusive advisory lock in the runtime dir; `None` if another
 /// capture already holds it. The lock is released when the process exits.
 fn single_instance() -> Option<std::fs::File> {
     // No private directory: run without the single-instance guard.
-    let Some(dir) = private_runtime_dir() else {
+    let Some(dir) = output::private_runtime_dir() else {
         return std::fs::File::open("/dev/null").ok();
     };
     let file = std::fs::OpenOptions::new()
