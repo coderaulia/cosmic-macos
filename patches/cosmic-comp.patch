@@ -796,7 +796,7 @@ index 20e11b7..1d51fd1 100644
  
                  let scale = geo.size.to_f64() / original_geo.size.to_f64();
 diff --git a/src/shell/workspace.rs b/src/shell/workspace.rs
-index fd63dcb..98fa535 100644
+index fd63dcb..303e5f4 100644
 --- a/src/shell/workspace.rs
 +++ b/src/shell/workspace.rs
 @@ -215,6 +215,9 @@ pub struct FullscreenSurface {
@@ -846,7 +846,66 @@ index fd63dcb..98fa535 100644
              }
  
              fullscreen_state.surface.set_minimized(true);
-@@ -1168,6 +1167,7 @@ impl Workspace {
+@@ -1088,25 +1087,34 @@ impl Workspace {
+             .mapped()
+             .find(|m| m.windows().any(|(ref s, _)| s == surface))
+             .cloned()?;
++        // A maximized floating window stays maximized while it minimizes. Un-maximizing it
++        // first would send a windowed configure, and clients that answer quickly (Chrome)
++        // flash a windowed frame before the genie starts. The windowed geometry is kept in
++        // the restore data, and `unminimize` re-applies the maximized state.
++        let mut kept_snapped = None;
+         let was_maximized = if let Some(MaximizedState {
+             original_geometry,
+             original_layer,
+             original_snapped,
+         }) = mapped.maximized_state.lock().unwrap().take()
+         {
+-            // we need to do this manually instead of calling `self.unmaximize_request`
+-            // to get the correct animation in the tiling case.
+-            match original_layer {
+-                ManagedLayer::Tiling if self.tiling_enabled => {
+-                    self.floating_layer.unmap(&mapped, Some(to));
++            if matches!(original_layer, ManagedLayer::Floating) {
++                kept_snapped = Some(original_snapped);
++            } else {
++                // we need to do this manually instead of calling `self.unmaximize_request`
++                // to get the correct animation in the tiling case.
++                match original_layer {
++                    ManagedLayer::Tiling if self.tiling_enabled => {
++                        self.floating_layer.unmap(&mapped, Some(to));
++                    }
++                    _ => {}
++                }
++                mapped.set_geometry(original_geometry.to_global(&self.output));
++                mapped.set_maximized(false);
++                // Restore the snap marker to lett unminimize re-apply it.
++                if let Some(corners) = original_snapped {
++                    *mapped.floating_tiled.lock().unwrap() = Some(corners);
+                 }
+-                _ => {}
+-            }
+-            mapped.set_geometry(original_geometry.to_global(&self.output));
+-            mapped.set_maximized(false);
+-            // Restore the snap marker to lett unminimize re-apply it.
+-            if let Some(corners) = original_snapped {
+-                *mapped.floating_tiled.lock().unwrap() = Some(corners);
+             }
+             Some(original_geometry)
+         } else {
+@@ -1116,7 +1124,10 @@ impl Workspace {
+         mapped.set_minimized(true);
+         mapped.configure();
+ 
+-        let was_snapped = *mapped.floating_tiled.lock().unwrap();
++        let was_snapped = match kept_snapped {
++            Some(snapped) => snapped,
++            None => *mapped.floating_tiled.lock().unwrap(),
++        };
+         if let Some(geometry) = self.floating_layer.unmap(&mapped, Some(to)) {
+             return Some(MinimizedWindow::Floating {
+                 window: mapped,
+@@ -1168,6 +1179,7 @@ impl Workspace {
                      previous_geometry: previous.map(|p| p.previous_geometry),
                      start_at: None,
                      ended_at: None,
@@ -854,7 +913,18 @@ index fd63dcb..98fa535 100644
                  });
                  self.dirty.store(true, Ordering::SeqCst);
                  None
-@@ -1278,6 +1278,7 @@ impl Workspace {
+@@ -1181,7 +1193,9 @@ impl Workspace {
+                     .remap_minimized(window.clone(), from, previous_position);
+ 
+                 if previous.was_maximized {
+-                    let geometry = self.floating_layer.element_geometry(&window).unwrap();
++                    // The window never left the maximized state, so `previous` holds its
++                    // windowed geometry; `element_geometry` is already the maximized one.
++                    let geometry = Rectangle::new(previous_position, previous.geometry.size);
+                     let mut state = window.maximized_state.lock().unwrap();
+                     *state = Some(MaximizedState {
+                         original_geometry: geometry,
+@@ -1278,6 +1292,7 @@ impl Workspace {
              previous_geometry,
              start_at: Some(Instant::now()),
              ended_at: None,
@@ -862,7 +932,7 @@ index fd63dcb..98fa535 100644
          });
      }
  
-@@ -1655,6 +1656,54 @@ impl Workspace {
+@@ -1655,6 +1670,54 @@ impl Workspace {
                      .as_ref()
                      .unwrap_or(&fullscreen_geo);
  

@@ -69,6 +69,7 @@ cat >"$LAUNCHER" <<'EOF'
 #!/bin/sh
 # Starts the genie-patched compositor, or the stock one if it was disabled or
 # seems to have crashed (started again within 90 seconds).
+case "$1" in --version|-V|--help|-h) exec /usr/bin/cosmic-comp "$@" ;; esac
 state="${XDG_STATE_HOME:-$HOME/.local/state}/cosmic-comp-genie"
 mkdir -p "$state"
 now=$(date +%s)
