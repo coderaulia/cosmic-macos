@@ -38,6 +38,17 @@ struct Cli {
     /// Show the floating thumbnail for a saved screenshot (internal).
     #[arg(long, value_name = "FILE", hide = true)]
     thumbnail: Option<PathBuf>,
+    /// Record the screen under the pointer straight away (no overlay).
+    /// Run again, or click the red pill, to stop.
+    #[arg(long, conflicts_with_all = ["screen", "region", "window"])]
+    record_screen: bool,
+    /// Record this output (internal: started by the overlay in a new process,
+    /// because one process can run only one Wayland event loop).
+    #[arg(long, value_name = "OUTPUT", hide = true)]
+    record_output: Option<String>,
+    /// Region for --record-output as "x,y,w,h" in logical pixels (internal).
+    #[arg(long, value_name = "RECT", hide = true, requires = "record_output")]
+    record_rect: Option<String>,
     /// Keep a PNG read from stdin on the clipboard (internal).
     #[arg(long, hide = true)]
     serve_clipboard: bool,
@@ -59,10 +70,22 @@ fn main() {
         ui::thumbnail::run(path);
         return;
     }
-    // One capture at a time: a second shortcut press stops an active screen
-    // recording (via the control socket), or exits silently if an overlay is open.
+    if let Some(output) = cli.record_output.clone() {
+        let rect = cli.record_rect.as_deref().and_then(parse_rect);
+        let result = wayland::snapshot(false, false)
+            .and_then(|snap| run_recording(Request { output, rect }, &snap, Options::load()));
+        if let Err(e) = result {
+            flow::notify(&e.to_string());
+            std::process::exit(1);
+        }
+        return;
+    }
+    // While a recording runs, the shortcut stops it.
+    if try_stop_active_recording() {
+        return;
+    }
+    // One capture at a time: a second press while the overlay is up exits.
     let Some(_lock) = single_instance() else {
-        let _ = try_stop_active_recording();
         return;
     };
     if let Err(e) = capture(&cli) {
@@ -76,6 +99,11 @@ fn capture(cli: &Cli) -> Result<(), output::Error> {
 
     if cli.screen {
         return screens(options);
+    }
+    if cli.record_screen {
+        let snapshot = wayland::snapshot(false, false)?;
+        let output = snapshot.outputs.first().map(|o| o.name.clone()).unwrap_or_default();
+        return run_recording(Request { output, rect: None }, &snapshot, options);
     }
     let (mode, toolbar) = match (cli.region, cli.window) {
         (_, true) => (Mode::Window, false),
@@ -106,8 +134,16 @@ fn capture(cli: &Cli) -> Result<(), output::Error> {
         Outcome::Screenshot(req) => {
             flow::run_request(&req, Some(&snapshot), options)?;
         }
+        // The overlay's event loop has ended and cannot be started again in
+        // this process, so the recording (and its stop pill) runs in a new one.
         Outcome::Record(req) => {
-            run_recording(req, &snapshot, options)?;
+            let exe = std::env::current_exe()?;
+            let mut cmd = std::process::Command::new(exe);
+            cmd.arg("--record-output").arg(&req.output);
+            if let Some(r) = req.rect {
+                cmd.arg("--record-rect").arg(format!("{},{},{},{}", r.x, r.y, r.w, r.h));
+            }
+            cmd.stdin(std::process::Stdio::null()).spawn()?;
         }
     }
     Ok(())
@@ -156,6 +192,13 @@ fn portal_fallback(options: Options) -> Result<(), output::Error> {
     let _ = std::fs::remove_file(&tmp);
     flow::deliver(&img, &options, None)?;
     Ok(())
+}
+
+/// Parse "x,y,w,h" (logical pixels).
+fn parse_rect(s: &str) -> Option<geometry::Rect> {
+    let v: Vec<f32> = s.split(',').map(|p| p.trim().parse().ok()).collect::<Option<_>>()?;
+    let [x, y, w, h] = v.as_slice() else { return None };
+    (*w > 0.0 && *h > 0.0).then_some(geometry::Rect { x: *x, y: *y, w: *w, h: *h })
 }
 
 fn control_socket_path() -> Option<PathBuf> {

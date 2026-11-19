@@ -2245,7 +2245,9 @@ impl cosmic::Application for Launchpad {
         let now = Instant::now();
         let progress = self.window_progress(now);
         let bg_alpha = 0.55 * progress;
-        let grid_scale = 1.0 + 0.08 * (1.0 - progress);
+        // Slide the grid up into place instead of scaling it: scaling made
+        // every SVG icon re-rasterise each frame, which is what stuttered.
+        let rise = (28.0 * (1.0 - progress)).round() as u16;
 
         let search = text_input::search_input("Search", &self.query)
             .id(INPUT_ID.clone())
@@ -2265,11 +2267,12 @@ impl cosmic::Application for Launchpad {
                 .height(Length::Fixed(top_area_h))
                 .center_x(Length::Fill)
                 .padding([self.layout.top_pad, 0, 0, 0]),
-            container(ScaleBox::new(self.grid(now), grid_scale))
+            container(self.grid(now))
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .center_x(Length::Fill)
-                .center_y(Length::Fill),
+                .center_y(Length::Fill)
+                .padding([rise, 0, 0, 0]),
             container(self.dots())
                 .height(Length::Fixed(bottom_area_h))
                 .center_x(Length::Fill)

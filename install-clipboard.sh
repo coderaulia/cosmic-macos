@@ -91,7 +91,7 @@ PY
 
 if [ "${1:-}" = "--uninstall" ]; then
   pkill -x "$DAEMON_BIN" || true
-  pkill -x "$APPLET_BIN" || true
+  pkill -f "(^|/)$APPLET_BIN( |$)" || true
   rm -f \
     "$BIN_DIR/$DAEMON_BIN" \
     "$BIN_DIR/$APPLET_BIN" \

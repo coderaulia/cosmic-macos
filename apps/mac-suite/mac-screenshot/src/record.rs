@@ -270,8 +270,12 @@ pub fn build_pipeline_args(
         format!("path={node_id}"),
         "do-timestamp=true".into(),
         "keepalive-time=1000".into(),
+        "resend-last=true".into(),
         "!".into(),
+        // skip-to-first: don't fill the time before the first frame with
+        // copies (that made a 10 s recording 55 s long).
         "videorate".into(),
+        "skip-to-first=true".into(),
         "!".into(),
         "video/x-raw,framerate=30/1".into(),
         "!".into(),
@@ -306,6 +310,9 @@ pub fn build_pipeline_args(
         "queue".into(),
         "!".into(),
         "mp4mux".into(),
+        // Fragmented: the file stays playable even if the pipeline has to be
+        // killed (pipewiresrc may never pass on EOS while the screen is idle).
+        "fragment-duration=1000".into(),
         "name=mux".into(),
         "!".into(),
         "filesink".into(),
@@ -528,9 +535,18 @@ impl Recorder {
             }));
         }
 
-        if let Some(stderr) = child.stderr.take() {
+        // Keep GStreamer's messages: they explain a recording that stops.
+        if let Some(mut stderr) = child.stderr.take() {
+            let log = output::private_runtime_dir().map(|d| d.join("mac-screenshot-record.log"));
             std::thread::spawn(move || {
-                let _ = std::io::copy(&mut std::io::BufReader::new(stderr), &mut std::io::sink());
+                match log.and_then(|p| std::fs::File::create(p).ok()) {
+                    Some(mut file) => {
+                        let _ = std::io::copy(&mut stderr, &mut file);
+                    }
+                    None => {
+                        let _ = std::io::copy(&mut stderr, &mut std::io::sink());
+                    }
+                }
             });
         }
 
@@ -559,7 +575,7 @@ impl Recorder {
         if self.child.try_wait()?.is_none() {
             let pid = Pid::from_child(&self.child);
             let _ = kill_process(pid, Signal::INT);
-            let deadline = Instant::now() + Duration::from_secs(5);
+            let deadline = Instant::now() + Duration::from_secs(2);
             loop {
                 if self.child.try_wait()?.is_some() {
                     break;
@@ -703,10 +719,10 @@ mod tests {
         let joined = args.join(" ");
         assert!(args.first().map(String::as_str) == Some("-e"));
         assert!(joined.contains("pipewiresrc fd=17 path=42"));
-        assert!(joined.contains("videorate ! video/x-raw,framerate=30/1"));
+        assert!(joined.contains("videorate skip-to-first=true ! video/x-raw,framerate=30/1"));
         assert!(joined.contains("videocrop top=10 bottom=20 left=30 right=40"));
         assert!(joined.contains("x264enc speed-preset=veryfast"));
-        assert!(joined.contains("mp4mux name=mux ! filesink"));
+        assert!(joined.contains("mp4mux fragment-duration=1000 name=mux ! filesink"));
         assert!(joined.contains("pulsesrc device=alsa_output.monitor"));
         assert!(joined.contains("avenc_aac ! aacparse"));
     }

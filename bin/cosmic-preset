@@ -124,9 +124,9 @@ sync_widgets() {
   local cur
   cur="$(current)"
   if [ -n "$cur" ] && [ -e "$STORE/$cur/$WIDGETS_MARKER" ] && [ -x "$WIDGETS_BIN" ]; then
-    pgrep -x mac-desktop-widgets >/dev/null || setsid -f "$WIDGETS_BIN" >/dev/null 2>&1
+    pgrep -f "^$WIDGETS_BIN( |$)" >/dev/null || setsid -f "$WIDGETS_BIN" >/dev/null 2>&1
   else
-    pkill -x mac-desktop-widgets || true
+    pkill -f "^$WIDGETS_BIN( |$)" || true
   fi
 }
 
@@ -156,7 +156,7 @@ cmd_save() {
   mkdir -p "$STORE/$name"
   copy_managed "$LIVE" "$STORE/$name"
   if pgrep -x cosmic-ext-dock >/dev/null; then touch "$STORE/$name/$DOCK_MARKER"; fi
-  if pgrep -x mac-desktop-widgets >/dev/null; then touch "$STORE/$name/$WIDGETS_MARKER"; fi
+  if pgrep -f "^$WIDGETS_BIN( |$)" >/dev/null; then touch "$STORE/$name/$WIDGETS_MARKER"; fi
   echo "$name" >"$CURRENT"
   echo "saved current desktop as '$name'"
 }

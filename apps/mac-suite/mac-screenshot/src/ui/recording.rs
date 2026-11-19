@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-//! Compact red "■ MM:SS" stop pill shown top-right on the overlay layer while
+//! Red "● MM:SS   ■ Stop" pill shown top-right on the overlay layer while
 //! screen recording is active.
 
 use std::path::{Path, PathBuf};
@@ -28,8 +28,8 @@ use crate::record::Recorder;
 
 type Task = app::Task<Message>;
 
-const PILL_WIDTH: u32 = 104;
-const PILL_HEIGHT: u32 = 34;
+const PILL_WIDTH: u32 = 168;
+const PILL_HEIGHT: u32 = 36;
 
 #[derive(Clone)]
 pub struct Flags {
@@ -37,11 +37,11 @@ pub struct Flags {
     pub recorder: Arc<Mutex<Option<Recorder>>>,
 }
 
-/// Format elapsed seconds as `"■ MM:SS"`.
+/// Format elapsed seconds as `"● MM:SS   ■ Stop"`.
 pub fn format_elapsed(secs: u64) -> String {
     let mins = secs / 60;
     let rem = secs % 60;
-    format!("■ {mins:02}:{rem:02}")
+    format!("● {mins:02}:{rem:02}   ■ Stop")
 }
 
 /// Run the stop pill until the user clicks it, a second invocation sends
@@ -180,7 +180,7 @@ impl cosmic::Application for RecordingPill {
                 background: Some(Background::Color(Color::from_rgb(0.86, 0.16, 0.16))),
                 text_color: Some(Color::WHITE),
                 border: Border {
-                    radius: 17.0.into(),
+                    radius: 18.0.into(),
                     width: 1.0,
                     color: Color::from_rgba(1.0, 1.0, 1.0, 0.22),
                 },
@@ -243,9 +243,9 @@ mod tests {
 
     #[test]
     fn formats_stop_pill_elapsed_time() {
-        assert_eq!(format_elapsed(0), "■ 00:00");
-        assert_eq!(format_elapsed(12), "■ 00:12");
-        assert_eq!(format_elapsed(65), "■ 01:05");
-        assert_eq!(format_elapsed(3601), "■ 60:01");
+        assert_eq!(format_elapsed(0), "● 00:00   ■ Stop");
+        assert_eq!(format_elapsed(12), "● 00:12   ■ Stop");
+        assert_eq!(format_elapsed(65), "● 01:05   ■ Stop");
+        assert_eq!(format_elapsed(3601), "● 60:01   ■ Stop");
     }
 }

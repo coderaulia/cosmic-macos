@@ -312,6 +312,10 @@ impl cosmic::Application for DesktopWidgets {
     fn init(mut core: app::Core, start_editing: Self::Flags) -> (Self, Task<Self::Message>) {
         core.set_app_type(cosmic::core::AppType::System);
         core.set_keyboard_nav(false);
+        // The surface covers the whole screen; compositor blur would apply to
+        // all of it and smear the desktop icons. The cards draw their own
+        // translucent background instead.
+        core.set_auto_blur(Default::default());
 
         let mut cpu_prev = None;
         let stats = Stats::read(&mut cpu_prev);
@@ -391,11 +395,8 @@ impl cosmic::Application for DesktopWidgets {
         }
 
         if self.layout.has_kind(WidgetKind::Clock) || self.layout.has_kind(WidgetKind::UpNext) || self.editing {
-            let interval = if self.layout.widgets.iter().any(|w| w.kind == WidgetKind::Clock && w.size == WidgetSize::Medium) {
-                Duration::from_secs(1)
-            } else {
-                Duration::from_secs(15)
-            };
+            // Minutes only, so a few ticks a minute keep it exact.
+            let interval = Duration::from_secs(5);
             subs.push(cosmic::iced::time::every(interval).map(|_| Message::ClockTick));
         }
 

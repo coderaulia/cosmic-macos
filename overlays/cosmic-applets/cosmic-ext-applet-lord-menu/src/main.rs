@@ -312,7 +312,7 @@ impl LordMenu {
                         .on_press(Message::LaunchCommand(resolve_appearance_command())),
                     mac_menu_item(text::body("Toggle Dark / Light Mode"))
                         .on_press(Message::LaunchCommand(
-                            "/home/asw/.local/bin/cosmic-preset toggle".to_string(),
+                            format!("{} toggle", resolve_local_bin("cosmic-preset")),
                         )),
                 ];
 
@@ -927,17 +927,25 @@ fn is_binary_installed(name: &str) -> bool {
     PathBuf::from("/usr/bin").join(name).is_file()
 }
 
+/// The Appearance settings window. `mac-appearance` is only the background
+/// daemon; its settings UI is `mac-theme --settings`.
 fn resolve_appearance_command() -> String {
-    if is_binary_installed("mac-appearance") {
-        return "mac-appearance".to_string();
-    }
-    if let Some(home) = std::env::var_os("HOME") {
-        let local = PathBuf::from(home).join(".local/bin/mac-appearance");
-        if local.is_file() {
-            return local.to_string_lossy().into_owned();
-        }
+    if is_binary_installed("mac-theme") || local_bin("mac-theme").is_some() {
+        return format!("{} --settings", resolve_local_bin("mac-theme"));
     }
     "cosmic-settings".to_string()
+}
+
+/// `~/.local/bin/<name>` when it exists.
+fn local_bin(name: &str) -> Option<PathBuf> {
+    let path = PathBuf::from(std::env::var_os("HOME")?).join(".local/bin").join(name);
+    path.is_file().then_some(path)
+}
+
+/// Full path in `~/.local/bin` if installed there (the panel's PATH may not
+/// include it), else the bare name for a PATH lookup.
+fn resolve_local_bin(name: &str) -> String {
+    local_bin(name).map_or_else(|| name.to_owned(), |p| p.to_string_lossy().into_owned())
 }
 
 fn spawn_shell_command(cmd_line: &str, token: Option<&str>) {

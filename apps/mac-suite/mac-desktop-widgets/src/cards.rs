@@ -509,24 +509,18 @@ fn clock_card<'a, M: 'a>(size: WidgetSize, now: &'a Zoned) -> Element<'a, M> {
         .align_x(Alignment::Center)
         .width(Length::Fill)
         .into(),
-        WidgetSize::Medium => {
-            let secs = now.strftime(":%S").to_string();
-            column![
-                row![
-                    text::body(weekday).font(semibold_font()).width(Length::Fill),
-                    text::caption(date_long),
-                ],
-                space::vertical().height(Length::Fill),
-                row![
-                    text(hm).size(58.0).font(bold_font()),
-                    text(secs).size(24.0),
-                ]
-                .spacing(4)
-                .align_y(Alignment::End),
-                space::vertical().height(Length::Fill),
-            ]
-            .into()
-        }
+        // No seconds: like macOS, and a mixed-size "HH:MM:SS" row never
+        // lined up on one baseline.
+        WidgetSize::Medium => column![
+            row![
+                text::body(weekday).font(semibold_font()).width(Length::Fill),
+                text::caption(date_long),
+            ],
+            space::vertical().height(Length::Fill),
+            text(hm).size(64.0).font(bold_font()),
+            space::vertical().height(Length::Fill),
+        ]
+        .into(),
         WidgetSize::Large => {
             let today = now.date();
             let first = today.first_of_month();

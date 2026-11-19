@@ -268,7 +268,7 @@ impl Overlay {
                 Message::SetMode(mode)
             })
         };
-        let confirm_label = if self.recording { "Record" } else { "Capture" };
+        let confirm_label = if self.recording { "● Start Recording" } else { "Capture" };
         let mut bar = column![
             row![
                 mode_button("Entire Screen", Mode::Screen, false),
@@ -424,6 +424,9 @@ impl cosmic::Application for Overlay {
     fn init(mut core: app::Core, flags: Flags) -> (Self, Task) {
         core.set_app_type(cosmic::core::AppType::System);
         core.set_keyboard_nav(false);
+        // Full-screen surface showing a frozen capture: compositor blur behind
+        // it is never visible and only costs GPU time every frame.
+        core.set_auto_blur(Default::default());
         let handles = flags
             .snapshot
             .outputs
@@ -553,6 +556,10 @@ impl cosmic::Application for Overlay {
                 if self.mode != m {
                     self.mode = m;
                     self.reset_selection();
+                }
+                // Whole screen needs no selection: start right away.
+                if m == Mode::Screen {
+                    return self.confirm();
                 }
             }
             Message::ToggleOptions => self.options_open = !self.options_open,

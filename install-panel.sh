@@ -26,7 +26,7 @@ if [ "${1:-}" = "--uninstall" ]; then
   fi
   for entry in "${APPLETS[@]}"; do
     IFS='|' read -r bin_name app_id <<<"$entry"
-    pkill -x "$bin_name" || true
+    pkill -f "(^|/)$bin_name( |$)" || true
     rm -f "$BIN_DIR/$bin_name" "$APPS_DIR/$app_id.desktop"
   done
   echo "uninstalled; run: cosmic-preset apply macos-glass"

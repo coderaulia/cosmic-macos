@@ -990,8 +990,19 @@ impl cosmic::Application for Window {
             Message::OpenSystemMonitor => {
                 self.open_app_and_close_popup("cosmic-monitor", "cosmic-settings", &[])
             }
+            // `mac-appearance` is only the background daemon; the settings
+            // window is `mac-theme --settings`.
             Message::OpenAppearanceSettings => {
-                self.open_app_and_close_popup("mac-appearance", "cosmic-settings", &[])
+                if let Some(bin) = resolve_command("mac-theme") {
+                    let mut cmd = std::process::Command::new(bin);
+                    cmd.arg("--settings");
+                    tokio::spawn(cosmic::process::spawn(cmd));
+                    return match self.popup.take() {
+                        Some(p) => destroy_popup(p),
+                        None => Task::none(),
+                    };
+                }
+                self.open_app_and_close_popup("cosmic-settings", "cosmic-settings", &[])
             }
             Message::EditDesktopWidgets => {
                 if let Some(bin) = resolve_command("mac-desktop-widgets") {

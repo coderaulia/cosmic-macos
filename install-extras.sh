@@ -24,7 +24,7 @@ if [ "${1:-}" = "--uninstall" ]; then
   "$ROOT/tools/shortcut.sh" unset "Super,Shift" s || true
   systemctl --user disable --now mac-appearance.service 2>/dev/null || true
   pkill -x mac-launchpad || true
-  pkill -x mac-desktop-widgets || true
+  pkill -f "^$BIN_DIR/mac-desktop-widgets( |$)" || true
   rm -f "$BIN_DIR"/mac-{launchpad,screenshot,appearance,desktop-widgets} \
     "$APPS_DIR"/dev.asw.Mac{Launchpad,Screenshot,Theme}.desktop \
     "$UNIT_DIR/mac-appearance.service" "$AUTOSTART/dev.asw.MacLaunchpad.desktop" \
