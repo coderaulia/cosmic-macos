@@ -796,7 +796,7 @@ index 20e11b7..1d51fd1 100644
  
                  let scale = geo.size.to_f64() / original_geo.size.to_f64();
 diff --git a/src/shell/workspace.rs b/src/shell/workspace.rs
-index fd63dcb..e32918c 100644
+index fd63dcb..66d5361 100644
 --- a/src/shell/workspace.rs
 +++ b/src/shell/workspace.rs
 @@ -215,6 +215,16 @@ pub struct FullscreenSurface {
@@ -909,7 +909,66 @@ index fd63dcb..e32918c 100644
  
              fullscreen_state.surface.set_minimized(true);
              return Some(MinimizedWindow::Fullscreen {
-@@ -1157,6 +1189,25 @@ impl Workspace {
+@@ -1088,25 +1120,34 @@ impl Workspace {
+             .mapped()
+             .find(|m| m.windows().any(|(ref s, _)| s == surface))
+             .cloned()?;
++        // A maximized floating window stays maximized while it minimizes. Un-maximizing it
++        // first would send a windowed configure, and clients that answer quickly (Chrome)
++        // flash a windowed frame before the genie starts. The windowed geometry is kept in
++        // the restore data, and `unminimize` re-applies the maximized state.
++        let mut kept_snapped = None;
+         let was_maximized = if let Some(MaximizedState {
+             original_geometry,
+             original_layer,
+             original_snapped,
+         }) = mapped.maximized_state.lock().unwrap().take()
+         {
+-            // we need to do this manually instead of calling `self.unmaximize_request`
+-            // to get the correct animation in the tiling case.
+-            match original_layer {
+-                ManagedLayer::Tiling if self.tiling_enabled => {
+-                    self.floating_layer.unmap(&mapped, Some(to));
++            if matches!(original_layer, ManagedLayer::Floating) {
++                kept_snapped = Some(original_snapped);
++            } else {
++                // we need to do this manually instead of calling `self.unmaximize_request`
++                // to get the correct animation in the tiling case.
++                match original_layer {
++                    ManagedLayer::Tiling if self.tiling_enabled => {
++                        self.floating_layer.unmap(&mapped, Some(to));
++                    }
++                    _ => {}
++                }
++                mapped.set_geometry(original_geometry.to_global(&self.output));
++                mapped.set_maximized(false);
++                // Restore the snap marker to lett unminimize re-apply it.
++                if let Some(corners) = original_snapped {
++                    *mapped.floating_tiled.lock().unwrap() = Some(corners);
+                 }
+-                _ => {}
+-            }
+-            mapped.set_geometry(original_geometry.to_global(&self.output));
+-            mapped.set_maximized(false);
+-            // Restore the snap marker to lett unminimize re-apply it.
+-            if let Some(corners) = original_snapped {
+-                *mapped.floating_tiled.lock().unwrap() = Some(corners);
+             }
+             Some(original_geometry)
+         } else {
+@@ -1116,7 +1157,10 @@ impl Workspace {
+         mapped.set_minimized(true);
+         mapped.configure();
+ 
+-        let was_snapped = *mapped.floating_tiled.lock().unwrap();
++        let was_snapped = match kept_snapped {
++            Some(snapped) => snapped,
++            None => *mapped.floating_tiled.lock().unwrap(),
++        };
+         if let Some(geometry) = self.floating_layer.unmap(&mapped, Some(to)) {
+             return Some(MinimizedWindow::Floating {
+                 window: mapped,
+@@ -1157,6 +1201,25 @@ impl Workspace {
      )> {
          match window {
              MinimizedWindow::Fullscreen { previous, surface } => {
@@ -935,7 +994,7 @@ index fd63dcb..e32918c 100644
                  surface.set_minimized(false);
                  // focus it so it's the top fullscreen window
                  self.focus_stack
-@@ -1168,6 +1219,9 @@ impl Workspace {
+@@ -1168,6 +1231,9 @@ impl Workspace {
                      previous_geometry: previous.map(|p| p.previous_geometry),
                      start_at: None,
                      ended_at: None,
@@ -945,7 +1004,18 @@ index fd63dcb..e32918c 100644
                  });
                  self.dirty.store(true, Ordering::SeqCst);
                  None
-@@ -1278,6 +1332,9 @@ impl Workspace {
+@@ -1181,7 +1247,9 @@ impl Workspace {
+                     .remap_minimized(window.clone(), from, previous_position);
+ 
+                 if previous.was_maximized {
+-                    let geometry = self.floating_layer.element_geometry(&window).unwrap();
++                    // The window never left the maximized state, so `previous` holds its
++                    // windowed geometry; `element_geometry` is already the maximized one.
++                    let geometry = Rectangle::new(previous_position, previous.geometry.size);
+                     let mut state = window.maximized_state.lock().unwrap();
+                     *state = Some(MaximizedState {
+                         original_geometry: geometry,
+@@ -1278,6 +1346,9 @@ impl Workspace {
              previous_geometry,
              start_at: Some(Instant::now()),
              ended_at: None,
@@ -955,7 +1025,7 @@ index fd63dcb..e32918c 100644
          });
      }
  
-@@ -1337,6 +1394,8 @@ impl Workspace {
+@@ -1337,6 +1408,8 @@ impl Workspace {
              focus_stack.retain(|t| t != &surface.surface);
          }
  
@@ -964,7 +1034,7 @@ index fd63dcb..e32918c 100644
          surface.ended_at = Some(
              Instant::now()
                  - (FULLSCREEN_ANIMATION_DURATION
-@@ -1655,6 +1714,70 @@ impl Workspace {
+@@ -1655,6 +1728,70 @@ impl Workspace {
                      .as_ref()
                      .unwrap_or(&fullscreen_geo);
  
@@ -1035,7 +1105,7 @@ index fd63dcb..e32918c 100644
                  let (target_geo, alpha) = match (fullscreen.start_at, fullscreen.ended_at) {
                      (Some(started), _) => {
                          let duration = Instant::now().duration_since(started).as_secs_f64()
-@@ -1744,7 +1867,7 @@ impl Workspace {
+@@ -1744,7 +1881,7 @@ impl Workspace {
          let any_fullscreen_animating = self
              .fullscreen_surfaces
              .iter()
@@ -1044,7 +1114,7 @@ index fd63dcb..e32918c 100644
          if !matches!(focused, Some(FocusTarget::Fullscreen(_)))
              || any_fullscreen_animating
              || self
-@@ -1935,7 +2058,7 @@ impl Workspace {
+@@ -1935,7 +2072,7 @@ impl Workspace {
          let any_fullscreen_animating = self
              .fullscreen_surfaces
              .iter()

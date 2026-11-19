@@ -25,6 +25,9 @@ use crate::store::{ClipboardStore, StoreError, now_unix_ms};
 
 pub const READ_TIMEOUT: Duration = Duration::from_secs(2);
 
+/// How long the clipboard must stay empty after a clear before keep-alive re-offers.
+const KEEP_ALIVE_DELAY: Duration = Duration::from_millis(600);
+
 pub struct DaemonShared {
     pub store: ClipboardStore,
     pub config: ClipboardConfig,
@@ -228,15 +231,42 @@ fn run_watcher_loop(
                 let Ok(state) = shared.lock() else {
                     continue;
                 };
-                if state.config.keep_alive
-                    && state.guard.allow_keep_alive(Instant::now())
-                    && let Some(latest) = state.store.items().first()
-                    && !latest.masked_secret
-                    && !latest.blob_refs.oversized
-                    && let Err(err) = offer_item(&state.store, latest, false)
-                {
-                    tracing::debug!("keep-alive re-offer skipped: {err}");
+                if !(state.config.keep_alive && state.guard.allow_keep_alive(Instant::now())) {
+                    continue;
                 }
+                let cleared_at_revision = state.revision;
+                drop(state);
+
+                // Many apps clear the selection right before they set the new one. Re-offering
+                // the previous item at once would race the app's copy and win, so a plain
+                // Ctrl+C would paste the old item. Wait, then re-offer only if the clipboard
+                // is still empty and nothing new was recorded.
+                let shared = Arc::clone(&shared);
+                let _ = std::thread::Builder::new()
+                    .name("clipboard-keep-alive".to_string())
+                    .spawn(move || {
+                        std::thread::sleep(KEEP_ALIVE_DELAY);
+                        let still_empty = matches!(
+                            paste::get_mime_types(paste::ClipboardType::Regular, Seat::Unspecified),
+                            Err(paste::Error::ClipboardEmpty)
+                        );
+                        if !still_empty {
+                            return;
+                        }
+                        let Ok(state) = shared.lock() else {
+                            return;
+                        };
+                        if state.revision != cleared_at_revision {
+                            return;
+                        }
+                        if let Some(latest) = state.store.items().first()
+                            && !latest.masked_secret
+                            && !latest.blob_refs.oversized
+                            && let Err(err) = offer_item(&state.store, latest, false)
+                        {
+                            tracing::debug!("keep-alive re-offer skipped: {err}");
+                        }
+                    });
             }
             Ok(None) => {
                 tracing::info!("clipboard watcher stopped");

@@ -68,7 +68,9 @@ for name in "${selected[@]}"; do
 
   # "stock:<id>": open the same file types as the stock app this replaces.
   if [[ "$mime" == stock:* ]]; then
-    mime="$(sed -n 's/^MimeType=//p' "/usr/share/applications/${mime#stock:}.desktop" | head -1)"
+    mime="$(sed -n 's/^MimeType=//p' "/usr/share/applications/${mime#stock:}.desktop" 2>/dev/null | head -1 || true)"
+    # Stock app not installed: fall back to common image types.
+    [[ -n "$mime" ]] || mime="image/png;image/jpeg;image/gif;image/webp;image/svg+xml;image/bmp;image/tiff;"
   fi
 
   install -Dm755 "$CARGO_TARGET_DIR/release/$binary" "$BIN_DIR/mac-$name"
