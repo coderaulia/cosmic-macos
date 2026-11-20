@@ -45,11 +45,14 @@ fn private_runtime_dir() -> Option<PathBuf> {
     }
     use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
     let dir = PathBuf::from(std::env::var_os("HOME")?).join(".cache/mac-suite");
-    std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&dir).ok()?;
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(&dir)
+        .ok()?;
     let meta = std::fs::symlink_metadata(&dir).ok()?;
     (meta.is_dir() && meta.permissions().mode() & 0o077 == 0).then_some(dir)
 }
-
 
 /// Sends a command to a running instance. `false` if none is listening.
 pub fn send(cmd: Command) -> bool {

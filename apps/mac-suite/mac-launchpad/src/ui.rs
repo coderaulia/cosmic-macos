@@ -33,7 +33,10 @@ use cosmic::iced::{
 };
 use cosmic::theme::{Button, Container};
 use cosmic::widget::{button, icon, space::vertical as vertical_space, text, text_input};
-use cosmic::{Element, Renderer, Theme, app::{self, Task}};
+use cosmic::{
+    Element, Renderer, Theme,
+    app::{self, Task},
+};
 
 use crate::apps::{self, AppEntry};
 use crate::drag::{
@@ -153,14 +156,16 @@ fn compute_folder_geometry(layout: GridLayout, viewport: Size) -> FolderGeometry
     let avail_grid_h = (max_panel_h - pad_y * 2.0 - header_h - dots_h).max(140.0);
 
     let spacing = layout.spacing;
-    let max_cell_w = ((avail_grid_w - (FOLDER_COLS as f32 - 1.0) * spacing) / FOLDER_COLS as f32)
-        .max(64.0);
-    let max_cell_h = ((avail_grid_h - (FOLDER_ROWS as f32 - 1.0) * spacing) / FOLDER_ROWS as f32)
-        .max(64.0);
+    let max_cell_w =
+        ((avail_grid_w - (FOLDER_COLS as f32 - 1.0) * spacing) / FOLDER_COLS as f32).max(64.0);
+    let max_cell_h =
+        ((avail_grid_h - (FOLDER_ROWS as f32 - 1.0) * spacing) / FOLDER_ROWS as f32).max(64.0);
 
     let cell_w = layout.cell_w.min(max_cell_w);
     let cell_h = layout.cell_h.min(max_cell_h);
-    let scale = (cell_w / layout.cell_w).min(cell_h / layout.cell_h).min(1.0);
+    let scale = (cell_w / layout.cell_w)
+        .min(cell_h / layout.cell_h)
+        .min(1.0);
     let icon_size = ((f32::from(layout.icon_size) * scale).round() as u16).max(24);
 
     let grid_w = FOLDER_COLS as f32 * cell_w + (FOLDER_COLS as f32 - 1.0) * spacing;
@@ -193,14 +198,13 @@ fn compute_folder_geometry(layout: GridLayout, viewport: Size) -> FolderGeometry
 }
 
 fn compute_layout(viewport_w: f32, viewport_h: f32) -> GridLayout {
-    if !viewport_w.is_finite()
-        || !viewport_h.is_finite()
-        || viewport_w <= 0.0
-        || viewport_h <= 0.0
+    if !viewport_w.is_finite() || !viewport_h.is_finite() || viewport_w <= 0.0 || viewport_h <= 0.0
     {
         return GridLayout::default();
     }
-    let scale = (viewport_w / 1200.0).min(viewport_h / 900.0).clamp(0.55, 1.0);
+    let scale = (viewport_w / 1200.0)
+        .min(viewport_h / 900.0)
+        .clamp(0.55, 1.0);
     let spacing = (8.0 * scale).round().clamp(4.0, 8.0);
     let top_pad = (viewport_h * 0.045).round().clamp(8.0, 40.0) as u16;
     let bottom_pad = (viewport_h * 0.04).round().clamp(8.0, 36.0) as u16;
@@ -217,7 +221,8 @@ fn compute_layout(viewport_w: f32, viewport_h: f32) -> GridLayout {
     let icon_size = (f32::from(ICON_SIZE) * scale)
         .round()
         .clamp(16.0, f32::from(ICON_SIZE))
-        .min((cell_h * (f32::from(ICON_SIZE) / CELL_H)).round().max(16.0)) as u16;
+        .min((cell_h * (f32::from(ICON_SIZE) / CELL_H)).round().max(16.0))
+        as u16;
 
     let columns = (((avail_w + spacing) / (cell_w + spacing)).floor() as usize).clamp(1, COLUMNS);
     let rows = (((avail_h + spacing) / (cell_h + spacing)).floor() as usize).clamp(1, ROWS);
@@ -244,7 +249,10 @@ static FOLDER_TITLE_ID: LazyLock<cosmic::widget::Id> =
 fn wiggle_offset(elapsed_s: f32, index: usize) -> (f32, f32) {
     let phase = index as f32 * 1.7;
     let w = elapsed_s * std::f32::consts::TAU * 3.2;
-    ((w + phase).sin() * 1.6, (w * 1.13 + phase * 0.7).cos() * 1.2)
+    (
+        (w + phase).sin() * 1.6,
+        (w * 1.13 + phase * 0.7).cos() * 1.2,
+    )
 }
 
 /// `true` when a new touchpad gesture begins (the previous one went quiet).
@@ -284,7 +292,8 @@ struct TileSlide {
 impl TileSlide {
     fn current(&self, now: Instant) -> (f32, f32, bool) {
         let elapsed = now.saturating_duration_since(self.started_at);
-        let t = (elapsed.as_secs_f32() / drag::NEIGHBOR_SLIDE_DURATION.as_secs_f32()).clamp(0.0, 1.0);
+        let t =
+            (elapsed.as_secs_f32() / drag::NEIGHBOR_SLIDE_DURATION.as_secs_f32()).clamp(0.0, 1.0);
         let e = ease_out_cubic(t);
         let x = self.from_x + (self.to_x - self.from_x) * e;
         let y = self.from_y + (self.to_y - self.from_y) * e;
@@ -313,6 +322,7 @@ pub enum Message {
     BackgroundPress,
     BackgroundRightClick,
     ResetLayout,
+    OrganizeByCategory,
     SortAZ,
     FolderTitleChanged(String),
     FolderTitleSubmit,
@@ -381,7 +391,8 @@ fn page_count(n: usize, per_page: usize) -> usize {
 }
 
 fn step_page(page: usize, delta: isize, count: usize) -> usize {
-    page.saturating_add_signed(delta).min(count.saturating_sub(1))
+    page.saturating_add_signed(delta)
+        .min(count.saturating_sub(1))
 }
 
 fn page_slice(matches: &[usize], page: usize, per_page: usize) -> &[usize] {
@@ -546,12 +557,14 @@ impl Launchpad {
                     height: f32::MAX,
                 }]
             });
-        task::effect(Action::PlatformSpecific(platform_specific::Action::Wayland(
-            cosmic::iced::runtime::platform_specific::wayland::Action::BlurSurface(
-                self.window_id,
-                blur,
+        task::effect(Action::PlatformSpecific(
+            platform_specific::Action::Wayland(
+                cosmic::iced::runtime::platform_specific::wayland::Action::BlurSurface(
+                    self.window_id,
+                    blur,
+                ),
             ),
-        )))
+        ))
     }
 
     fn show(&mut self) -> Task<Message> {
@@ -674,11 +687,7 @@ impl Launchpad {
 
     fn drag_eval_context(&self) -> DragEvalContext {
         let main_grid = self.layout.main_geometry(self.viewport);
-        let page_item_count = self
-            .saved_layout
-            .pages
-            .get(self.page)
-            .map_or(0, Vec::len);
+        let page_item_count = self.saved_layout.pages.get(self.page).map_or(0, Vec::len);
 
         let (folder_panel_bounds, folder_grid, folder_page_offset, folder_page_item_count) =
             if let Some(open) = &self.open_folder
@@ -775,9 +784,8 @@ impl Launchpad {
         }
 
         self.tile_targets = next_targets;
-        self.tile_slides.retain(|k, s| {
-            self.tile_targets.contains_key(k) && s.current(now).2
-        });
+        self.tile_slides
+            .retain(|k, s| self.tile_targets.contains_key(k) && s.current(now).2);
     }
 
     fn go_to_page(&mut self, target_page: usize, now: Instant) {
@@ -846,7 +854,14 @@ impl Launchpad {
         geom.hit_test_cell(p, count).is_some()
     }
 
-    fn app_cell_visual(&self, app_idx: usize, icon_size: u16, cell_w: f32, cell_h: f32, hovered_highlight: bool) -> Element<'_, Message> {
+    fn app_cell_visual(
+        &self,
+        app_idx: usize,
+        icon_size: u16,
+        cell_w: f32,
+        cell_h: f32,
+        hovered_highlight: bool,
+    ) -> Element<'_, Message> {
         let app = &self.apps[app_idx];
         let label = text::body(app.name.as_str())
             .width(Length::Fill)
@@ -862,9 +877,9 @@ impl Launchpad {
             label.into()
         };
         let content = column![icon::icon(app.icon.clone()).size(icon_size), label,]
-        .spacing(8)
-        .align_x(Alignment::Center)
-        .width(Length::Fill);
+            .spacing(8)
+            .align_x(Alignment::Center)
+            .width(Length::Fill);
 
         container(content)
             .width(Length::Fixed(cell_w))
@@ -1000,7 +1015,10 @@ impl Launchpad {
         } else {
             label.into()
         };
-        let content = column![icon::icon(app.icon.clone()).size(self.layout.icon_size), label,]
+        let content = column![
+            icon::icon(app.icon.clone()).size(self.layout.icon_size),
+            label,
+        ]
         .spacing(8)
         .align_x(Alignment::Center)
         .width(Length::Fill);
@@ -1075,11 +1093,18 @@ impl Launchpad {
                         .into()
                 }
             }
-            LayoutItem::Folder { name, apps } => self.folder_cell_visual(name, apps, targeted, armed),
+            LayoutItem::Folder { name, apps } => {
+                self.folder_cell_visual(name, apps, targeted, armed)
+            }
         }
     }
 
-    fn render_main_page(&self, page_idx: usize, now: Instant, interactive: bool) -> Element<'_, Message> {
+    fn render_main_page(
+        &self,
+        page_idx: usize,
+        now: Instant,
+        interactive: bool,
+    ) -> Element<'_, Message> {
         let geom = self.layout.main_geometry(self.viewport);
         let grid_w = geom.total_width();
         let grid_h = geom.total_height();
@@ -1152,7 +1177,11 @@ impl Launchpad {
             let default_x = rect.x - geom.origin_x;
             let default_y = rect.y - geom.origin_y;
             let (wig_x, wig_y) = if self.edit_mode {
-                wiggle_offset(now.saturating_duration_since(self.edit_started).as_secs_f32(), i)
+                wiggle_offset(
+                    now.saturating_duration_since(self.edit_started)
+                        .as_secs_f32(),
+                    i,
+                )
             } else {
                 (0.0, 0.0)
             };
@@ -1160,7 +1189,11 @@ impl Launchpad {
                 && let Some(slide) = self.tile_slides.get(&item.anim_key())
             {
                 let (x, y, active) = slide.current(now);
-                if active { (x, y) } else { (default_x, default_y) }
+                if active {
+                    (x, y)
+                } else {
+                    (default_x, default_y)
+                }
             } else {
                 (default_x, default_y)
             };
@@ -1316,11 +1349,8 @@ impl Launchpad {
     }
 
     fn folder_overlay<'a>(&'a self, open: &'a OpenFolder) -> Option<Element<'a, Message>> {
-        let LayoutItem::Folder { apps: f_apps, .. } = self
-            .saved_layout
-            .pages
-            .get(open.page)?
-            .get(open.index)?
+        let LayoutItem::Folder { apps: f_apps, .. } =
+            self.saved_layout.pages.get(open.page)?.get(open.index)?
         else {
             return None;
         };
@@ -1363,13 +1393,8 @@ impl Launchpad {
                 continue;
             };
             let rect = fg.grid.slot_rect(slot);
-            let cell = self.app_cell_visual(
-                app_idx,
-                fg.icon_size,
-                fg.grid.cell_w,
-                fg.grid.cell_h,
-                false,
-            );
+            let cell =
+                self.app_cell_visual(app_idx, fg.icon_size, fg.grid.cell_w, fg.grid.cell_h, false);
             let clickable = mouse_area(cell)
                 .on_press(Message::CellPress(DragSource::Folder {
                     folder_page: open.page,
@@ -1518,10 +1543,14 @@ impl Launchpad {
     }
 
     fn context_menu_overlay(&self, pos: Point) -> Element<'_, Message> {
-        let menu_w = 180.0_f32;
-        let menu_h = 84.0_f32;
-        let x = pos.x.clamp(8.0, (self.viewport.width - menu_w - 8.0).max(8.0));
-        let y = pos.y.clamp(8.0, (self.viewport.height - menu_h - 8.0).max(8.0));
+        let menu_w = 200.0_f32;
+        let menu_h = 122.0_f32;
+        let x = pos
+            .x
+            .clamp(8.0, (self.viewport.width - menu_w - 8.0).max(8.0));
+        let y = pos
+            .y
+            .clamp(8.0, (self.viewport.height - menu_h - 8.0).max(8.0));
 
         let item_btn = |label: &'static str, msg: Message| -> Element<'_, Message> {
             button::custom(
@@ -1545,6 +1574,7 @@ impl Launchpad {
             column![
                 item_btn("Reset layout", Message::ResetLayout),
                 item_btn("Sort A–Z", Message::SortAZ),
+                item_btn("Organize by Category", Message::OrganizeByCategory),
             ]
             .spacing(2)
             .width(Length::Fill),
@@ -1604,8 +1634,11 @@ impl Launchpad {
                 app_index,
                 ..
             } => {
-                let LayoutItem::Folder { apps: f_apps, .. } =
-                    self.saved_layout.pages.get(folder_page)?.get(folder_index)?
+                let LayoutItem::Folder { apps: f_apps, .. } = self
+                    .saved_layout
+                    .pages
+                    .get(folder_page)?
+                    .get(folder_index)?
                 else {
                     return None;
                 };
@@ -1662,13 +1695,7 @@ impl Launchpad {
         let x = pointer.x - grab_offset.x;
         let y = pointer.y - grab_offset.y;
 
-        Some(
-            pin(scaled)
-                .x(x)
-                .y(y)
-                .overflow(true)
-                .into(),
-        )
+        Some(pin(scaled).x(x).y(y).overflow(true).into())
     }
 }
 
@@ -1916,11 +1943,7 @@ impl cosmic::Application for Launchpad {
             swipe_locked: false,
         };
         // Preload so the first show is instant; refreshed again on every show.
-        let task = if show {
-            this.show()
-        } else {
-            Self::load_task()
-        };
+        let task = if show { this.show() } else { Self::load_task() };
         (this, task)
     }
 
@@ -1936,7 +1959,8 @@ impl cosmic::Application for Launchpad {
         let now = Instant::now();
         match message {
             Message::Command(Command::Toggle) => {
-                return if self.visible && !matches!(self.window_anim, Some(WindowAnim::Closing { .. }))
+                return if self.visible
+                    && !matches!(self.window_anim, Some(WindowAnim::Closing { .. }))
                 {
                     self.begin_hide()
                 } else {
@@ -2008,8 +2032,14 @@ impl cosmic::Application for Launchpad {
                         (go, true)
                     }
                 };
-                self.drag
-                    .press(source, cursor, grab_offset, is_app, now, self.search_active());
+                self.drag.press(
+                    source,
+                    cursor,
+                    grab_offset,
+                    is_app,
+                    now,
+                    self.search_active(),
+                );
                 self.press_anchor = (!self.edit_mode
                     && !self.search_active()
                     && matches!(source, DragSource::MainGrid { .. }))
@@ -2194,11 +2224,8 @@ impl cosmic::Application for Launchpad {
             Message::ShowHidden => {
                 if self.saved_layout.clear_hidden() {
                     let per_page = self.layout.per_page();
-                    self.saved_layout = layout::merge_layout(
-                        Some(self.saved_layout.clone()),
-                        &self.apps,
-                        per_page,
-                    );
+                    self.saved_layout =
+                        layout::merge_layout(Some(self.saved_layout.clone()), &self.apps, per_page);
                     self.reset_tile_tracking();
                     self.refilter();
                     return self.schedule_save();
@@ -2221,6 +2248,18 @@ impl cosmic::Application for Launchpad {
                 if seen.is_some() {
                     self.saved_layout.seen = seen;
                 }
+                self.page = 0;
+                self.reset_tile_tracking();
+                return self.schedule_save();
+            }
+            Message::OrganizeByCategory => {
+                self.context_menu = None;
+                self.open_folder = None;
+                self.saved_layout = layout::organize_by_category(
+                    &self.saved_layout,
+                    &self.apps,
+                    self.layout.per_page(),
+                );
                 self.page = 0;
                 self.reset_tile_tracking();
                 return self.schedule_save();
@@ -2273,10 +2312,7 @@ impl cosmic::Application for Launchpad {
             Message::CloseFolder => {
                 self.commit_open_folder_title();
                 self.open_folder = None;
-                return Task::batch([
-                    self.schedule_save(),
-                    text_input::focus(INPUT_ID.clone()),
-                ]);
+                return Task::batch([self.schedule_save(), text_input::focus(INPUT_ID.clone())]);
             }
             Message::Page(d) => {
                 let target = step_page(self.page, d, self.pages());
@@ -2294,7 +2330,9 @@ impl cosmic::Application for Launchpad {
                         ScrollDelta::Lines { x, y } | ScrollDelta::Pixels { x, y } => (x, y),
                     };
                     let d = if y.abs() >= x.abs() { y } else { x };
-                    let ready = self.last_wheel.is_none_or(|t| t.elapsed() >= WHEEL_COOLDOWN);
+                    let ready = self
+                        .last_wheel
+                        .is_none_or(|t| t.elapsed() >= WHEEL_COOLDOWN);
                     if ready && d != 0.0 {
                         self.last_wheel = Some(now);
                         return self.update(Message::FolderPage(if d < 0.0 { 1 } else { -1 }));
@@ -2305,10 +2343,13 @@ impl cosmic::Application for Launchpad {
                 match delta {
                     ScrollDelta::Lines { x, y } => {
                         let d = if y.abs() >= x.abs() { y } else { x };
-                        let ready = self.last_wheel.is_none_or(|t| t.elapsed() >= WHEEL_COOLDOWN);
+                        let ready = self
+                            .last_wheel
+                            .is_none_or(|t| t.elapsed() >= WHEEL_COOLDOWN);
                         if ready && d != 0.0 {
                             self.last_wheel = Some(now);
-                            let target = step_page(self.page, if d < 0.0 { 1 } else { -1 }, self.pages());
+                            let target =
+                                step_page(self.page, if d < 0.0 { 1 } else { -1 }, self.pages());
                             self.go_to_page(target, now);
                         }
                     }
@@ -2335,7 +2376,9 @@ impl cosmic::Application for Launchpad {
                         self.swipe_offset += d * factor;
 
                         let threshold = (self.layout.grid_width() * 0.22).clamp(100.0, 220.0);
-                        let ready = self.last_wheel.is_none_or(|t| t.elapsed() >= WHEEL_COOLDOWN);
+                        let ready = self
+                            .last_wheel
+                            .is_none_or(|t| t.elapsed() >= WHEEL_COOLDOWN);
                         if ready && self.swipe_offset <= -threshold && self.page + 1 < total {
                             self.last_wheel = Some(now);
                             self.swipe_locked = true;
@@ -2403,12 +2446,14 @@ impl cosmic::Application for Launchpad {
                         return self.update(Message::Page(-1));
                     }
                     Key::Named(Named::ArrowRight)
-                        if self.open_folder.is_none() && (self.query.is_empty() || mods.control()) =>
+                        if self.open_folder.is_none()
+                            && (self.query.is_empty() || mods.control()) =>
                     {
                         return self.update(Message::Page(1));
                     }
                     Key::Named(Named::ArrowLeft)
-                        if self.open_folder.is_none() && (self.query.is_empty() || mods.control()) =>
+                        if self.open_folder.is_none()
+                            && (self.query.is_empty() || mods.control()) =>
                     {
                         return self.update(Message::Page(-1));
                     }
@@ -2445,9 +2490,9 @@ impl cosmic::Application for Launchpad {
                 }
 
                 if self.swipe_offset != 0.0
-                    && self
-                        .last_scroll_at
-                        .is_some_and(|t| tick_now.saturating_duration_since(t) >= SWIPE_SETTLE_DELAY)
+                    && self.last_scroll_at.is_some_and(|t| {
+                        tick_now.saturating_duration_since(t) >= SWIPE_SETTLE_DELAY
+                    })
                 {
                     let offset = self.swipe_offset;
                     self.swipe_offset = 0.0;
@@ -2761,8 +2806,14 @@ mod tests {
     fn swipe_gesture_gap_debounces() {
         let t0 = Instant::now();
         assert!(swipe_gesture_ended(None, t0));
-        assert!(!swipe_gesture_ended(Some(t0), t0 + Duration::from_millis(16)));
-        assert!(!swipe_gesture_ended(Some(t0), t0 + SWIPE_GESTURE_GAP - Duration::from_millis(1)));
+        assert!(!swipe_gesture_ended(
+            Some(t0),
+            t0 + Duration::from_millis(16)
+        ));
+        assert!(!swipe_gesture_ended(
+            Some(t0),
+            t0 + SWIPE_GESTURE_GAP - Duration::from_millis(1)
+        ));
         assert!(swipe_gesture_ended(Some(t0), t0 + SWIPE_GESTURE_GAP));
     }
 }

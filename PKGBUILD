@@ -2,7 +2,7 @@
 pkgname=cosmic-macos-git
 pkgver=r0.0000000
 pkgrel=1
-pkgdesc="macOS-style desktop experience (dock, menu bar applets, Spotlight, Launchpad, Screenshot, Calendar, Mail) for COSMIC"
+pkgdesc="macOS-style desktop for COSMIC: dock, menu bar, Spotlight, Launchpad, Mission Control, Quick Look, Screenshot, widgets, Calendar, Mail"
 arch=('x86_64')
 url="https://github.com/coderaulia/cosmic-macos"
 license=('GPL-3.0-only')
@@ -27,6 +27,13 @@ makedepends=(
 )
 optdepends=(
   'libnotify: desktop notifications for cosmic-preset'
+  'gstreamer: screen recording in mac-screenshot'
+  'gst-plugins-good: screen recording (mp4mux)'
+  'gst-plugin-pipewire: screen recording (pipewiresrc)'
+  'poppler: PDF previews in mac-quicklook'
+  'ffmpegthumbnailer: video previews in mac-quicklook'
+  'upower: battery widget'
+  'xdg-utils: "Open with" in mac-quicklook'
   'whitesur-icon-theme: macOS-style application and system icons'
 )
 provides=('cosmic-macos')
@@ -60,6 +67,11 @@ package() {
     install -Dm755 "$bin" "$pkgdir/usr/bin/$(basename "$bin")"
   done
 
+  local desktop
+  for desktop in apps/mac-suite/*/data/*.desktop; do
+    install -Dm644 "$desktop" "$pkgdir/usr/share/applications/$(basename "$desktop")"
+  done
+
   install -dm755 "$pkgdir/usr/share/cosmic-macos/presets"
   cp -a presets/macos-glass "$pkgdir/usr/share/cosmic-macos/presets/"
   if [ -d presets/macos-light ]; then
@@ -68,6 +80,9 @@ package() {
 
   install -Dm755 setup.sh "$pkgdir/usr/share/cosmic-macos/setup.sh"
   install -Dm755 install.sh "$pkgdir/usr/share/cosmic-macos/install.sh"
+  # Forks of COSMIC apps (Files, Mission Control, compositor, panel applets)
+  # replace system binaries, so they stay per-user: run these scripts from
+  # /usr/share/cosmic-macos as your user.
   local script
   for script in install-*.sh; do
     install -Dm755 "$script" "$pkgdir/usr/share/cosmic-macos/$script"

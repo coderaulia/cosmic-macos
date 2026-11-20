@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Scripts and presets
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install tools
+        run: pacman -Syu --noconfirm --needed git python rsync bash
+      - uses: actions/checkout@v4
+      - name: Verify repository
+        run: ./tools/verify.sh
+
+  mac-suite:
+    name: mac-suite tests and clippy
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: "0"
+      CARGO_TARGET_DIR: ${{ github.workspace }}/apps/.target
+    steps:
+      - name: Install build dependencies
+        run: >
+          pacman -Syu --noconfirm --needed
+          base-devel git rust clang mold cmake nasm pkgconf patch
+          libxkbcommon wayland dbus fontconfig freetype2 libsecret
+          gstreamer gst-plugins-base-libs
+      - uses: actions/checkout@v4
+      - name: Mark checkout safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Fetch patched libcosmic
+        run: ./setup.sh libcosmic
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/mac-suite -> ../.target
+      - name: Tests
+        working-directory: apps/mac-suite
+        run: cargo test --workspace --locked
+      - name: Clippy
+        working-directory: apps/mac-suite
+        run: cargo clippy --workspace --all-targets --locked --no-deps -- -D warnings

@@ -13,7 +13,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
-ALL=(preset dock panel clock clipboard spotlight files notepad viewer calendar mail theme launchpad screenshot appearance widgets desktop-widgets comp)
+ALL=(preset dock panel clock clipboard spotlight files notepad viewer calendar mail theme launchpad screenshot appearance widgets desktop-widgets quicklook mission-control comp)
 
 describe() {
   case "$1" in
@@ -34,6 +34,8 @@ describe() {
     appearance) echo "automatic light/dark mode and wallpaper (settings: Appearance app)" ;;
     widgets)         echo "weather, Up Next and system cards in the clock popup" ;;
     desktop-widgets) echo "macOS Sonoma-style desktop widgets on the wallpaper" ;;
+    quicklook)       echo "Quick Look: Space in Files previews the selected file" ;;
+    mission-control) echo "Mission Control: all windows and desktops on Super+Up" ;;
     comp)            echo "compositor with the genie minimize animation (needs a re-login)" ;;
   esac
 }
@@ -48,7 +50,8 @@ needs() {
     files) echo "libcosmic files" ;;
     notepad) echo "libcosmic edit" ;;
     viewer) echo "libcosmic viewer" ;;
-    calendar|mail|theme|launchpad|screenshot|appearance|desktop-widgets) echo libcosmic ;;
+    calendar|mail|theme|launchpad|screenshot|appearance|desktop-widgets|quicklook) echo libcosmic ;;
+    mission-control) echo workspaces ;;
     preset) echo "" ;;
   esac
 }
@@ -95,9 +98,10 @@ run() {
     clipboard) ./install-clipboard.sh ;;
     spotlight) ./install-spotlight.sh ;;
     comp)      ./install-genie-comp.sh ;;
+    mission-control) ./install-mission-control.sh ;;
     theme)     ./install-theme.sh ;;
     files|notepad|viewer|calendar|mail) ./install-apps.sh "$component" ;;
-    launchpad|screenshot|appearance|widgets|desktop-widgets) ./install-extras.sh "$component" ;;
+    launchpad|screenshot|appearance|widgets|desktop-widgets|quicklook) ./install-extras.sh "$component" ;;
   esac
 }
 
@@ -120,6 +124,7 @@ case "${1:-}" in
     ./install-genie-comp.sh --uninstall || true
     ./install-apps.sh --uninstall || true
     ./install-extras.sh --uninstall || true
+    ./install-mission-control.sh --uninstall || true
     echo
     echo "Switch the look back with: cosmic-preset revert"
     ;;

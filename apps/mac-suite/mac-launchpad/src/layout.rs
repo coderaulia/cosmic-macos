@@ -284,9 +284,7 @@ pub fn sort_az(layout: &SavedLayout, available: &[AppEntry], per_page: usize) ->
                 LayoutItem::Folder { name, apps } => {
                     let mut sorted_apps = apps.clone();
                     sorted_apps.sort_by(|a, b| {
-                        display_name(a)
-                            .cmp(&display_name(b))
-                            .then_with(|| a.cmp(b))
+                        display_name(a).cmp(&display_name(b)).then_with(|| a.cmp(b))
                     });
                     all_items.push(LayoutItem::Folder {
                         name: name.clone(),
@@ -323,6 +321,127 @@ pub fn sort_az(layout: &SavedLayout, available: &[AppEntry], per_page: usize) ->
     }
 }
 
+/// Folder order used by [`organize_by_category`].
+const CATEGORY_ORDER: [&str; 9] = [
+    "Productivity",
+    "Internet",
+    "Media",
+    "Graphics",
+    "Developer",
+    "Games",
+    "Education",
+    "Utilities",
+    "System",
+];
+
+/// The Launchpad folder an app belongs in, from its freedesktop categories.
+pub fn app_folder(categories: &[String]) -> Option<&'static str> {
+    // Specific categories (e.g. "TerminalEmulator") win over broad main ones
+    // (e.g. "System"), so look at the non-main categories first.
+    const MAIN: [&str; 11] = [
+        "AudioVideo",
+        "Audio",
+        "Video",
+        "Development",
+        "Education",
+        "Game",
+        "Graphics",
+        "Network",
+        "Office",
+        "Settings",
+        "System",
+    ];
+    let mapped = |main: bool| {
+        categories
+            .iter()
+            .map(|c| c.trim())
+            .filter(|c| MAIN.contains(c) == main)
+            .find_map(map_freedesktop_category)
+    };
+    // "Utility" is a main category too, but it is the macOS catch-all, so it
+    // only applies when nothing more specific matched.
+    let main_first = categories
+        .iter()
+        .any(|c| c.trim() != "Utility" && MAIN.contains(&c.trim()));
+    if main_first {
+        mapped(true).or_else(|| mapped(false))
+    } else {
+        mapped(false).or_else(|| mapped(true))
+    }
+}
+
+/// Puts every visible app into a folder named after its category (macOS
+/// "Utilities", "Games", ...). Categories with a single app and apps without a
+/// known category stay loose. Folders come first in a fixed order, then loose
+/// apps A-Z. Hidden apps and the seen list are kept.
+pub fn organize_by_category(
+    layout: &SavedLayout,
+    available: &[AppEntry],
+    per_page: usize,
+) -> SavedLayout {
+    let per_page = per_page.max(1);
+    let lookup = build_app_index(available);
+    let entry = |id: &str| {
+        lookup
+            .get(&apps::normalize_desktop_id(id))
+            .map(|&i| &available[i])
+    };
+    let name = |id: &str| {
+        entry(id)
+            .map(|a| a.name.to_lowercase())
+            .unwrap_or_else(|| id.to_owned())
+    };
+
+    let mut ids: Vec<String> = Vec::new();
+    for page in &layout.pages {
+        for item in page {
+            match item {
+                LayoutItem::App(id) => ids.push(id.clone()),
+                LayoutItem::Folder { apps, .. } => ids.extend(apps.iter().cloned()),
+            }
+        }
+    }
+
+    let mut groups: HashMap<&'static str, Vec<String>> = HashMap::new();
+    let mut loose: Vec<String> = Vec::new();
+    for id in ids {
+        match entry(&id).and_then(|a| app_folder(&a.categories)) {
+            Some(folder) => groups.entry(folder).or_default().push(id),
+            None => loose.push(id),
+        }
+    }
+
+    let mut items: Vec<LayoutItem> = Vec::new();
+    for folder in CATEGORY_ORDER {
+        let Some(mut apps) = groups.remove(folder) else {
+            continue;
+        };
+        if apps.len() == 1 {
+            loose.append(&mut apps);
+            continue;
+        }
+        apps.sort_by_key(|a| name(a));
+        items.push(LayoutItem::Folder {
+            name: folder.to_owned(),
+            apps,
+        });
+    }
+    loose.sort_by_key(|a| name(a));
+    items.extend(loose.into_iter().map(LayoutItem::App));
+
+    let pages = if items.is_empty() {
+        vec![Vec::new()]
+    } else {
+        items.chunks(per_page).map(|c| c.to_vec()).collect()
+    };
+    SavedLayout {
+        version: CURRENT_VERSION,
+        pages,
+        hidden: layout.hidden.clone(),
+        seen: layout.seen.clone(),
+    }
+}
+
 /// Maps a freedesktop category string to a Launchpad folder display name.
 pub fn map_freedesktop_category(cat: &str) -> Option<&'static str> {
     match cat {
@@ -336,9 +455,7 @@ pub fn map_freedesktop_category(cat: &str) -> Option<&'static str> {
         "Graphics" | "2DGraphics" | "3DGraphics" | "RasterGraphics" | "VectorGraphics"
         | "Photography" | "Scanning" | "OCR" | "Publishing" | "Viewer" => Some("Graphics"),
         "AudioVideo" | "Audio" | "Video" | "Midi" | "Mixer" | "Sequencer" | "Tuner" | "TV"
-        | "AudioVideoEditing" | "Player" | "Recorder" | "DiscBurning" | "Music" => {
-            Some("Media")
-        }
+        | "AudioVideoEditing" | "Player" | "Recorder" | "DiscBurning" | "Music" => Some("Media"),
         "Network" | "WebBrowser" | "Email" | "Chat" | "InstantMessaging" | "FileTransfer"
         | "IRCClient" | "Feed" | "News" | "P2P" | "RemoteAccess" | "Telephony"
         | "VideoConference" => Some("Internet"),
@@ -348,9 +465,10 @@ pub fn map_freedesktop_category(cat: &str) -> Option<&'static str> {
         "Education" | "Art" | "Construction" | "Languages" | "Literature" | "Science"
         | "Astronomy" | "Biology" | "Chemistry" | "ComputerScience" | "DataVisualization"
         | "Economy" | "Electricity" | "Geography" | "Geology" | "Geoscience" | "History"
-        | "Humanities" | "ImageProcessing" | "Math" | "MedicalSoftware"
-        | "NumericalAnalysis" | "ParallelComputing" | "Physics" | "Robotics"
-        | "Spirituality" | "Sports" => Some("Education"),
+        | "Humanities" | "ImageProcessing" | "Math" | "MedicalSoftware" | "NumericalAnalysis"
+        | "ParallelComputing" | "Physics" | "Robotics" | "Spirituality" | "Sports" => {
+            Some("Education")
+        }
         "System" | "Settings" | "DesktopSettings" | "HardwareSettings" | "PackageManager"
         | "Emulator" | "FileManager" | "FileTools" | "Filesystem" | "Monitor" | "Security"
         | "TerminalEmulator" => Some("System"),
@@ -589,7 +707,10 @@ impl SavedLayout {
         }
 
         self.prune_empty_pages();
-        Some((adjusted_page.min(self.pages.len().saturating_sub(1)), adjusted_idx))
+        Some((
+            adjusted_page.min(self.pages.len().saturating_sub(1)),
+            adjusted_idx,
+        ))
     }
 
     /// Reorders an app within an open folder.
@@ -600,8 +721,10 @@ impl SavedLayout {
         from_app_idx: usize,
         to_app_idx: usize,
     ) -> bool {
-        let Some(LayoutItem::Folder { apps, .. }) =
-            self.pages.get_mut(folder_page).and_then(|p| p.get_mut(folder_idx))
+        let Some(LayoutItem::Folder { apps, .. }) = self
+            .pages
+            .get_mut(folder_page)
+            .and_then(|p| p.get_mut(folder_idx))
         else {
             return false;
         };
@@ -671,8 +794,10 @@ impl SavedLayout {
         name: String,
         finalize: bool,
     ) -> bool {
-        let Some(LayoutItem::Folder { name: target, .. }) =
-            self.pages.get_mut(folder_page).and_then(|p| p.get_mut(folder_idx))
+        let Some(LayoutItem::Folder { name: target, .. }) = self
+            .pages
+            .get_mut(folder_page)
+            .and_then(|p| p.get_mut(folder_idx))
         else {
             return false;
         };
@@ -909,7 +1034,10 @@ mod tests {
 
         assert!(merged.clear_hidden());
         let restored = merge_layout(Some(merged), &apps, 10);
-        assert_eq!(restored.pages.iter().map(Vec::len).sum::<usize>(), apps.len());
+        assert_eq!(
+            restored.pages.iter().map(Vec::len).sum::<usize>(),
+            apps.len()
+        );
         assert!(restored.hidden.is_empty());
     }
 
@@ -925,5 +1053,65 @@ mod tests {
             }
         }
         assert_eq!(layout.pages.len(), pages - 1);
+    }
+
+    #[test]
+    fn organize_groups_apps_into_category_folders() {
+        let avail = vec![
+            AppEntry::for_test("firefox", "Firefox", &["Network", "WebBrowser"]),
+            AppEntry::for_test("thunderbird", "Thunderbird", &["Network", "Email"]),
+            AppEntry::for_test("term", "Terminal", &["System", "TerminalEmulator"]),
+            AppEntry::for_test("calc", "Calculator", &["Utility", "Calculator"]),
+            AppEntry::for_test("notes", "Notes", &["Utility", "TextEditor"]),
+            AppEntry::for_test("steam", "Steam", &["Game"]),
+            AppEntry::for_test("odd", "Odd App", &["X-Custom"]),
+        ];
+        let mut layout = default_layout(&avail, 30);
+        layout.hidden = vec!["hidden".to_owned()];
+        let out = organize_by_category(&layout, &avail, 30);
+        assert_eq!(out.hidden, layout.hidden);
+        let items = &out.pages[0];
+        assert_eq!(
+            items[0],
+            LayoutItem::Folder {
+                name: "Internet".into(),
+                apps: vec!["firefox.desktop".into(), "thunderbird.desktop".into()],
+            }
+        );
+        assert_eq!(
+            items[1],
+            LayoutItem::Folder {
+                name: "Utilities".into(),
+                apps: vec!["calc.desktop".into(), "notes.desktop".into()],
+            }
+        );
+        // Single-app categories and unknown ones stay loose, A-Z.
+        let loose: Vec<_> = items[2..].to_vec();
+        assert_eq!(
+            loose,
+            vec![
+                LayoutItem::App("odd.desktop".into()),
+                LayoutItem::App("steam.desktop".into()),
+                LayoutItem::App("term.desktop".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn app_folder_prefers_specific_over_utility() {
+        let cats = |c: &[&str]| c.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            app_folder(&cats(&["Utility", "Calculator"])),
+            Some("Utilities")
+        );
+        assert_eq!(
+            app_folder(&cats(&["GTK", "Development", "IDE"])),
+            Some("Developer")
+        );
+        assert_eq!(
+            app_folder(&cats(&["Utility", "Archiving", "Office"])),
+            Some("Productivity")
+        );
+        assert_eq!(app_folder(&cats(&["GTK"])), None);
     }
 }

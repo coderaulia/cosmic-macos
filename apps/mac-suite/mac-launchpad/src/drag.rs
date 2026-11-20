@@ -233,7 +233,10 @@ pub enum HoverZone {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DragSource {
-    MainGrid { page: usize, index: usize },
+    MainGrid {
+        page: usize,
+        index: usize,
+    },
     Folder {
         folder_page: usize,
         folder_index: usize,
@@ -610,7 +613,8 @@ impl DragController {
                 DragSource::MainGrid { .. } => None,
             };
             let local_from = local_from.filter(|&i| i < ctx.folder_page_item_count);
-            *drop_index = fgrid.drop_index(*pointer, ctx.folder_page_item_count, local_from.is_some());
+            *drop_index =
+                fgrid.drop_index(*pointer, ctx.folder_page_item_count, local_from.is_some());
             *folder_hover = None;
             *edge_hover = None;
             return;
@@ -621,12 +625,9 @@ impl DragController {
             _ => None,
         };
 
-        let zone = ctx.main_grid.hover_zone(
-            *pointer,
-            ctx.page_item_count,
-            dragged_idx_on_page,
-            *is_app,
-        );
+        let zone =
+            ctx.main_grid
+                .hover_zone(*pointer, ctx.page_item_count, dragged_idx_on_page, *is_app);
 
         match zone {
             HoverZone::FolderMerge { target_index } => {
@@ -651,12 +652,7 @@ impl DragController {
             }
         }
 
-        let new_edge = edge_flip_zone(
-            pointer.x,
-            ctx.viewport_w,
-            ctx.current_page,
-            ctx.total_pages,
-        );
+        let new_edge = edge_flip_zone(pointer.x, ctx.viewport_w, ctx.current_page, ctx.total_pages);
         match (new_edge, *edge_hover) {
             (Some(side), Some(prev)) if prev.side == side => {}
             (Some(side), _) => {
@@ -836,7 +832,11 @@ mod tests {
         assert!(ctrl.is_dragging());
 
         // Before 500ms: not armed yet -> release would reorder
-        assert!(!ctrl.tick(t0 + Duration::from_millis(450), &ctx).armed_changed);
+        assert!(
+            !ctrl
+                .tick(t0 + Duration::from_millis(450), &ctx)
+                .armed_changed
+        );
         // At 500ms: armed!
         assert!(ctrl.tick(t0 + FOLDER_MERGE_HOLD, &ctx).armed_changed);
         assert_eq!(
@@ -863,10 +863,7 @@ mod tests {
             ctrl.tick(t0 + Duration::from_millis(650), &ctx).flip_page,
             None
         );
-        assert_eq!(
-            ctrl.tick(t0 + EDGE_FLIP_HOLD, &ctx).flip_page,
-            Some(1)
-        );
+        assert_eq!(ctrl.tick(t0 + EDGE_FLIP_HOLD, &ctx).flip_page, Some(1));
     }
 
     #[test]

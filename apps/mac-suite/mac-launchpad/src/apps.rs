@@ -84,7 +84,9 @@ fn exec_program(exec: &str) -> &str {
 
 /// Returns `true` for internal `COSMIC Preset: …` helper desktop entries.
 pub fn is_helper_entry(name: &str) -> bool {
-    name.trim().to_ascii_lowercase().starts_with("cosmic preset:")
+    name.trim()
+        .to_ascii_lowercase()
+        .starts_with("cosmic preset:")
 }
 
 /// Normalized desktop-file id (lowercase, `.desktop` suffix stripped).
@@ -316,7 +318,12 @@ pub fn into_entries(data: Vec<DesktopEntryData>) -> Vec<AppEntry> {
 mod tests {
     use super::*;
 
-    fn make_entry(id: &str, name: &str, exec: Option<&str>, path: Option<&str>) -> DesktopEntryData {
+    fn make_entry(
+        id: &str,
+        name: &str,
+        exec: Option<&str>,
+        path: Option<&str>,
+    ) -> DesktopEntryData {
         DesktopEntryData {
             id: id.to_owned(),
             name: name.to_owned(),

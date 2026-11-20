@@ -169,7 +169,7 @@ index 4ba8e05..e9e5283 100644
          iced::Subscription::batch(subscriptions)
      }
 diff --git a/src/view/mod.rs b/src/view/mod.rs
-index ae2b727..57c1d3b 100644
+index ae2b727..60bff83 100644
 --- a/src/view/mod.rs
 +++ b/src/view/mod.rs
 @@ -1,4 +1,3 @@
@@ -329,16 +329,48 @@ index ae2b727..57c1d3b 100644
              .ellipsize(Ellipsize::Middle(EllipsizeHeightLimit::Lines(1)))
              .apply(widget::container)
              .center_x(Length::Fill),
-@@ -486,7 +502,7 @@ fn workspaces_sidebar<'a>(
+@@ -433,6 +449,13 @@ fn workspaces_sidebar<'a>(
+     window_id: window::Id,
+     rectangle_track: &rectangle_tracker::RectangleTracker<RectId>,
+ ) -> cosmic::Element<'a, Msg> {
++    let workspaces: Vec<&'a Workspace> = workspaces.collect();
++    // "+" = go to the trailing empty desktop that COSMIC's dynamic workspaces
++    // always keep; COSMIC then appends a fresh empty one after it.
++    let new_desktop = workspaces
++        .last()
++        .filter(|w| !w.is_active() && !workspaces_with_toplevels.contains(w.handle()))
++        .map(|w| w.handle().clone());
+     let mut sidebar_entries = Vec::new();
+     for workspace in workspaces {
+         // XXX Need dnd source with same id for drag to work; but give it 0x0 size
+@@ -486,10 +509,23 @@ fn workspaces_sidebar<'a>(
      }
      let (axis, width, height) = match layout {
          WorkspaceLayout::Vertical => (Axis::Vertical, Length::Shrink, Length::Fill),
 -        WorkspaceLayout::Horizontal => (Axis::Horizontal, Length::Fill, Length::Shrink),
 +        WorkspaceLayout::Horizontal => (Axis::Horizontal, Length::Shrink, Length::Shrink),
++    };
++    let bar = crate::widgets::workspace_bar(sidebar_entries, axis);
++    let sidebar_entries_container: cosmic::Element<'a, Msg> = if layout
++        == WorkspaceLayout::Horizontal
++        && drag_workspace.is_none()
++    {
++        widget::container(
++            row![bar, new_desktop_button(new_desktop)]
++                .spacing(8)
++                .align_y(Alignment::Center),
++        )
++        .padding(8.0)
++        .into()
++    } else {
++        widget::container(bar).padding(8.0).into()
      };
-     let sidebar_entries_container =
-         widget::container(crate::widgets::workspace_bar(sidebar_entries, axis)).padding(8.0);
-@@ -525,12 +541,20 @@ fn workspaces_sidebar<'a>(
+-    let sidebar_entries_container =
+-        widget::container(crate::widgets::workspace_bar(sidebar_entries, axis)).padding(8.0);
+ 
+     widget::container(
+         rectangle_track.container(
+@@ -525,12 +561,35 @@ fn workspaces_sidebar<'a>(
          ),
      )
      .padding(8)
@@ -347,6 +379,21 @@ index ae2b727..57c1d3b 100644
      .into()
  }
  
++/// Mission Control "+" button at the end of the workspace strip.
++fn new_desktop_button(
++    target: Option<backend::ExtWorkspaceHandleV1>,
++) -> cosmic::Element<'static, Msg> {
++    let button = widget::button::icon(widget::icon::from_name("list-add-symbolic"))
++        .extra_large()
++        .on_press_maybe(target.map(Msg::ActivateWorkspace));
++    widget::tooltip(
++        button,
++        widget::text::body("New desktop"),
++        widget::tooltip::Position::Bottom,
++    )
++    .into()
++}
++
 +/// Height reserved under each window for the app label (kept even when the
 +/// label is hidden, so the window does not jump on hover).
 +const LABEL_H: f32 = 36.0;
@@ -359,7 +406,7 @@ index ae2b727..57c1d3b 100644
      window_id: window::Id,
      rectangle_track: &rectangle_tracker::RectangleTracker<RectId>,
  ) -> cosmic::Element<'static, Msg> {
-@@ -538,8 +562,13 @@ fn toplevel_preview(
+@@ -538,8 +597,13 @@ fn toplevel_preview(
          space_xxs, space_s, ..
      } = cosmic::theme::active().cosmic().spacing;
  
@@ -375,7 +422,7 @@ index ae2b727..57c1d3b 100644
      let label = if let Some(icon) = &toplevel.icon {
          row![
              widget::icon(widget::icon::from_path(icon.clone())).size(24),
-@@ -551,35 +580,44 @@ fn toplevel_preview(
+@@ -551,35 +615,44 @@ fn toplevel_preview(
      }
      .align_y(Alignment::Center);
  
@@ -449,7 +496,7 @@ index ae2b727..57c1d3b 100644
      let content = capture_image(toplevel.img.as_ref(), alpha);
  
      let preview = widget::button::custom(if toplevel.pending_move.is_some() || is_being_dragged {
-@@ -595,20 +633,19 @@ fn toplevel_preview(
+@@ -595,20 +668,19 @@ fn toplevel_preview(
              content,
          ))
      })
@@ -477,7 +524,7 @@ index ae2b727..57c1d3b 100644
      .on_middle_press(Msg::CloseToplevel(toplevel.handle.clone()))
      .into()
  }
-@@ -616,13 +653,22 @@ fn toplevel_preview(
+@@ -616,13 +688,22 @@ fn toplevel_preview(
  fn toplevel_previews_entry<'a>(
      toplevel: &'a Toplevel,
      is_being_dragged: bool,
@@ -501,7 +548,7 @@ index ae2b727..57c1d3b 100644
          !is_being_dragged,
      );
      let toplevel2 = toplevel.clone();
-@@ -632,38 +678,37 @@ fn toplevel_previews_entry<'a>(
+@@ -632,38 +713,37 @@ fn toplevel_previews_entry<'a>(
          DragSurface::Toplevel(toplevel.handle.clone()),
          None,
          preview.into(),
