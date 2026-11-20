@@ -44,6 +44,7 @@ patch_of cosmic-files apps/cosmic-files
 patch_of cosmic-edit apps/cosmic-edit
 patch_of cosmic-viewer apps/cosmic-viewer
 patch_of cosmic-launcher apps/cosmic-launcher
+patch_of cosmic-workspaces apps/cosmic-workspaces
 patch_of cosmic-comp cosmic-comp
 patch_of cosmic-applets upstream-applets "${APPLET_OVERLAYS[@]}"
 

@@ -58,6 +58,13 @@ const CLOSE_DURATION: Duration = Duration::from_millis(160);
 const PAGE_SLIDE_DURATION: Duration = Duration::from_millis(250);
 const SWIPE_SETTLE_DELAY: Duration = Duration::from_millis(110);
 const SAVE_DEBOUNCE: Duration = Duration::from_secs(1);
+/// Hold an icon this long (without moving) to enter edit mode.
+const LONG_PRESS: Duration = Duration::from_millis(600);
+const LONG_PRESS_SLOP: f32 = 8.0;
+/// A touchpad swipe has ended once no scroll event arrived for this long.
+const SWIPE_GESTURE_GAP: Duration = Duration::from_millis(140);
+const BADGE_SIZE: f32 = 22.0;
+const NEW_DOT: f32 = 8.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GridLayout {
@@ -233,6 +240,18 @@ static INPUT_ID: LazyLock<cosmic::widget::Id> =
 static FOLDER_TITLE_ID: LazyLock<cosmic::widget::Id> =
     LazyLock::new(|| cosmic::widget::Id::new("launchpad-folder-title"));
 
+/// Small translate-only jitter for edit mode (cheap: no rotation, no scaling).
+fn wiggle_offset(elapsed_s: f32, index: usize) -> (f32, f32) {
+    let phase = index as f32 * 1.7;
+    let w = elapsed_s * std::f32::consts::TAU * 3.2;
+    ((w + phase).sin() * 1.6, (w * 1.13 + phase * 0.7).cos() * 1.2)
+}
+
+/// `true` when a new touchpad gesture begins (the previous one went quiet).
+fn swipe_gesture_ended(last_scroll: Option<Instant>, now: Instant) -> bool {
+    last_scroll.is_none_or(|t| now.saturating_duration_since(t) >= SWIPE_GESTURE_GAP)
+}
+
 fn ease_out_cubic(t: f32) -> f32 {
     let t = t.clamp(0.0, 1.0);
     1.0 - (1.0 - t).powi(3)
@@ -308,6 +327,9 @@ pub enum Message {
     Unfocused(SurfaceId),
     Tick(Instant),
     FlushSave(u64),
+    ExitEdit,
+    HideApp(String),
+    ShowHidden,
     Noop,
 }
 
@@ -337,6 +359,10 @@ pub struct Launchpad {
     context_menu: Option<Point>,
     save_dirty: bool,
     save_gen: u64,
+    edit_mode: bool,
+    edit_started: Instant,
+    press_anchor: Option<(Instant, Point)>,
+    swipe_locked: bool,
 }
 
 pub fn run(show: bool) -> cosmic::iced::Result {
@@ -386,6 +412,7 @@ impl Launchpad {
         self.window_anim.is_some()
             || self.page_anim.is_some()
             || self.swipe_offset != 0.0
+            || self.edit_mode
             || !self.tile_slides.is_empty()
             || self.drag.needs_ticks()
     }
@@ -429,14 +456,39 @@ impl Launchpad {
 
     fn refilter(&mut self) {
         self.matches = apps::filter(&self.apps, &self.query);
+        let hidden = &self.saved_layout.hidden;
+        if !hidden.is_empty() {
+            let apps = &self.apps;
+            self.matches
+                .retain(|&i| !hidden.contains(&apps::normalize_desktop_id(&apps[i].id)));
+        }
         self.page = self.page.min(self.pages().saturating_sub(1));
     }
 
-    fn rebuild_layout_from_disk(&mut self) {
+    /// Returns `true` when the merged layout differs in persisted metadata
+    /// (first run / pre-`seen` file) and should be saved.
+    fn rebuild_layout_from_disk(&mut self) -> bool {
         let saved = layout::layout_path().and_then(|p| layout::load_from_path(&p));
+        let needs_save = saved.as_ref().is_none_or(|s| s.seen.is_none());
         self.saved_layout = layout::merge_layout(saved, &self.apps, self.layout.per_page());
         self.page = self.page.min(self.pages().saturating_sub(1));
         self.reset_tile_tracking();
+        needs_save
+    }
+
+    fn enter_edit(&mut self, now: Instant) {
+        if self.edit_mode || self.search_active() {
+            return;
+        }
+        self.edit_mode = true;
+        self.edit_started = now;
+        self.context_menu = None;
+        self.press_anchor = None;
+    }
+
+    fn exit_edit(&mut self) {
+        self.edit_mode = false;
+        self.press_anchor = None;
     }
 
     fn reset_tile_tracking(&mut self) {
@@ -519,10 +571,12 @@ impl Launchpad {
         self.query.clear();
         self.page = 0;
         self.swipe_offset = 0.0;
+        self.swipe_locked = false;
         self.page_anim = None;
         self.drag.cancel();
         self.open_folder = None;
         self.context_menu = None;
+        self.exit_edit();
         self.reset_tile_tracking();
         self.window_anim = Some(WindowAnim::Opening {
             started_at: now,
@@ -557,6 +611,7 @@ impl Launchpad {
         self.drag.cancel();
         self.context_menu = None;
         self.open_folder = None;
+        self.exit_edit();
 
         let now = Instant::now();
         if matches!(self.window_anim, Some(WindowAnim::Closing { .. })) {
@@ -582,6 +637,7 @@ impl Launchpad {
         self.drag.cancel();
         self.open_folder = None;
         self.context_menu = None;
+        self.exit_edit();
         destroy_layer_surface(self.window_id)
     }
 
@@ -590,6 +646,10 @@ impl Launchpad {
             return Task::none();
         };
         let (exec, id, terminal) = (app.exec.clone(), app.id.clone(), app.terminal);
+        if self.saved_layout.mark_seen(&id) {
+            // Flushed by `finish_hide` below.
+            self.save_dirty = true;
+        }
         Task::batch([
             self.finish_hide(),
             Task::perform(
@@ -788,13 +848,20 @@ impl Launchpad {
 
     fn app_cell_visual(&self, app_idx: usize, icon_size: u16, cell_w: f32, cell_h: f32, hovered_highlight: bool) -> Element<'_, Message> {
         let app = &self.apps[app_idx];
-        let content = column![
-            icon::icon(app.icon.clone()).size(icon_size),
-            text::body(app.name.as_str())
+        let label = text::body(app.name.as_str())
+            .width(Length::Fill)
+            .align_x(Horizontal::Center)
+            .ellipsize(Ellipsize::End(EllipsizeHeightLimit::Lines(1)));
+        let label: Element<'_, Message> = if self.saved_layout.is_new(&app.id) {
+            row![new_dot(), label]
+                .spacing(5)
+                .align_y(Alignment::Center)
                 .width(Length::Fill)
-                .align_x(Horizontal::Center)
-                .ellipsize(Ellipsize::End(EllipsizeHeightLimit::Lines(1))),
-        ]
+                .into()
+        } else {
+            label.into()
+        };
+        let content = column![icon::icon(app.icon.clone()).size(icon_size), label,]
         .spacing(8)
         .align_x(Alignment::Center)
         .width(Length::Fill);
@@ -920,13 +987,20 @@ impl Launchpad {
 
     fn interactive_search_cell(&self, app_idx: usize) -> Element<'_, Message> {
         let app = &self.apps[app_idx];
-        let content = column![
-            icon::icon(app.icon.clone()).size(self.layout.icon_size),
-            text::body(app.name.as_str())
+        let label = text::body(app.name.as_str())
+            .width(Length::Fill)
+            .align_x(Horizontal::Center)
+            .ellipsize(Ellipsize::End(EllipsizeHeightLimit::Lines(1)));
+        let label: Element<'_, Message> = if self.saved_layout.is_new(&app.id) {
+            row![new_dot(), label]
+                .spacing(5)
+                .align_y(Alignment::Center)
                 .width(Length::Fill)
-                .align_x(Horizontal::Center)
-                .ellipsize(Ellipsize::End(EllipsizeHeightLimit::Lines(1))),
-        ]
+                .into()
+        } else {
+            label.into()
+        };
+        let content = column![icon::icon(app.icon.clone()).size(self.layout.icon_size), label,]
         .spacing(8)
         .align_x(Alignment::Center)
         .width(Length::Fill);
@@ -1077,6 +1151,11 @@ impl Launchpad {
             let rect = geom.slot_rect(slot);
             let default_x = rect.x - geom.origin_x;
             let default_y = rect.y - geom.origin_y;
+            let (wig_x, wig_y) = if self.edit_mode {
+                wiggle_offset(now.saturating_duration_since(self.edit_started).as_secs_f32(), i)
+            } else {
+                (0.0, 0.0)
+            };
             let (pos_x, pos_y) = if page_idx == self.page
                 && let Some(slide) = self.tile_slides.get(&item.anim_key())
             {
@@ -1091,7 +1170,7 @@ impl Launchpad {
                 _ => (false, false),
             };
             let visual = self.render_layout_item_cell(item, targeted, armed);
-            let widget: Element<'_, Message> = if interactive {
+            let base: Element<'_, Message> = if interactive {
                 mouse_area(visual)
                     .on_press(Message::CellPress(DragSource::MainGrid {
                         page: page_idx,
@@ -1102,8 +1181,27 @@ impl Launchpad {
             } else {
                 visual
             };
+            let widget: Element<'_, Message> = match item {
+                LayoutItem::App(id) if self.edit_mode => {
+                    let badge_x = ((self.layout.cell_w - f32::from(self.layout.icon_size)) * 0.5
+                        - BADGE_SIZE * 0.4)
+                        .max(0.0);
+                    let badge_y = (10.0 - BADGE_SIZE * 0.4).max(0.0);
+                    stack([
+                        base,
+                        pin(hide_badge(id, interactive))
+                            .x(badge_x)
+                            .y(badge_y)
+                            .into(),
+                    ])
+                    .width(Length::Fixed(self.layout.cell_w))
+                    .height(Length::Fixed(self.layout.cell_h))
+                    .into()
+                }
+                _ => base,
+            };
 
-            children.push(pin(widget).x(pos_x).y(pos_y).into());
+            children.push(pin(widget).x(pos_x + wig_x).y(pos_y + wig_y).into());
         }
 
         stack(children)
@@ -1185,26 +1283,33 @@ impl Launchpad {
         }
         row((0..count).map(|i| {
             let active = i == self.page;
-            mouse_area(
-                container(vertical_space().height(Length::Fixed(0.0)))
-                    .width(Length::Fixed(10.0))
-                    .height(Length::Fixed(10.0))
-                    .class(Container::custom(move |t| {
-                        let c = Color::from(t.cosmic().on_bg_color());
-                        container::Style {
-                            background: Some(c.scale_alpha(if active { 0.9 } else { 0.3 }).into()),
-                            border: Border {
-                                radius: 5.0.into(),
-                                ..Default::default()
-                            },
+            let dot = container(vertical_space().height(Length::Fixed(0.0)))
+                .width(Length::Fixed(10.0))
+                .height(Length::Fixed(10.0))
+                .class(Container::custom(move |t| {
+                    let c = Color::from(t.cosmic().on_bg_color());
+                    container::Style {
+                        background: Some(c.scale_alpha(if active { 0.9 } else { 0.3 }).into()),
+                        border: Border {
+                            radius: 5.0.into(),
                             ..Default::default()
-                        }
-                    })),
+                        },
+                        ..Default::default()
+                    }
+                }));
+            // Larger invisible hit area around the visible dot.
+            mouse_area(
+                container(dot)
+                    .width(Length::Fixed(24.0))
+                    .height(Length::Fixed(DOTS_H))
+                    .center_x(Length::Fixed(24.0))
+                    .center_y(Length::Fixed(DOTS_H)),
             )
             .on_press(Message::GoPage(i))
+            .interaction(mouse::Interaction::Pointer)
             .into()
         }))
-        .spacing(12)
+        .spacing(0)
         .height(Length::Fixed(DOTS_H))
         .align_y(Alignment::Center)
         .into()
@@ -1390,6 +1495,28 @@ impl Launchpad {
         )
     }
 
+    fn edit_controls(&self) -> Element<'_, Message> {
+        let hidden = self
+            .saved_layout
+            .hidden
+            .iter()
+            .filter(|h| self.app_lookup.contains_key(*h))
+            .count();
+        let mut controls = row![].spacing(8).align_y(Alignment::Center);
+        if hidden > 0 {
+            controls = controls.push(
+                button::standard(format!("Show Hidden Apps ({hidden})"))
+                    .on_press(Message::ShowHidden),
+            );
+        }
+        controls = controls.push(button::suggested("Done").on_press(Message::ExitEdit));
+        container(controls)
+            .width(Length::Fill)
+            .align_x(Horizontal::Right)
+            .padding([self.layout.top_pad, 24, 0, 24])
+            .into()
+    }
+
     fn context_menu_overlay(&self, pos: Point) -> Element<'_, Message> {
         let menu_w = 180.0_f32;
         let menu_h = 84.0_f32;
@@ -1543,6 +1670,54 @@ impl Launchpad {
                 .into(),
         )
     }
+}
+
+fn new_dot<'a>() -> Element<'a, Message> {
+    container(vertical_space().height(Length::Fixed(0.0)))
+        .width(Length::Fixed(NEW_DOT))
+        .height(Length::Fixed(NEW_DOT))
+        .class(Container::custom(|_| container::Style {
+            background: Some(Color::from_rgb(0.04, 0.52, 1.0).into()),
+            border: Border {
+                radius: (NEW_DOT * 0.5).into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        }))
+        .into()
+}
+
+fn badge_button_style(_: &Theme) -> button::Style {
+    button::Style {
+        background: Some(Color::from_rgba(0.12, 0.12, 0.14, 0.88).into()),
+        text_color: Some(Color::WHITE),
+        icon_color: Some(Color::WHITE),
+        border_radius: (BADGE_SIZE * 0.5).into(),
+        border_width: 1.0,
+        border_color: Color::from_rgba(1.0, 1.0, 1.0, 0.4),
+        ..Default::default()
+    }
+}
+
+/// The "×" badge that hides an app from Launchpad while in edit mode.
+fn hide_badge<'a>(id: &str, interactive: bool) -> Element<'a, Message> {
+    let glyph = text::body("×")
+        .width(Length::Fill)
+        .align_x(Horizontal::Center);
+    let mut b = button::custom(glyph)
+        .width(Length::Fixed(BADGE_SIZE))
+        .height(Length::Fixed(BADGE_SIZE))
+        .padding(0)
+        .class(Button::Custom {
+            active: Box::new(|_, t| badge_button_style(t)),
+            hovered: Box::new(|_, t| badge_button_style(t)),
+            pressed: Box::new(|_, t| badge_button_style(t)),
+            disabled: Box::new(badge_button_style),
+        });
+    if interactive {
+        b = b.on_press(Message::HideApp(id.to_owned()));
+    }
+    b.into()
 }
 
 fn cell_style(theme: &Theme, hovered: bool) -> button::Style {
@@ -1735,6 +1910,10 @@ impl cosmic::Application for Launchpad {
             context_menu: None,
             save_dirty: false,
             save_gen: 0,
+            edit_mode: false,
+            edit_started: Instant::now(),
+            press_anchor: None,
+            swipe_locked: false,
         };
         // Preload so the first show is instant; refreshed again on every show.
         let task = if show {
@@ -1769,14 +1948,20 @@ impl cosmic::Application for Launchpad {
             Message::Loaded(apps) => {
                 self.apps = apps;
                 self.app_lookup = layout::build_app_index(&self.apps);
-                self.rebuild_layout_from_disk();
+                let needs_save = self.rebuild_layout_from_disk();
                 self.refilter();
+                if needs_save {
+                    return self.schedule_save();
+                }
             }
             Message::Query(q) => {
                 if self.drag.is_active() {
                     self.drag.cancel();
                 }
                 self.context_menu = None;
+                if !q.trim().is_empty() {
+                    self.exit_edit();
+                }
                 self.query = q;
                 self.page = 0;
                 self.swipe_offset = 0.0;
@@ -1825,9 +2010,19 @@ impl cosmic::Application for Launchpad {
                 };
                 self.drag
                     .press(source, cursor, grab_offset, is_app, now, self.search_active());
+                self.press_anchor = (!self.edit_mode
+                    && !self.search_active()
+                    && matches!(source, DragSource::MainGrid { .. }))
+                .then_some((now, self.last_cursor));
             }
             Message::CursorMoved(pos) => {
                 self.last_cursor = pos;
+                if let Some((_, p0)) = self.press_anchor
+                    && Point2::new(p0.x, p0.y).distance(Point2::new(pos.x, pos.y))
+                        >= LONG_PRESS_SLOP
+                {
+                    self.press_anchor = None;
+                }
                 if self.visible && self.drag.is_active() {
                     let ctx = self.drag_eval_context();
                     let exited_folder =
@@ -1841,6 +2036,7 @@ impl cosmic::Application for Launchpad {
                 }
             }
             Message::PointerReleased => {
+                self.press_anchor = None;
                 if !self.visible || !self.drag.is_active() {
                     return Task::none();
                 }
@@ -1856,6 +2052,9 @@ impl cosmic::Application for Launchpad {
                             .cloned()
                         {
                             Some(LayoutItem::App(id)) => {
+                                if self.edit_mode {
+                                    return Task::none();
+                                }
                                 if let Some(app_idx) = self.lookup_app(&id) {
                                     return self.launch(app_idx);
                                 }
@@ -1877,11 +2076,12 @@ impl cosmic::Application for Launchpad {
                         app_index,
                         ..
                     }) => {
-                        if let Some(LayoutItem::Folder { apps: f_apps, .. }) = self
-                            .saved_layout
-                            .pages
-                            .get(folder_page)
-                            .and_then(|p| p.get(folder_index))
+                        if !self.edit_mode
+                            && let Some(LayoutItem::Folder { apps: f_apps, .. }) = self
+                                .saved_layout
+                                .pages
+                                .get(folder_page)
+                                .and_then(|p| p.get(folder_index))
                             && let Some(id) = f_apps.get(app_index)
                             && let Some(app_idx) = self.lookup_app(id)
                         {
@@ -1976,7 +2176,33 @@ impl cosmic::Application for Launchpad {
                 if self.open_folder.is_some() {
                     return self.update(Message::CloseFolder);
                 }
+                if self.edit_mode {
+                    self.exit_edit();
+                    return Task::none();
+                }
                 return self.begin_hide();
+            }
+            Message::ExitEdit => self.exit_edit(),
+            Message::HideApp(id) => {
+                if self.saved_layout.hide_app(&id) {
+                    self.page = self.page.min(self.pages().saturating_sub(1));
+                    self.refilter();
+                    self.sync_tile_slides(now);
+                    return self.schedule_save();
+                }
+            }
+            Message::ShowHidden => {
+                if self.saved_layout.clear_hidden() {
+                    let per_page = self.layout.per_page();
+                    self.saved_layout = layout::merge_layout(
+                        Some(self.saved_layout.clone()),
+                        &self.apps,
+                        per_page,
+                    );
+                    self.reset_tile_tracking();
+                    self.refilter();
+                    return self.schedule_save();
+                }
             }
             Message::BackgroundRightClick => {
                 if self.visible
@@ -1990,7 +2216,11 @@ impl cosmic::Application for Launchpad {
             Message::ResetLayout => {
                 self.context_menu = None;
                 self.open_folder = None;
+                let seen = self.saved_layout.seen.take();
                 self.saved_layout = layout::default_layout(&self.apps, self.layout.per_page());
+                if seen.is_some() {
+                    self.saved_layout.seen = seen;
+                }
                 self.page = 0;
                 self.reset_tile_tracking();
                 return self.schedule_save();
@@ -2087,7 +2317,17 @@ impl cosmic::Application for Launchpad {
                         if d == 0.0 {
                             return Task::none();
                         }
+                        // One swipe = one page: ignore the rest of the gesture
+                        // (including momentum) after a page flip.
+                        let new_gesture = swipe_gesture_ended(self.last_scroll_at, now);
                         self.last_scroll_at = Some(now);
+                        if self.swipe_locked {
+                            if new_gesture {
+                                self.swipe_locked = false;
+                            } else {
+                                return Task::none();
+                            }
+                        }
                         let total = self.pages();
                         let at_start = self.page == 0 && (self.swipe_offset + d) > 0.0;
                         let at_end = self.page + 1 >= total && (self.swipe_offset + d) < 0.0;
@@ -2098,9 +2338,11 @@ impl cosmic::Application for Launchpad {
                         let ready = self.last_wheel.is_none_or(|t| t.elapsed() >= WHEEL_COOLDOWN);
                         if ready && self.swipe_offset <= -threshold && self.page + 1 < total {
                             self.last_wheel = Some(now);
+                            self.swipe_locked = true;
                             self.go_to_page(self.page + 1, now);
                         } else if ready && self.swipe_offset >= threshold && self.page > 0 {
                             self.last_wheel = Some(now);
+                            self.swipe_locked = true;
                             self.go_to_page(self.page - 1, now);
                         }
                     }
@@ -2131,6 +2373,10 @@ impl cosmic::Application for Launchpad {
                         if self.open_folder.is_some() {
                             return self.update(Message::CloseFolder);
                         }
+                        if self.edit_mode {
+                            self.exit_edit();
+                            return Task::none();
+                        }
                         if !self.query.is_empty() {
                             self.query.clear();
                             self.page = 0;
@@ -2138,6 +2384,11 @@ impl cosmic::Application for Launchpad {
                             return Task::none();
                         }
                         return self.begin_hide();
+                    }
+                    Key::Named(Named::Alt) => {
+                        if self.open_folder.is_none() && !self.drag.is_dragging() {
+                            self.enter_edit(now);
+                        }
                     }
                     Key::Named(Named::PageDown) => {
                         if self.open_folder.is_some() {
@@ -2207,6 +2458,15 @@ impl cosmic::Application for Launchpad {
                         outgoing_page: None,
                         outgoing_delta: 0.0,
                     });
+                }
+
+                if let Some((t0, _)) = self.press_anchor
+                    && self.drag.is_active()
+                    && tick_now.saturating_duration_since(t0) >= LONG_PRESS
+                {
+                    self.enter_edit(tick_now);
+                    self.drag.cancel();
+                    self.reset_tile_tracking();
                 }
 
                 if self.drag.is_active() {
@@ -2300,6 +2560,10 @@ impl cosmic::Application for Launchpad {
         .into();
 
         let mut layers: Vec<Element<'_, Message>> = vec![base];
+
+        if self.edit_mode {
+            layers.push(self.edit_controls());
+        }
 
         if let Some(open) = &self.open_folder
             && let Some(overlay) = self.folder_overlay(open)
@@ -2480,5 +2744,25 @@ mod tests {
             assert!(fg.grid.total_width() <= fg.panel.w);
             assert!(fg.grid.total_height() <= fg.panel.h);
         }
+    }
+
+    #[test]
+    fn wiggle_is_small_and_varies_per_icon() {
+        for i in 0..40 {
+            for k in 0..200 {
+                let (dx, dy) = wiggle_offset(k as f32 * 0.016, i);
+                assert!(dx.abs() <= 1.6 + 1e-3 && dy.abs() <= 1.2 + 1e-3);
+            }
+        }
+        assert_ne!(wiggle_offset(0.3, 0), wiggle_offset(0.3, 1));
+    }
+
+    #[test]
+    fn swipe_gesture_gap_debounces() {
+        let t0 = Instant::now();
+        assert!(swipe_gesture_ended(None, t0));
+        assert!(!swipe_gesture_ended(Some(t0), t0 + Duration::from_millis(16)));
+        assert!(!swipe_gesture_ended(Some(t0), t0 + SWIPE_GESTURE_GAP - Duration::from_millis(1)));
+        assert!(swipe_gesture_ended(Some(t0), t0 + SWIPE_GESTURE_GAP));
     }
 }

@@ -21,6 +21,9 @@ use mac_widgets::{
 };
 
 use crate::agenda::{AgendaEntry, upcoming};
+use crate::battery::BatteryState;
+use crate::cards_more::{NoteAction, battery_card, calendar_card, notes_card};
+use crate::notes::Notes;
 use crate::layout::{WidgetKind, WidgetSize};
 
 /// Current weather state shared across surfaces.
@@ -41,6 +44,9 @@ pub struct WidgetData<'a> {
     pub units: Units,
     pub stats: &'a Stats,
     pub agenda: &'a [AgendaEntry],
+    pub battery: &'a BatteryState,
+    pub notes: &'a Notes,
+    pub note_draft: &'a str,
 }
 
 /// Frosted glass card style following the active COSMIC theme and dimming
@@ -117,7 +123,7 @@ pub fn frosted_chrome_class() -> Container<'static> {
 }
 
 /// Renders one widget card at the requested `size`.
-pub fn render_widget<'a, M: 'static>(
+pub fn render_widget<'a, M: Clone + From<NoteAction> + 'static>(
     kind: WidgetKind,
     size: WidgetSize,
     data: WidgetData<'a>,
@@ -130,6 +136,9 @@ pub fn render_widget<'a, M: 'static>(
         WidgetKind::UpNext => up_next_card(size, data.agenda, data.now),
         WidgetKind::System => system_card(size, data.stats),
         WidgetKind::Clock => clock_card(size, data.now),
+        WidgetKind::CalendarMonth => calendar_card(size, data.agenda, data.now),
+        WidgetKind::Battery => battery_card(size, data.battery),
+        WidgetKind::Notes => notes_card(size, data.notes, data.note_draft, editing),
     };
 
     container(inner)
@@ -140,14 +149,14 @@ pub fn render_widget<'a, M: 'static>(
         .into()
 }
 
-fn bold_font() -> cosmic::iced::Font {
+pub(crate) fn bold_font() -> cosmic::iced::Font {
     cosmic::iced::Font {
         weight: Weight::Bold,
         ..cosmic::font::default()
     }
 }
 
-fn semibold_font() -> cosmic::iced::Font {
+pub(crate) fn semibold_font() -> cosmic::iced::Font {
     cosmic::iced::Font {
         weight: Weight::Semibold,
         ..cosmic::font::default()
@@ -681,7 +690,7 @@ pub fn gallery_tile<'a, M: 'static>(kind: WidgetKind, size: WidgetSize) -> Eleme
     .into()
 }
 
-fn truncate(value: &str, max_chars: usize) -> String {
+pub(crate) fn truncate(value: &str, max_chars: usize) -> String {
     if value.chars().count() > max_chars {
         let mut out: String = value.chars().take(max_chars.saturating_sub(1)).collect();
         out.push('…');

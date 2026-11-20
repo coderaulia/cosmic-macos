@@ -4,7 +4,7 @@
 
 ## 1. Architecture & Repository Layout
 
-- **`apps/mac-suite/`**: Cargo workspace containing 11 custom crates (edition `2024`, license `GPL-3.0-only`):
+- **`apps/mac-suite/`**: Cargo workspace containing 12 custom crates (edition `2024`, license `GPL-3.0-only`):
   - `mac-appearance`: `mac_appearance` library + `mac-appearance` daemon for automatic light/dark switching, offline sunrise/sunset calculation, dynamic wallpaper schedules, and per-screen wallpaper settings.
   - `mac-appmenu`: Session D-Bus global application menu protocol (`dev.asw.AppMenu1`) and client/server helpers.
   - `mac-calendar`: Calendar application (`dev.asw.MacCalendar`) with month, week, and day views, CalDAV sync, and `dev.asw.AppMenu1` menus.
@@ -13,6 +13,7 @@
   - `mac-launchpad`: Full-screen application grid overlay (`dev.asw.MacLaunchpad`, toggled on `Super+A`) with drag-to-reorder, app folders, animations, and persistent layout.
   - `mac-mail`: Three-pane IMAP/SMTP mail client (`dev.asw.MacMail`) with local caching, HTML sanitization, contact harvesting, OAuth2 support, and `dev.asw.AppMenu1` menus.
   - `mac-oauth`: Shared OAuth2 PKCE loopback sign-in helper used by `mac-suite` apps.
+  - `mac-quicklook`: Floating file preview (`dev.asw.MacQuickLook`) for images, PDF, text/code, video posters and file info; single instance over `mac-quicklook.sock`, opened by Space in Files.
   - `mac-screenshot`: Screenshot and screen-recording overlay, toolbar, and floating thumbnail (`dev.asw.MacScreenshot`, `dev.asw.MacScreenshot.Recording`, `dev.asw.MacScreenshot.Thumbnail`, bound to `Super+Shift+S`).
   - `mac-theme`: CLI and GUI (`mac-theme --settings`) configuring COSMIC system accent color, corner radii, appearance mode/schedule, and per-display wallpaper.
   - `mac-widgets`: Shared settings, weather cache, and system info helpers used by `cosmic-ext-applet-clock-center`, `cosmic-ext-applet-sysmon`, and `mac-desktop-widgets`.
@@ -28,9 +29,10 @@
   - `cosmic-ext-dock`: Standalone dock with hover magnification and launch bounce.
   - `cosmic-ext-mac-applet-style`: Shared menu bar pill styling, frosted popover container, and symbolic SVG icons for the overlay applets.
 - **`patches/*.patch` & Working Copies**:
-  - `./setup.sh` fetches upstream COSMIC repos into `cosmic-comp/`, `cosmic-launcher/`, `upstream-applets/`, `libcosmic-mac/`, `apps/cosmic-files/`, `apps/cosmic-edit/`, and `apps/cosmic-viewer/`, then applies:
+  - `./setup.sh` fetches upstream COSMIC repos into `cosmic-comp/`, `cosmic-launcher/`, `upstream-applets/`, `libcosmic-mac/`, `apps/cosmic-files/`, `apps/cosmic-edit/`, `apps/cosmic-viewer/`, and `apps/cosmic-workspaces/`, then applies:
     - `patches/cosmic-comp.patch` (genie minimize and fullscreen restore animations, compositor tweaks)
-    - `patches/cosmic-files.patch` (`File`/`Edit`/`View`/`Sort` app menu export, Files toolbar/look)
+    - `patches/cosmic-files.patch` (`File`/`Edit`/`View`/`Sort` app menu export, Files toolbar/look, Space opens `mac-quicklook`)
+    - `patches/cosmic-workspaces.patch` (Mission Control layout for the workspace overview; installed by `install-mission-control.sh`, `Super+Up`)
     - `patches/cosmic-edit.patch` (Notepad `dev.asw.AppMenu1` global menu export, editor look)
     - `patches/cosmic-viewer.patch` (Viewer `dev.asw.AppMenu1` global menu export, toolbar/look)
     - `patches/cosmic-launcher.patch` (Spotlight-style launcher overlay)

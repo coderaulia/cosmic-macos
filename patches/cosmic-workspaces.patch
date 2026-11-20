@@ -1,0 +1,789 @@
+diff --git a/src/backend/mod.rs b/src/backend/mod.rs
+index df83810..56e4cd8 100644
+--- a/src/backend/mod.rs
++++ b/src/backend/mod.rs
+@@ -94,6 +94,7 @@ pub enum Cmd {
+         wl_output::WlOutput,
+     ),
+     MoveWorkspaceBefore(ExtWorkspaceHandleV1, ExtWorkspaceHandleV1),
++    #[allow(dead_code)]
+     MoveWorkspaceAfter(ExtWorkspaceHandleV1, ExtWorkspaceHandleV1),
+     ActivateWorkspace(ExtWorkspaceHandleV1),
+     SetWorkspacePinned(ExtWorkspaceHandleV1, bool),
+diff --git a/src/main.rs b/src/main.rs
+index 4ba8e05..e9e5283 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -1,3 +1,10 @@
++// Newer clippy lints on upstream code that is kept as-is to ease rebasing.
++#![allow(
++    clippy::too_many_arguments,
++    clippy::unnecessary_min_or_max,
++    clippy::large_enum_variant,
++    clippy::filter_map_bool_then
++)]
+ // Copyright 2023 System76 <info@system76.com>
+ // SPDX-License-Identifier: GPL-3.0-only
+ 
+@@ -53,6 +60,9 @@ mod utils;
+ mod widgets;
+ use dnd::{DragSurface, DragToplevel, DragWorkspace, DropTarget};
+ 
++/// Duration of the fade-in when the overview opens.
++const OPEN_FADE_SECS: f32 = 0.18;
++
+ const SCROLL_RATE_LIMIT: Duration = Duration::from_millis(200);
+ 
+ #[derive(Clone, Debug, Default, PartialEq, CosmicConfigEntry)]
+@@ -120,6 +130,8 @@ enum Msg {
+     ActionOnTyping(String),
+     Ignore,
+     Rectangle(RectangleUpdate<RectId>),
++    HoverToplevel(ExtForeignToplevelHandleV1, bool),
++    Tick(std::time::Instant),
+ }
+ 
+ #[derive(Clone, Debug)]
+@@ -212,6 +224,10 @@ struct App {
+     rectangle_tracker: Option<RectangleTracker<RectId>>,
+     rects: HashMap<RectId, Rectangle>,
+     sub_ctr: u128,
++    hovered_toplevel: Option<ExtForeignToplevelHandleV1>,
++    /// Seconds-based fade-in state: when the overview was shown and how far it is.
++    opened_at: Option<std::time::Instant>,
++    open_progress: f32,
+ }
+ 
+ #[derive(Debug, Default)]
+@@ -296,6 +312,9 @@ impl App {
+     fn show(&mut self) -> Task<cosmic::Action<Msg>> {
+         if !self.visible {
+             self.visible = true;
++            self.opened_at = Some(std::time::Instant::now());
++            self.open_progress = 0.0;
++            self.hovered_toplevel = None;
+             let outputs = self.outputs.clone();
+             let cmd = Task::batch(
+                 outputs
+@@ -353,6 +372,8 @@ impl App {
+         self.action_on_typing_activated = false;
+ 
+         self.visible = false;
++        self.opened_at = None;
++        self.hovered_toplevel = None;
+         self.update_capture_filter();
+         self.drag_surface = None;
+         Task::batch(
+@@ -457,51 +478,15 @@ impl App {
+                 .for_output(&layer_surface.output)
+                 .any(|w| w.handle().id() == workspace_handle)
+         }) {
+-            let active = cosmic::theme::active();
+-            let rad = active
+-                .cosmic()
+-                .radius_s()
+-                .map(|x| if x < 4.0 { x } else { x + 8.0 });
+-
+-            let mut rects = Vec::new();
+-            let mut strips: Vec<Rectangle> = self
+-                .rects
+-                .iter()
+-                .filter_map(|(id, rect)| {
+-                    if self.drag_surface.as_ref().is_some_and(|(s, _)| match s {
+-                        DragSurface::Workspace(_) => false,
+-                        DragSurface::Toplevel(ext_foreign_toplevel_handle_v1) => id
+-                            .toplevel_id
+-                            .as_ref()
+-                            .is_some_and(|t| *t == ext_foreign_toplevel_handle_v1.id()),
+-                    }) || id.id != *cur_window
+-                        || id
+-                            .workspaces_id
+-                            .as_ref()
+-                            .is_some_and(|l| !l.iter().any(|o| *o == workspace_handle))
+-                    {
+-                        return None;
+-                    }
+-
+-                    let rad = if id.toplevel_id.is_none() {
+-                        CornerRadius {
+-                            top_left: rad[0] as u32,
+-                            top_right: rad[1] as u32,
+-                            bottom_left: rad[3] as u32,
+-                            bottom_right: rad[2] as u32,
+-                        }
+-                    } else {
+-                        rects.push(*rect);
+-                        return None;
+-                    };
+-
+-                    Some(cosmic::surface::corner_radius::rounded_rect_strips(
+-                        *rect, rad,
+-                    ))
+-                })
+-                .flatten()
+-                .collect();
+-            strips.append(&mut rects);
++            // Mission Control blurs the whole desktop behind the overlay.
++            let size = self
++                .layer_surfaces
++                .get(cur_window)
++                .and_then(|surface| self.outputs.iter().find(|o| o.handle == surface.output))
++                .map(|o| Size::new(o.width as f32, o.height as f32));
++            let strips: Vec<Rectangle> = size
++                .map(|size| vec![Rectangle::new(iced::Point::ORIGIN, size)])
++                .unwrap_or_default();
+ 
+             return Some(
+                 cosmic::iced::platform_specific::shell::commands::blur::blur(
+@@ -558,6 +543,22 @@ impl Application for App {
+                     self.rectangle_tracker = Some(tracker);
+                 }
+             },
++            Msg::HoverToplevel(handle, entered) => {
++                if entered {
++                    self.hovered_toplevel = Some(handle);
++                } else if self.hovered_toplevel.as_ref() == Some(&handle) {
++                    self.hovered_toplevel = None;
++                }
++            }
++            Msg::Tick(now) => {
++                if let Some(opened) = self.opened_at {
++                    let t = now.saturating_duration_since(opened).as_secs_f32() / OPEN_FADE_SECS;
++                    self.open_progress = t.clamp(0.0, 1.0);
++                    if t >= 1.0 {
++                        self.opened_at = None;
++                    }
++                }
++            }
+             Msg::SourceFinished => {
+                 self.drag_surface = None;
+             }
+@@ -1140,6 +1141,9 @@ impl Application for App {
+         if let Some(interface) = &self.dbus_interface {
+             subscriptions.push(interface.subscription().map(Msg::DBus));
+         }
++        if self.visible && self.opened_at.is_some() {
++            subscriptions.push(iced::time::every(std::time::Duration::from_millis(16)).map(Msg::Tick));
++        }
+         subscriptions.push(panel_subscriptions(self.panel_configs.keys()));
+         iced::Subscription::batch(subscriptions)
+     }
+diff --git a/src/view/mod.rs b/src/view/mod.rs
+index ae2b727..57c1d3b 100644
+--- a/src/view/mod.rs
++++ b/src/view/mod.rs
+@@ -1,4 +1,3 @@
+-use cosmic::cctk::cosmic_protocols::toplevel_info::v1::client::zcosmic_toplevel_handle_v1;
+ use cosmic::cctk::cosmic_protocols::workspace::v2::client::zcosmic_workspace_handle_v2;
+ use cosmic::cctk::wayland_client::Proxy;
+ use cosmic::cctk::wayland_client::protocol::wl_output;
+@@ -19,6 +18,10 @@ use crate::backend::{self, CaptureImage};
+ use crate::dnd::{Drag, DragSurface, DragToplevel, DragWorkspace, DropTarget};
+ use crate::{App, LayerSurface, Msg, RectId, Toplevel, Workspace};
+ 
++/// Height of the workspace thumbnails in the top strip.
++const THUMB_H: f32 = 72.0;
++const THUMB_PORTRAIT_W: u32 = 96;
++
+ fn dnd_source_with_drag_surface<D: AsMimeTypes + Send + Clone + 'static>(
+     drag_content: D,
+     drag_surface: DragSurface,
+@@ -91,20 +94,23 @@ pub(crate) fn layer_surface<'a>(
+         .iter()
+         .flat_map(|t| &t.info.workspace)
+         .collect::<HashSet<_>>();
+-    let layout = app.conf.workspace_config.workspace_layout;
+     // track this rectangle
+     let sidebar = workspaces_sidebar(
+         app.workspaces.for_output(&surface.output),
+         &workspaces_with_toplevels,
+         &surface.output,
+-        layout,
++        WorkspaceLayout::Horizontal,
+         app.drop_target.as_ref(),
+         drag_workspace,
+         window_id,
+         rectangle_track,
+     );
+-    let toplevels = toplevel_previews(
+-        app.toplevels.0.iter().filter(|i| {
++    // Windows of the same app sit next to each other.
++    let mut visible_toplevels = app
++        .toplevels
++        .0
++        .iter()
++        .filter(|i| {
+             if !i.info.output.contains(&surface.output) {
+                 return false;
+             }
+@@ -114,8 +120,14 @@ pub(crate) fn layer_surface<'a>(
+                     .for_handle(workspace)
+                     .is_some_and(|x| x.is_active())
+             })
+-        }),
+-        layout,
++        })
++        .collect::<Vec<_>>();
++    visible_toplevels.sort_by(|a, b| a.info.app_id.cmp(&b.info.app_id));
++    let alpha = app.open_progress.max(if app.opened_at.is_some() { 0.0 } else { 1.0 });
++    let toplevels = toplevel_previews(
++        visible_toplevels.into_iter(),
++        app.hovered_toplevel.as_ref(),
++        alpha,
+         drag_toplevel,
+         window_id,
+         rectangle_track,
+@@ -135,23 +147,27 @@ pub(crate) fn layer_surface<'a>(
+         // Shouldn't happen, but no drag destination if no active workspace found for output
+         cosmic::Element::from(toplevels)
+     };
+-    let container = match layout {
+-        WorkspaceLayout::Vertical => widget::layer_container(
+-            row![sidebar, toplevels]
+-                .spacing(12)
+-                .height(Length::Fill)
+-                .width(Length::Fill),
+-        ),
+-        WorkspaceLayout::Horizontal => widget::layer_container(
+-            column![sidebar, toplevels]
+-                .spacing(12)
+-                .height(Length::Fill)
+-                .width(Length::Fill),
+-        ),
+-    };
++    // Mission Control: workspace strip on top, windows spread below it.
++    let container = widget::layer_container(
++        column![sidebar, toplevels]
++            .spacing(12)
++            .height(Length::Fill)
++            .width(Length::Fill),
++    );
+ 
+     let panel_regions = app.panel_regions(&surface.output);
+-    let container = widget::container(container).padding(panel_regions);
++    // Dim the (compositor-blurred) desktop behind everything.
++    let dim = 0.35 * alpha;
++    let container = widget::container(container)
++        .padding(panel_regions)
++        .width(Length::Fill)
++        .height(Length::Fill)
++        .class(cosmic::theme::Container::custom(move |_| {
++            cosmic::iced::widget::container::Style {
++                background: Some(iced::Color::from_rgba(0.0, 0.0, 0.0, dim).into()),
++                ..Default::default()
++            }
++        }));
+ 
+     let output = surface.output.clone();
+ 
+@@ -229,7 +245,7 @@ fn workspace_item_appearance(
+         .map(|x| if x < 4.0 { x } else { x + 4.0 })
+         .into();
+     if is_active {
+-        appearance.border_width = 4.0;
++        appearance.border_width = 3.0;
+         appearance.border_color = cosmic.accent.base.into();
+     }
+     if hovered {
+@@ -263,31 +279,31 @@ fn workspace_item(
+         if effective_width > effective_height {
+             (
+                 // Landscape: fix height
+-                widget::container(capture_image(Some(img), 1.0)).max_height(126.0),
+-                126.0,
+-                126.0 * effective_width as f32 / effective_height as f32,
++                widget::container(capture_image(Some(img), 1.0)).max_height(THUMB_H),
++                THUMB_H,
++                THUMB_H * effective_width as f32 / effective_height as f32,
+             )
+         } else {
+             (
+                 // Portrait: fix width
+-                widget::container(capture_image(Some(img), 1.0)).max_width(160),
+-                160.0 * effective_height as f32 / effective_width as f32,
+-                160.0,
++                widget::container(capture_image(Some(img), 1.0)).max_width(THUMB_PORTRAIT_W),
++                THUMB_PORTRAIT_W as f32 * effective_height as f32 / effective_width as f32,
++                THUMB_PORTRAIT_W as f32,
+             )
+         }
+     } else {
+         (
+             widget::container(capture_image(None, 1.0))
+-                .max_height(126.0)
+-                .max_width(224.0),
+-            126.0,
+-            224.0,
++                .max_height(THUMB_H)
++                .max_width(THUMB_H * 16.0 / 9.0),
++            THUMB_H,
++            THUMB_H * 16.0 / 9.0,
+         )
+     };
+ 
+     let workspace_footer = row![
+-        widget::space::horizontal().width(Length::Fixed(32.0)),
+-        widget::text::body(fl!("workspace", number = workspace.info.name.as_str()))
++        widget::space::horizontal().width(Length::Fixed(24.0)),
++        widget::text::caption(fl!("workspace", number = workspace.info.name.as_str()))
+             .ellipsize(Ellipsize::Middle(EllipsizeHeightLimit::Lines(1)))
+             .apply(widget::container)
+             .center_x(Length::Fill),
+@@ -486,7 +502,7 @@ fn workspaces_sidebar<'a>(
+     }
+     let (axis, width, height) = match layout {
+         WorkspaceLayout::Vertical => (Axis::Vertical, Length::Shrink, Length::Fill),
+-        WorkspaceLayout::Horizontal => (Axis::Horizontal, Length::Fill, Length::Shrink),
++        WorkspaceLayout::Horizontal => (Axis::Horizontal, Length::Shrink, Length::Shrink),
+     };
+     let sidebar_entries_container =
+         widget::container(crate::widgets::workspace_bar(sidebar_entries, axis)).padding(8.0);
+@@ -525,12 +541,20 @@ fn workspaces_sidebar<'a>(
+         ),
+     )
+     .padding(8)
++    .width(Length::Fill)
++    .center_x(Length::Fill)
+     .into()
+ }
+ 
++/// Height reserved under each window for the app label (kept even when the
++/// label is hidden, so the window does not jump on hover).
++const LABEL_H: f32 = 36.0;
++
+ fn toplevel_preview(
+     toplevel: &Toplevel,
+     is_being_dragged: bool,
++    is_hovered: bool,
++    alpha: f32,
+     window_id: window::Id,
+     rectangle_track: &rectangle_tracker::RectangleTracker<RectId>,
+ ) -> cosmic::Element<'static, Msg> {
+@@ -538,8 +562,13 @@ fn toplevel_preview(
+         space_xxs, space_s, ..
+     } = cosmic::theme::active().cosmic().spacing;
+ 
+-    let label = widget::text::body(toplevel.info.title.clone())
+-        .ellipsize(Ellipsize::End(EllipsizeHeightLimit::Lines(1)));
++    // App name (falling back to the window title), with icon.
++    let name = if toplevel.info.title.is_empty() {
++        toplevel.info.app_id.clone()
++    } else {
++        toplevel.info.title.clone()
++    };
++    let label = widget::text::body(name).ellipsize(Ellipsize::End(EllipsizeHeightLimit::Lines(1)));
+     let label = if let Some(icon) = &toplevel.icon {
+         row![
+             widget::icon(widget::icon::from_path(icon.clone())).size(24),
+@@ -551,35 +580,44 @@ fn toplevel_preview(
+     }
+     .align_y(Alignment::Center);
+ 
+-    let title = row![
+-        // TODO tracker for each of these buttons?
+-        // So that they can be blurred individually like the sidebar?
+-        widget::button::custom(label)
+-            .on_press(Msg::ActivateToplevel(toplevel.handle.clone()))
+-            .class(cosmic::theme::Button::Icon)
+-            .padding([space_xxs, space_s])
+-            .apply(widget::container)
+-            .class(cosmic::theme::Container::custom(|theme| {
+-                cosmic::iced::widget::container::Style {
+-                    background: Some(
+-                        iced::Color::from(theme.cosmic().background(false).component.base).into(),
+-                    ),
+-                    border: Border {
+-                        color: theme.cosmic().bg_divider().into(),
+-                        width: 1.0,
+-                        radius: theme.cosmic().radius_xl().into(),
+-                    },
+-                    ..Default::default()
+-                }
+-            }))
+-            .apply(widget::container)
+-            .width(Length::Fill),
+-        close_button(Msg::CloseToplevel(toplevel.handle.clone()))
+-    ]
+-    .spacing(8)
+-    .padding([0, 0, 2, 0])
+-    .align_y(Alignment::Center);
+-    let alpha = if is_being_dragged { 0.5 } else { 1.0 };
++    let title: cosmic::Element<'static, Msg> = if is_hovered && !is_being_dragged {
++        row![
++            widget::button::custom(label)
++                .on_press(Msg::ActivateToplevel(toplevel.handle.clone()))
++                .class(cosmic::theme::Button::Icon)
++                .padding([space_xxs, space_s])
++                .apply(widget::container)
++                .class(cosmic::theme::Container::custom(|theme| {
++                    cosmic::iced::widget::container::Style {
++                        background: Some(
++                            iced::Color::from(theme.cosmic().background(false).component.base)
++                                .into(),
++                        ),
++                        border: Border {
++                            color: theme.cosmic().bg_divider().into(),
++                            width: 1.0,
++                            radius: theme.cosmic().radius_xl().into(),
++                        },
++                        ..Default::default()
++                    }
++                }))
++                .apply(widget::container)
++                .width(Length::Fill),
++            close_button(Msg::CloseToplevel(toplevel.handle.clone()))
++        ]
++        .spacing(8)
++        .align_y(Alignment::Center)
++        .apply(widget::container)
++        .height(Length::Fixed(LABEL_H))
++        .align_y(Alignment::Center)
++        .into()
++    } else {
++        widget::Space::new()
++            .width(Length::Shrink)
++            .height(Length::Fixed(LABEL_H))
++            .into()
++    };
++    let alpha = if is_being_dragged { 0.5 * alpha } else { alpha };
+     let content = capture_image(toplevel.img.as_ref(), alpha);
+ 
+     let preview = widget::button::custom(if toplevel.pending_move.is_some() || is_being_dragged {
+@@ -595,20 +633,19 @@ fn toplevel_preview(
+             content,
+         ))
+     })
+-    .selected(
+-        toplevel
+-            .info
+-            .state
+-            .contains(&zcosmic_toplevel_handle_v1::State::Activated),
+-    )
++    .selected(false)
+     .class(cosmic::theme::Button::Image)
+     .on_press(Msg::ActivateToplevel(toplevel.handle.clone()));
+ 
++    let handle_in = toplevel.handle.clone();
++    let handle_out = toplevel.handle.clone();
+     widget::mouse_area(crate::widgets::size_cross_nth(
+-        vec![title.into(), preview.into()],
++        vec![preview.into(), title],
+         Axis::Vertical,
+-        1, // Allocate width to match capture image
++        0, // Allocate width to match capture image
+     ))
++    .on_enter(Msg::HoverToplevel(handle_in, true))
++    .on_exit(Msg::HoverToplevel(handle_out, false))
+     .on_middle_press(Msg::CloseToplevel(toplevel.handle.clone()))
+     .into()
+ }
+@@ -616,13 +653,22 @@ fn toplevel_preview(
+ fn toplevel_previews_entry<'a>(
+     toplevel: &'a Toplevel,
+     is_being_dragged: bool,
++    is_hovered: bool,
++    alpha: f32,
+     window_id: window::Id,
+     rectangle_track: &rectangle_tracker::RectangleTracker<RectId>,
+ ) -> cosmic::Element<'a, Msg> {
+     // Dragged window still takes up space until moved, but isn't rendered while drag surface is
+     // shown.
+     let preview = crate::widgets::visibility_wrapper(
+-        toplevel_preview(toplevel, is_being_dragged, window_id, rectangle_track),
++        toplevel_preview(
++            toplevel,
++            is_being_dragged,
++            is_hovered,
++            alpha,
++            window_id,
++            rectangle_track,
++        ),
+         !is_being_dragged,
+     );
+     let toplevel2 = toplevel.clone();
+@@ -632,38 +678,37 @@ fn toplevel_previews_entry<'a>(
+         DragSurface::Toplevel(toplevel.handle.clone()),
+         None,
+         preview.into(),
+-        move || toplevel_preview(&toplevel2, true, window_id, &track),
++        move || toplevel_preview(&toplevel2, true, false, 1.0, window_id, &track),
+     )
+ }
+ 
+ fn toplevel_previews<'a>(
+     toplevels: impl Iterator<Item = &'a Toplevel>,
+-    layout: WorkspaceLayout,
++    hovered: Option<&backend::ExtForeignToplevelHandleV1>,
++    alpha: f32,
+     drag_toplevel: Option<&'a backend::ExtForeignToplevelHandleV1>,
+     window_id: window::Id,
+     rectangle_track: &rectangle_tracker::RectangleTracker<RectId>,
+ ) -> cosmic::Element<'a, Msg> {
+-    let (width, height) = match layout {
+-        WorkspaceLayout::Vertical => (Length::FillPortion(4), Length::Fill),
+-        WorkspaceLayout::Horizontal => (Length::Fill, Length::FillPortion(4)),
+-    };
+     let entries = toplevels
+         .map(|t| {
+             toplevel_previews_entry(
+                 t,
+                 drag_toplevel == Some(&t.handle),
++                hovered == Some(&t.handle),
++                alpha,
+                 window_id,
+                 rectangle_track,
+             )
+         })
+         .collect();
+-    //row(entries)
++    // Click on empty space closes the overview.
+     widget::mouse_area(
+         widget::container(crate::widgets::toplevels(entries))
+             .align_x(Alignment::Center)
+-            .width(width)
+-            .height(height)
+-            .padding(12),
++            .width(Length::Fill)
++            .height(Length::Fill)
++            .padding(24),
+     )
+     .on_press(Msg::Close)
+     .into()
+diff --git a/src/widgets/image_bg.rs b/src/widgets/image_bg.rs
+index a6d2f45..65e7d1d 100644
+--- a/src/widgets/image_bg.rs
++++ b/src/widgets/image_bg.rs
+@@ -9,6 +9,7 @@ use cosmic::iced::{Length, Rectangle, Size, Vector};
+ 
+ use std::marker::PhantomData;
+ 
++#[allow(dead_code)]
+ pub fn image_bg<'a, Msg, T1: Into<cosmic::Element<'a, Msg>>, T2: Into<cosmic::Element<'a, Msg>>>(
+     content: T1,
+     bg: T2,
+diff --git a/src/widgets/mouse_interaction_wrapper.rs b/src/widgets/mouse_interaction_wrapper.rs
+index 4a64ec7..9aeca9d 100644
+--- a/src/widgets/mouse_interaction_wrapper.rs
++++ b/src/widgets/mouse_interaction_wrapper.rs
+@@ -5,6 +5,7 @@ use cosmic::iced::{Length, Rectangle, Size, Vector};
+ 
+ use std::marker::PhantomData;
+ 
++#[allow(dead_code)]
+ pub fn mouse_interaction_wrapper<'a, Msg, T: Into<cosmic::Element<'a, Msg>>>(
+     mouse_interaction: mouse::Interaction,
+     content: T,
+diff --git a/src/widgets/toplevels/mod.rs b/src/widgets/toplevels/mod.rs
+index ddb6bd0..b75e1f7 100644
+--- a/src/widgets/toplevels/mod.rs
++++ b/src/widgets/toplevels/mod.rs
+@@ -1,4 +1,3 @@
+-use cosmic::iced::advanced::layout::flex::Axis;
+ use cosmic::iced::advanced::layout::{self};
+ use cosmic::iced::advanced::widget::{Operation, Tree};
+ use cosmic::iced::advanced::{Clipboard, Layout, Shell, Widget, mouse, renderer};
+@@ -7,19 +6,19 @@ use cosmic::iced::{Length, Rectangle, Size, Vector};
+ use std::marker::PhantomData;
+ 
+ mod toplevel_layout;
+-use toplevel_layout::{LayoutToplevel, ToplevelLayout, TwoRowColToplevelLayout};
++use toplevel_layout::{GridToplevelLayout, LayoutToplevel, ToplevelLayout};
+ 
+ pub fn toplevels<Msg>(children: Vec<cosmic::Element<Msg>>) -> Toplevels<Msg> {
+     Toplevels {
+         // TODO configurable
+-        layout: TwoRowColToplevelLayout::new(Axis::Horizontal, 16),
++        layout: GridToplevelLayout::new(24),
+         children,
+         _msg: PhantomData,
+     }
+ }
+ 
+ pub struct Toplevels<'a, Msg> {
+-    layout: TwoRowColToplevelLayout,
++    layout: GridToplevelLayout,
+     children: Vec<cosmic::Element<'a, Msg>>,
+     _msg: PhantomData<Msg>,
+ }
+diff --git a/src/widgets/toplevels/toplevel_layout/grid_toplevel_layout.rs b/src/widgets/toplevels/toplevel_layout/grid_toplevel_layout.rs
+new file mode 100644
+index 0000000..7be669a
+--- /dev/null
++++ b/src/widgets/toplevels/toplevel_layout/grid_toplevel_layout.rs
+@@ -0,0 +1,156 @@
++//! Mission Control style layout: all windows in one non-overlapping grid that
++//! fills the available area. Cell shape is chosen so the windows, scaled to
++//! fit their cells with aspect preserved, cover as much area as possible.
++
++use cosmic::iced::{Length, Point, Rectangle, Size};
++
++use super::{LayoutToplevel, ToplevelLayout};
++
++pub(crate) struct GridToplevelLayout {
++    pub spacing: f32,
++}
++
++impl GridToplevelLayout {
++    pub fn new(spacing: u32) -> Self {
++        Self {
++            spacing: spacing as f32,
++        }
++    }
++}
++
++impl ToplevelLayout for GridToplevelLayout {
++    fn size(&self) -> Size<Length> {
++        Size::new(Length::Fill, Length::Fill)
++    }
++
++    fn layout(
++        &self,
++        max_limit: Size,
++        toplevels: &[LayoutToplevel<'_>],
++    ) -> impl Iterator<Item = Rectangle> {
++        let sizes = toplevels
++            .iter()
++            .map(|t| t.preferred_size)
++            .collect::<Vec<_>>();
++        grid_cells(max_limit, &sizes, self.spacing).into_iter()
++    }
++}
++
++/// Number of columns that maximises the total on-screen area of the items.
++fn best_columns(max: Size, sizes: &[Size], spacing: f32) -> usize {
++    let n = sizes.len();
++    let mut best = (1, f32::MIN);
++    for cols in 1..=n {
++        let rows = n.div_ceil(cols);
++        let cell_w = ((max.width - spacing * (cols - 1) as f32) / cols as f32).max(1.0);
++        let cell_h = ((max.height - spacing * (rows - 1) as f32) / rows as f32).max(1.0);
++        let score: f32 = sizes
++            .iter()
++            .map(|s| {
++                let (w, h) = (s.width.max(1.0), s.height.max(1.0));
++                let scale = (cell_w / w).min(cell_h / h).min(1.0);
++                w * h * scale * scale
++            })
++            .sum();
++        if score > best.1 + 0.5 {
++            best = (cols, score);
++        }
++    }
++    best.0
++}
++
++/// Cell rectangle for each item, in order. The last row is centered.
++pub(crate) fn grid_cells(max: Size, sizes: &[Size], spacing: f32) -> Vec<Rectangle> {
++    let n = sizes.len();
++    if n == 0 {
++        return Vec::new();
++    }
++    let cols = best_columns(max, sizes, spacing);
++    let rows = n.div_ceil(cols);
++    let cell_w = ((max.width - spacing * (cols - 1) as f32) / cols as f32).max(1.0);
++    let cell_h = ((max.height - spacing * (rows - 1) as f32) / rows as f32).max(1.0);
++    let grid_h = cell_h * rows as f32 + spacing * (rows - 1) as f32;
++    let top = ((max.height - grid_h) / 2.0).max(0.0);
++    (0..n)
++        .map(|i| {
++            let (row, col) = (i / cols, i % cols);
++            let in_row = if row == rows - 1 { n - row * cols } else { cols };
++            let row_w = cell_w * in_row as f32 + spacing * (in_row - 1) as f32;
++            let left = (max.width - row_w) / 2.0;
++            Rectangle::new(
++                Point::new(
++                    left + col as f32 * (cell_w + spacing),
++                    top + row as f32 * (cell_h + spacing),
++                ),
++                Size::new(cell_w, cell_h),
++            )
++        })
++        .collect()
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    const SCREEN: Size = Size::new(1600.0, 900.0);
++
++    fn overlaps(a: &Rectangle, b: &Rectangle) -> bool {
++        a.x < b.x + b.width - 0.01
++            && b.x < a.x + a.width - 0.01
++            && a.y < b.y + b.height - 0.01
++            && b.y < a.y + a.height - 0.01
++    }
++
++    #[test]
++    fn empty() {
++        assert!(grid_cells(SCREEN, &[], 16.0).is_empty());
++    }
++
++    #[test]
++    fn single_window_gets_whole_area() {
++        let cells = grid_cells(SCREEN, &[Size::new(1200.0, 700.0)], 16.0);
++        assert_eq!(cells.len(), 1);
++        assert_eq!(cells[0].size(), SCREEN);
++    }
++
++    #[test]
++    fn four_equal_windows_make_two_by_two() {
++        let sizes = vec![Size::new(1600.0, 900.0); 4];
++        let cells = grid_cells(SCREEN, &sizes, 16.0);
++        assert_eq!(cells[0].y, cells[1].y);
++        assert_eq!(cells[2].y, cells[3].y);
++        assert!(cells[2].y > cells[0].y);
++    }
++
++    #[test]
++    fn no_overlap_and_inside_bounds() {
++        for n in 1..=13 {
++            let sizes = (0..n)
++                .map(|i| Size::new(400.0 + 90.0 * i as f32, 300.0 + 30.0 * (i % 3) as f32))
++                .collect::<Vec<_>>();
++            let cells = grid_cells(SCREEN, &sizes, 16.0);
++            assert_eq!(cells.len(), n);
++            let bounds = Rectangle::new(Point::ORIGIN, SCREEN);
++            for (i, a) in cells.iter().enumerate() {
++                assert!(a.x >= -0.01 && a.y >= -0.01, "n={n} cell {i} {a:?}");
++                assert!(a.x + a.width <= bounds.width + 0.01, "n={n} cell {i}");
++                assert!(a.y + a.height <= bounds.height + 0.01, "n={n} cell {i}");
++                for b in &cells[i + 1..] {
++                    assert!(!overlaps(a, b), "n={n}: {a:?} overlaps {b:?}");
++                }
++            }
++        }
++    }
++
++    #[test]
++    fn last_row_is_centered() {
++        // 5 equal windows: 3 columns, last row holds 2 and is centered.
++        let sizes = vec![Size::new(800.0, 450.0); 5];
++        let cells = grid_cells(SCREEN, &sizes, 16.0);
++        let cols = cells.iter().filter(|c| c.y == cells[0].y).count();
++        let last = &cells[cols..];
++        let left = last.first().unwrap().x;
++        let right = SCREEN.width - (last.last().unwrap().x + last.last().unwrap().width);
++        assert!((left - right).abs() < 0.01);
++    }
++}
+diff --git a/src/widgets/toplevels/toplevel_layout/mod.rs b/src/widgets/toplevels/toplevel_layout/mod.rs
+index 5234f20..4fc6a91 100644
+--- a/src/widgets/toplevels/toplevel_layout/mod.rs
++++ b/src/widgets/toplevels/toplevel_layout/mod.rs
+@@ -5,10 +5,15 @@ use cosmic::iced::{Length, Rectangle, Size};
+ use std::marker::PhantomData;
+ 
+ mod axis_toplevel_layout;
++mod grid_toplevel_layout;
++pub(crate) use grid_toplevel_layout::GridToplevelLayout;
++#[allow(dead_code)]
+ mod row_col_toplevel_layout;
+ #[allow(unused_imports)]
+ pub(crate) use row_col_toplevel_layout::RowColToplevelLayout;
++#[allow(dead_code)]
+ mod two_row_col_toplevel_layout;
++#[allow(unused_imports)]
+ pub(crate) use two_row_col_toplevel_layout::TwoRowColToplevelLayout;
+ 
+ #[derive(Debug)]

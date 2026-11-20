@@ -44,6 +44,13 @@ impl LayoutItem {
 pub struct SavedLayout {
     pub version: u32,
     pub pages: Vec<Vec<LayoutItem>>,
+    /// Normalized ids of apps hidden from Launchpad (never uninstalled).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hidden: Vec<String>,
+    /// Normalized ids of apps already known/launched. `None` means a layout
+    /// written before this field existed: everything installed counts as seen.
+    #[serde(default)]
+    pub seen: Option<Vec<String>>,
 }
 
 impl Default for SavedLayout {
@@ -51,6 +58,8 @@ impl Default for SavedLayout {
         Self {
             version: CURRENT_VERSION,
             pages: vec![Vec::new()],
+            hidden: Vec::new(),
+            seen: None,
         }
     }
 }
@@ -144,12 +153,24 @@ pub fn merge_layout(
 ) -> SavedLayout {
     let per_page = per_page.max(1);
     let lookup = build_app_index(available);
+    // Hidden apps are pre-marked as placed so neither saved pages nor the
+    // "newly installed" pass put them back on the grid.
+    let mut hidden: Vec<String> = Vec::new();
+    let mut seen_ids: Option<Vec<String>> = None;
     let mut seen: HashSet<String> = HashSet::new();
     let mut pages: Vec<Vec<LayoutItem>> = Vec::new();
 
     if let Some(saved) = saved
         && saved.version == CURRENT_VERSION
     {
+        for id in &saved.hidden {
+            let key = apps::normalize_desktop_id(id);
+            if !hidden.contains(&key) {
+                seen.insert(key.clone());
+                hidden.push(key);
+            }
+        }
+        seen_ids = saved.seen.clone();
         for saved_page in saved.pages {
             let mut page = Vec::new();
             for item in saved_page {
@@ -221,9 +242,18 @@ pub fn merge_layout(
         pages.push(Vec::new());
     }
 
+    // First run (or a pre-`seen` layout): everything installed now is known.
+    let seen_ids = seen_ids.unwrap_or_else(|| {
+        let mut all: Vec<String> = lookup.keys().cloned().collect();
+        all.sort();
+        all
+    });
+
     SavedLayout {
         version: CURRENT_VERSION,
         pages,
+        hidden,
+        seen: Some(seen_ids),
     }
 }
 
@@ -288,6 +318,8 @@ pub fn sort_az(layout: &SavedLayout, available: &[AppEntry], per_page: usize) ->
     SavedLayout {
         version: CURRENT_VERSION,
         pages,
+        hidden: layout.hidden.clone(),
+        seen: layout.seen.clone(),
     }
 }
 
@@ -377,6 +409,66 @@ pub fn default_folder_name(cats_target: &[String], cats_dragged: &[String]) -> S
 }
 
 impl SavedLayout {
+    /// `true` if `id` is installed but has not been seen/launched yet.
+    pub fn is_new(&self, id: &str) -> bool {
+        let key = apps::normalize_desktop_id(id);
+        self.seen.as_ref().is_some_and(|s| !s.contains(&key))
+    }
+
+    /// Records `id` as seen. Returns `true` if the layout changed.
+    pub fn mark_seen(&mut self, id: &str) -> bool {
+        let key = apps::normalize_desktop_id(id);
+        let seen = self.seen.get_or_insert_with(Vec::new);
+        if seen.contains(&key) {
+            return false;
+        }
+        seen.push(key);
+        true
+    }
+
+    /// Hides `id` from the grid (removing it from pages and folders) and
+    /// remembers it in `hidden`. Returns `true` if anything changed.
+    pub fn hide_app(&mut self, id: &str) -> bool {
+        let key = apps::normalize_desktop_id(id);
+        let mut changed = false;
+        if !self.hidden.contains(&key) {
+            self.hidden.push(key.clone());
+            changed = true;
+        }
+        for page in &mut self.pages {
+            let before = page.len();
+            let mut next = Vec::with_capacity(before);
+            for item in page.drain(..) {
+                match item {
+                    LayoutItem::App(a) if apps::normalize_desktop_id(&a) == key => {
+                        changed = true;
+                    }
+                    LayoutItem::Folder { name, apps: mut f } => {
+                        let n = f.len();
+                        f.retain(|a| apps::normalize_desktop_id(a) != key);
+                        changed |= f.len() != n;
+                        match f.len() {
+                            0 => {}
+                            1 => next.push(LayoutItem::App(f.remove(0))),
+                            _ => next.push(LayoutItem::Folder { name, apps: f }),
+                        }
+                    }
+                    other => next.push(other),
+                }
+            }
+            *page = next;
+        }
+        self.prune_empty_pages();
+        changed
+    }
+
+    /// Clears the hidden list; call `merge_layout` afterwards to re-place them.
+    pub fn clear_hidden(&mut self) -> bool {
+        let changed = !self.hidden.is_empty();
+        self.hidden.clear();
+        changed
+    }
+
     /// Removes completely empty pages while always retaining at least one page.
     pub fn prune_empty_pages(&mut self) {
         self.pages.retain(|p| !p.is_empty());
@@ -645,6 +737,8 @@ mod tests {
         let apps = test_apps();
         let saved = SavedLayout {
             version: CURRENT_VERSION,
+            hidden: Vec::new(),
+            seen: None,
             pages: vec![vec![
                 LayoutItem::App("firefox.desktop".into()),
                 // Duplicate firefox should be dropped
@@ -759,5 +853,77 @@ mod tests {
             sorted.pages[0][0],
             LayoutItem::App("org.gnome.Calculator.desktop".into())
         );
+    }
+
+    #[test]
+    fn old_layout_without_new_fields_parses_and_marks_all_seen() {
+        let old = r#"(version: 1, pages: [[App("firefox.desktop")]])"#;
+        let parsed: SavedLayout = ron::from_str(old).expect("old ron parses");
+        assert!(parsed.hidden.is_empty());
+        assert!(parsed.seen.is_none());
+        let merged = merge_layout(Some(parsed), &test_apps(), 10);
+        for a in test_apps() {
+            assert!(!merged.is_new(&a.id));
+        }
+    }
+
+    #[test]
+    fn newly_installed_app_is_new_until_seen_and_roundtrips() {
+        let mut apps = test_apps();
+        let first = merge_layout(None, &apps, 10);
+        assert!(!first.is_new("firefox"));
+        apps.push(AppEntry::for_test("gimp", "GIMP", &["Graphics"]));
+        let mut second = merge_layout(Some(first), &apps, 10);
+        assert!(second.is_new("gimp.desktop"));
+        assert!(!second.is_new("firefox.desktop"));
+        let text = ron::to_string(&second).unwrap();
+        let mut reloaded: SavedLayout = ron::from_str(&text).unwrap();
+        assert!(reloaded.is_new("GIMP"));
+        assert!(reloaded.mark_seen("gimp.desktop"));
+        assert!(!reloaded.mark_seen("gimp"));
+        assert!(!reloaded.is_new("gimp"));
+        assert!(second.mark_seen("gimp"));
+    }
+
+    #[test]
+    fn hide_removes_everywhere_and_survives_merge_until_cleared() {
+        let apps = test_apps();
+        let mut layout = default_layout(&apps, 10);
+        layout
+            .merge_into_folder(0, 2, 0, 1, &apps)
+            .expect("folder created");
+        assert!(layout.hide_app("org.gnome.Calculator.desktop"));
+        // Folder dissolved into the remaining app.
+        assert!(
+            layout.pages[0]
+                .iter()
+                .all(|i| !matches!(i, LayoutItem::Folder { .. }))
+        );
+        assert!(!layout.hide_app("org.gnome.Calculator"));
+        assert_eq!(layout.hidden, vec!["org.gnome.calculator".to_owned()]);
+
+        let mut merged = merge_layout(Some(layout), &apps, 10);
+        let flat: Vec<_> = merged.pages.iter().flatten().collect();
+        assert_eq!(flat.len(), apps.len() - 1);
+        assert!(!flat.contains(&&LayoutItem::App("org.gnome.Calculator.desktop".into())));
+
+        assert!(merged.clear_hidden());
+        let restored = merge_layout(Some(merged), &apps, 10);
+        assert_eq!(restored.pages.iter().map(Vec::len).sum::<usize>(), apps.len());
+        assert!(restored.hidden.is_empty());
+    }
+
+    #[test]
+    fn hiding_last_app_on_page_prunes_page() {
+        let apps = test_apps();
+        let mut layout = default_layout(&apps, 2);
+        let pages = layout.pages.len();
+        let last = layout.pages.last().unwrap().clone();
+        for item in last {
+            if let LayoutItem::App(id) = item {
+                layout.hide_app(&id);
+            }
+        }
+        assert_eq!(layout.pages.len(), pages - 1);
     }
 }

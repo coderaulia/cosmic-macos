@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Quick Look
+Comment=Preview a file
+Exec=mac-quicklook %f
+Icon=document-preview-symbolic
+Terminal=false
+NoDisplay=true
+Categories=Utility;
+StartupNotify=false

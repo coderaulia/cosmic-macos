@@ -1,10 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! macOS Sonoma-style desktop widgets (`Weather`, `UpNext`, `System`, `Clock`).
+//! macOS Sonoma-style desktop widgets (`Weather`, `UpNext`, `System`, `Clock`,
+//! `CalendarMonth`, `Battery`, `Notes`).
 
 mod agenda;
+mod battery;
 mod cards;
+mod cards_more;
 mod ipc;
 mod layout;
+mod monthgrid;
+mod notes;
 mod ui;
 mod wayland;
 

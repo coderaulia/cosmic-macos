@@ -299,10 +299,18 @@ index 0000000..0095c42
 +  </provides>
 +</component>
 diff --git a/src/app.rs b/src/app.rs
-index 77aa67d..3aff75d 100644
+index 77aa67d..fdcbb49 100644
 --- a/src/app.rs
 +++ b/src/app.rs
-@@ -188,6 +188,7 @@ pub enum Action {
+@@ -150,6 +150,7 @@ pub enum Action {
+     ExtractHere,
+     ExtractTo,
+     Gallery,
++    QuickLook,
+     HistoryNext,
+     HistoryPrevious,
+     ItemDown,
+@@ -188,6 +189,7 @@ pub enum Action {
      TabPrev,
      TabViewGrid,
      TabViewList,
@@ -310,7 +318,15 @@ index 77aa67d..3aff75d 100644
      ToggleFoldersFirst,
      ToggleShowHidden,
      ToggleSort(HeadingOptions),
-@@ -267,6 +268,7 @@ impl Action {
+@@ -225,6 +227,7 @@ impl Action {
+                 Message::TabMessage(entity_opt, tab::Message::ExecEntryAction(None, *action))
+             }
+             Self::Gallery => Message::TabMessage(entity_opt, tab::Message::GalleryToggle),
++            Self::QuickLook => Message::TabMessage(entity_opt, tab::Message::QuickLook),
+             Self::HistoryNext => Message::TabMessage(entity_opt, tab::Message::GoNext),
+             Self::HistoryPrevious => Message::TabMessage(entity_opt, tab::Message::GoPrevious),
+             Self::ItemDown => Message::TabMessage(entity_opt, tab::Message::ItemDown),
+@@ -267,6 +270,7 @@ impl Action {
              Self::TabPrev => Message::TabPrev,
              Self::TabViewGrid => Message::TabView(entity_opt, tab::View::Grid),
              Self::TabViewList => Message::TabView(entity_opt, tab::View::List),
@@ -318,7 +334,7 @@ index 77aa67d..3aff75d 100644
              Self::ToggleFoldersFirst => Message::ToggleFoldersFirst,
              Self::ToggleShowHidden => Message::ToggleShowHidden,
              Self::ToggleSort(sort) => {
-@@ -334,6 +336,7 @@ impl MenuAction for NavMenuAction {
+@@ -334,6 +338,7 @@ impl MenuAction for NavMenuAction {
  #[derive(Clone, Debug)]
  pub enum Message {
      AddToSidebar(Option<Entity>),
@@ -326,7 +342,7 @@ index 77aa67d..3aff75d 100644
      AppTheme(AppTheme),
      CloseToast(widget::ToastId),
      Compress(Option<Entity>),
-@@ -771,6 +774,7 @@ pub struct App {
+@@ -771,6 +776,7 @@ pub struct App {
      auto_scroll_speed: Option<i16>,
      file_dialog_opt: Option<Dialog<Message>>,
      clipboard_cache: ClipboardCache,
@@ -334,7 +350,7 @@ index 77aa67d..3aff75d 100644
  }
  
  impl App {
-@@ -1740,6 +1744,10 @@ impl App {
+@@ -1740,6 +1746,10 @@ impl App {
      fn update_nav_model(&mut self) {
          let mut nav_model = segmented_button::ModelBuilder::default();
  
@@ -345,7 +361,7 @@ index 77aa67d..3aff75d 100644
          if self.config.show_recents {
              nav_model = nav_model.insert(|b| {
                  b.text(fl!("recents"))
-@@ -1772,11 +1780,11 @@ impl App {
+@@ -1772,11 +1782,11 @@ impl App {
              }
          }
  
@@ -358,7 +374,7 @@ index 77aa67d..3aff75d 100644
          });
  
          if !MOUNTERS.is_empty() {
-@@ -1831,6 +1839,15 @@ impl App {
+@@ -1831,6 +1841,15 @@ impl App {
          }
  
          self.nav_model = nav_model.build();
@@ -374,7 +390,7 @@ index 77aa67d..3aff75d 100644
  
          let tab_entity = self.tab_model.active();
          if let Some(tab) = self.tab_model.data::<Tab>(tab_entity) {
-@@ -2317,860 +2334,377 @@ impl App {
+@@ -2317,860 +2336,377 @@ impl App {
  
          false
      }
@@ -1563,7 +1579,7 @@ index 77aa67d..3aff75d 100644
                          }
                          DialogPage::NetworkError {
                              mounter_key: _,
-@@ -5152,257 +4686,766 @@ impl Application for App {
+@@ -5152,257 +4688,766 @@ impl Application for App {
                      }
                  }
  
@@ -2555,7 +2571,7 @@ index 77aa67d..3aff75d 100644
      fn context_drawer(&self) -> Option<context_drawer::ContextDrawer<'_, Message>> {
          if !self.core.window.show_context {
              return None;
-@@ -6430,7 +6473,26 @@ impl Application for App {
+@@ -6430,7 +6475,26 @@ impl Application for App {
      }
  
      fn header_end(&self) -> Vec<Element<'_, Self::Message>> {
@@ -2583,7 +2599,7 @@ index 77aa67d..3aff75d 100644
  
          if let Some(term) = self.search_get() {
              if self.core.is_condensed() {
-@@ -7057,6 +7119,13 @@ impl Application for App {
+@@ -7057,6 +7121,13 @@ impl Application for App {
              subscriptions.push(dialog.subscription());
          };
  
@@ -2859,10 +2875,20 @@ index d0037d2..60bdf66 100644
      fn core(&self) -> &Core {
          &self.core
 diff --git a/src/key_bind.rs b/src/key_bind.rs
-index d3ddd59..729f857 100644
+index d3ddd59..e41d58a 100644
 --- a/src/key_bind.rs
 +++ b/src/key_bind.rs
-@@ -54,6 +54,7 @@ pub fn key_binds(mode: &tab::Mode) -> HashMap<KeyBind, Action> {
+@@ -43,7 +43,8 @@ pub fn key_binds(mode: &tab::Mode) -> HashMap<KeyBind, Action> {
+     bind!([Ctrl, Shift], Key::Character("n".into()), NewFolder);
+     bind!([], Key::Named(Named::Enter), Open);
+     bind!([Ctrl], Key::Character(" ".into()), Preview);
+-    bind!([], Key::Character(" ".into()), Gallery);
++    bind!([], Key::Character(" ".into()), QuickLook);
++    bind!([Shift], Key::Character(" ".into()), Gallery);
+ 
+     bind!([Ctrl], Key::Character("h".into()), ToggleShowHidden);
+     bind!([Ctrl], Key::Character("a".into()), SelectAll);
+@@ -54,6 +55,7 @@ pub fn key_binds(mode: &tab::Mode) -> HashMap<KeyBind, Action> {
      // Switch view
      bind!([Ctrl], Key::Character("1".into()), TabViewList);
      bind!([Ctrl], Key::Character("2".into()), TabViewGrid);
@@ -2921,7 +2947,7 @@ index 4caa701..ba6d1ec 100644
                          menu::Item::CheckBox(
                              fl!("show-hidden-files"),
 diff --git a/src/tab.rs b/src/tab.rs
-index d462c11..3a6dc4a 100644
+index d462c11..dd3afe2 100644
 --- a/src/tab.rs
 +++ b/src/tab.rs
 @@ -1770,6 +1770,10 @@ pub enum Command {
@@ -2935,7 +2961,15 @@ index d462c11..3a6dc4a 100644
      AddNetworkDrive,
      AutoScroll(Option<f32>),
      Click(Option<usize>),
-@@ -2730,6 +2734,8 @@ impl Item {
+@@ -1797,6 +1801,7 @@ pub enum Message {
+     GalleryPrevious,
+     GalleryNext,
+     GalleryToggle,
++    QuickLook,
+     GoNext,
+     GoPrevious,
+     ItemDown,
+@@ -2730,6 +2735,8 @@ impl Item {
  pub enum View {
      Grid,
      List,
@@ -2944,7 +2978,7 @@ index d462c11..3a6dc4a 100644
  }
  #[derive(Clone, Copy, Debug, Hash, PartialEq, PartialOrd, Ord, Eq, Deserialize, Serialize)]
  pub enum HeadingOptions {
-@@ -2836,6 +2842,10 @@ pub struct Tab {
+@@ -2836,6 +2843,10 @@ pub struct Tab {
      time_formatter: DateTimeFormatter<fieldsets::T>,
      window_id: Option<window::Id>,
      large_image_manager: LargeImageManager,
@@ -2955,7 +2989,7 @@ index d462c11..3a6dc4a 100644
  }
  
  async fn calculate_dir_size(path: &Path, controller: Controller) -> Result<u64, OperationError> {
-@@ -2980,6 +2990,8 @@ impl Tab {
+@@ -2980,6 +2991,8 @@ impl Tab {
              time_formatter: time_formatter(config.military_time),
              window_id,
              large_image_manager: LargeImageManager::new(),
@@ -2964,7 +2998,7 @@ index d462c11..3a6dc4a 100644
          }
      }
  
-@@ -3011,6 +3023,26 @@ impl Tab {
+@@ -3011,6 +3024,26 @@ impl Tab {
                  item.selected = true;
              }
          }
@@ -2991,7 +3025,7 @@ index d462c11..3a6dc4a 100644
          self.items_opt = Some(items);
          if let Some(i) = highlighted
              .zip(self.items_opt.as_mut())
-@@ -3491,6 +3523,9 @@ impl Tab {
+@@ -3491,6 +3524,9 @@ impl Tab {
          self.location_ancestors = self.location.ancestors();
          self.location_title = self.location.title();
          self.edit_location = None;
@@ -3001,7 +3035,23 @@ index d462c11..3a6dc4a 100644
          self.items_opt = None;
          //TODO: remember scroll by location?
          self.scroll_opt = None;
-@@ -4431,6 +4466,72 @@ impl Tab {
+@@ -3986,6 +4022,15 @@ impl Tab {
+                     commands.push(Command::Iced(widget::button::focus(id).into()));
+                 }
+             }
++            Message::QuickLook => {
++                let path = match self.selected_locations().as_slice() {
++                    [Location::Path(path)] if path.is_file() => Some(path.clone()),
++                    _ => None,
++                };
++                if !path.is_some_and(|path| spawn_quicklook(&path)) {
++                    commands.append(&mut self.update(Message::GalleryToggle, modifiers));
++                }
++            }
+             Message::GalleryToggle => {
+                 if let Some(indices) = self.column_sort() {
+                     for (_, item) in &indices {
+@@ -4431,6 +4476,72 @@ impl Tab {
                  //TODO: hack for clearing selecting when right clicking empty space
                  self.last_right_click = click_i_opt;
              }
@@ -3074,7 +3124,7 @@ index d462c11..3a6dc4a 100644
              Message::MiddleClick(click_i) => {
                  if mod_ctrl || mod_shift {
                      self.update(Message::Click(Some(click_i)), modifiers);
-@@ -4956,6 +5057,58 @@ impl Tab {
+@@ -4956,6 +5067,58 @@ impl Tab {
          }
      }
  
@@ -3133,7 +3183,7 @@ index d462c11..3a6dc4a 100644
      fn column_sort(&self) -> Option<Vec<(usize, &Item)>> {
          let check_reverse = |ord: Ordering, sort: bool| {
              if sort { ord } else { ord.reverse() }
-@@ -5061,7 +5214,7 @@ impl Tab {
+@@ -5061,7 +5224,7 @@ impl Tab {
                  });
              }
          }
@@ -3142,7 +3192,7 @@ index d462c11..3a6dc4a 100644
      }
  
      fn dnd_dest<'a>(
-@@ -5760,6 +5913,12 @@ impl Tab {
+@@ -5760,6 +5923,12 @@ impl Tab {
              let mut hidden = 0;
              let mut grid_elements = Vec::new();
              for &(i, item) in &items {
@@ -3155,7 +3205,7 @@ index d462c11..3a6dc4a 100644
                  if !show_hidden && item.hidden {
                      item.pos_opt.set(None);
                      item.rect_opt.set(None);
-@@ -6007,6 +6166,143 @@ impl Tab {
+@@ -6007,6 +6176,143 @@ impl Tab {
          (drag_list, mouse_area.into(), true)
      }
  
@@ -3299,7 +3349,7 @@ index d462c11..3a6dc4a 100644
      pub fn list_view(
          &self,
      ) -> (
-@@ -6219,7 +6515,31 @@ impl Tab {
+@@ -6219,7 +6525,31 @@ impl Tab {
                          .align_y(Alignment::Center)
                          .spacing(space_xxs)
                      } else {
@@ -3331,7 +3381,7 @@ index d462c11..3a6dc4a 100644
                              widget::icon::icon(item.icon_handle_list.clone())
                                  .content_fit(ContentFit::Contain)
                                  .size(icon_size)
-@@ -6438,6 +6758,7 @@ impl Tab {
+@@ -6438,6 +6768,7 @@ impl Tab {
          let (drag_list, mut item_view, can_scroll) = match self.config.view {
              View::Grid => self.grid_view(),
              View::List => self.list_view(),
@@ -3339,7 +3389,7 @@ index d462c11..3a6dc4a 100644
          };
          item_view = widget::container(item_view).width(Length::Fill).into();
          let files = self
-@@ -6478,7 +6799,7 @@ impl Tab {
+@@ -6478,7 +6809,7 @@ impl Tab {
                                      f32::from(space_xxs).mul_add(-3.0, -f32::from(space_xxxs)),
                                      -4. * f32::from(space_xxxs),
                                  ),
@@ -3348,6 +3398,37 @@ index d462c11..3a6dc4a 100644
                              },
                          )
                      })
+@@ -8002,3 +8333,30 @@ mod tests {
+         Ok(())
+     }
+ }
++
++/// Starts (or retargets) the `mac-quicklook` window for `path`.
++/// `false` when it is not installed, so callers can fall back to the gallery.
++fn spawn_quicklook(path: &Path) -> bool {
++    let local = std::env::var_os("HOME")
++        .map(|home| PathBuf::from(home).join(".local/bin/mac-quicklook"))
++        .filter(|bin| bin.is_file());
++    let program = local.unwrap_or_else(|| PathBuf::from("mac-quicklook"));
++    match std::process::Command::new(program)
++        .arg(path)
++        .stdin(std::process::Stdio::null())
++        .stdout(std::process::Stdio::null())
++        .stderr(std::process::Stdio::null())
++        .spawn()
++    {
++        Ok(mut child) => {
++            std::thread::spawn(move || {
++                let _ = child.wait();
++            });
++            true
++        }
++        Err(err) => {
++            log::warn!("mac-quicklook unavailable: {err}");
++            false
++        }
++    }
++}
 diff --git a/src/zoom.rs b/src/zoom.rs
 index 89ae5b8..6be0571 100644
 --- a/src/zoom.rs

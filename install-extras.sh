@@ -5,8 +5,9 @@
 #   appearance  automatic light/dark mode and wallpaper (settings: mac-theme --settings)
 #   widgets     weather, Up Next and system cards in the clock popup
 #   desktop-widgets  macOS Sonoma-style desktop widgets on the wallpaper
+#   quicklook   floating file preview (Space in Files)
 #
-# Usage: ./install-extras.sh [launchpad|screenshot|appearance|widgets|desktop-widgets]...
+# Usage: ./install-extras.sh [launchpad|screenshot|appearance|widgets|desktop-widgets|quicklook]...
 #        ./install-extras.sh --uninstall
 set -euo pipefail
 
@@ -17,7 +18,7 @@ APPS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 AUTOSTART="${XDG_CONFIG_HOME:-$HOME/.config}/autostart"
 PRESETS="${XDG_CONFIG_HOME:-$HOME/.config}/cosmic-presets"
-ALL=(launchpad screenshot appearance widgets desktop-widgets)
+ALL=(launchpad screenshot appearance widgets desktop-widgets quicklook)
 
 if [ "${1:-}" = "--uninstall" ]; then
   "$ROOT/tools/shortcut.sh" unset Super a || true
@@ -25,8 +26,9 @@ if [ "${1:-}" = "--uninstall" ]; then
   systemctl --user disable --now mac-appearance.service 2>/dev/null || true
   pkill -x mac-launchpad || true
   pkill -f "^$BIN_DIR/mac-desktop-widgets( |$)" || true
-  rm -f "$BIN_DIR"/mac-{launchpad,screenshot,appearance,desktop-widgets} \
-    "$APPS_DIR"/dev.asw.Mac{Launchpad,Screenshot,Theme}.desktop \
+  pkill -f "^$BIN_DIR/mac-quicklook( |$)" || true
+  rm -f "$BIN_DIR"/mac-{launchpad,screenshot,appearance,desktop-widgets,quicklook} \
+    "$APPS_DIR"/dev.asw.Mac{Launchpad,Screenshot,Theme,QuickLook}.desktop \
     "$UNIT_DIR/mac-appearance.service" "$AUTOSTART/dev.asw.MacLaunchpad.desktop" \
     "$AUTOSTART/dev.asw.MacDesktopWidgets.desktop" \
     "$PRESETS/macos-glass/use-desktop-widgets" "$PRESETS/macos-light/use-desktop-widgets"
@@ -101,6 +103,11 @@ EOF
       if [ -x "$BIN_DIR/cosmic-preset" ]; then
         "$BIN_DIR/cosmic-preset" widgets-sync || true
       fi
+      ;;
+    quicklook)
+      build mac-quicklook
+      desktop "$SUITE/mac-quicklook/data/dev.asw.MacQuickLook.desktop"
+      echo "    needs poppler (pdftocairo, pdfinfo) and ffmpegthumbnailer for PDF and video previews"
       ;;
     *) echo "unknown: $name (choose from: ${ALL[*]})" >&2; exit 1 ;;
   esac

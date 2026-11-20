@@ -22,14 +22,20 @@ pub enum WidgetKind {
     UpNext,
     System,
     Clock,
+    CalendarMonth,
+    Battery,
+    Notes,
 }
 
 impl WidgetKind {
-    pub const ALL: [WidgetKind; 4] = [
+    pub const ALL: [WidgetKind; 7] = [
         WidgetKind::Weather,
         WidgetKind::UpNext,
         WidgetKind::System,
         WidgetKind::Clock,
+        WidgetKind::CalendarMonth,
+        WidgetKind::Battery,
+        WidgetKind::Notes,
     ];
 
     pub fn label(self) -> &'static str {
@@ -38,6 +44,9 @@ impl WidgetKind {
             WidgetKind::UpNext => "Up Next",
             WidgetKind::System => "System",
             WidgetKind::Clock => "Clock",
+            WidgetKind::CalendarMonth => "Calendar",
+            WidgetKind::Battery => "Batteries",
+            WidgetKind::Notes => "Notes",
         }
     }
 
@@ -47,6 +56,9 @@ impl WidgetKind {
             WidgetKind::UpNext => "x-office-calendar-symbolic",
             WidgetKind::System => "utilities-system-monitor-symbolic",
             WidgetKind::Clock => "preferences-system-time-symbolic",
+            WidgetKind::CalendarMonth => "office-calendar-symbolic",
+            WidgetKind::Battery => "battery-symbolic",
+            WidgetKind::Notes => "accessories-text-editor-symbolic",
         }
     }
 }
@@ -381,6 +393,20 @@ mod tests {
         assert!(reloaded.widgets.is_empty());
 
         let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn new_kinds_listed_and_old_layouts_still_parse() {
+        for kind in [WidgetKind::CalendarMonth, WidgetKind::Battery, WidgetKind::Notes] {
+            assert!(WidgetKind::ALL.contains(&kind));
+            assert!(!kind.label().is_empty());
+            assert!(kind.icon_name().ends_with("-symbolic"));
+        }
+        let raw = r#"(widgets: [(kind: Notes, size: Large, output: "DP-1", x: 0, y: 0), (kind: Battery, size: Small, output: "DP-1", x: 0, y: 0), (kind: CalendarMonth, size: Medium, output: "DP-1", x: 0, y: 0)])"#;
+        let parsed = DesktopWidgetsLayout::parse(raw).unwrap();
+        assert_eq!(parsed.widgets[0].kind, WidgetKind::Notes);
+        let again = DesktopWidgetsLayout::parse(&parsed.to_ron().unwrap()).unwrap();
+        assert_eq!(again, parsed);
     }
 
     #[test]

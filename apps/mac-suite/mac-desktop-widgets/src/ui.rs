@@ -40,6 +40,9 @@ use mac_widgets::{
 };
 
 use crate::agenda::{self, AgendaEntry};
+use crate::battery::{self, BatteryState, DeviceInfo};
+use crate::cards_more::NoteAction;
+use crate::notes::Notes;
 use crate::cards::{
     WeatherState, WidgetData, frosted_chrome_class, gallery_tile, remove_badge_button,
     render_widget,
@@ -51,7 +54,7 @@ use crate::layout::{
 use crate::wayland::{FocusEvent, focus_subscription};
 
 const DRAG_THRESHOLD: f32 = 6.0;
-const GALLERY_STRIP_CLEARANCE: f32 = 150.0;
+const GALLERY_STRIP_CLEARANCE: f32 = 250.0;
 const CONTEXT_MENU_WIDTH: f32 = 176.0;
 const CONTEXT_MENU_HEIGHT: f32 = 196.0;
 
@@ -123,7 +126,16 @@ pub enum Message {
     ClockTick,
     WeatherTick,
     WeatherLoaded(Result<Forecast, String>),
+    BatteryTick,
+    BatteryLoaded(Vec<DeviceInfo>),
+    Note(NoteAction),
     Noop,
+}
+
+impl From<NoteAction> for Message {
+    fn from(action: NoteAction) -> Self {
+        Message::Note(action)
+    }
 }
 
 pub fn run(start_editing: bool) -> cosmic::iced::Result {
@@ -152,6 +164,9 @@ pub struct DesktopWidgets {
     stats: Stats,
     cpu_prev: Option<CpuSample>,
     agenda: Vec<AgendaEntry>,
+    battery: BatteryState,
+    notes: Notes,
+    note_draft: String,
 }
 
 impl DesktopWidgets {
@@ -206,7 +221,13 @@ impl DesktopWidgets {
     }
 
     fn sync_keyboard_interactivity(&self) -> Task<Message> {
-        let mode = if self.editing || self.context_menu.is_some() {
+        // The Notes text input needs keyboard focus. OnDemand only grants it
+        // when the user clicks a surface input region (the widget cards), so
+        // it never steals focus from other windows on its own.
+        let mode = if self.editing
+            || self.context_menu.is_some()
+            || self.layout.has_kind(WidgetKind::Notes)
+        {
             KeyboardInteractivity::OnDemand
         } else {
             KeyboardInteractivity::None
@@ -265,6 +286,15 @@ impl DesktopWidgets {
             },
             |res| cosmic::Action::App(Message::WeatherLoaded(res)),
         )
+    }
+
+    fn refresh_battery(&mut self) -> Task<Message> {
+        if !self.layout.has_kind(WidgetKind::Battery) && !self.editing {
+            return Task::none();
+        }
+        Task::perform(battery::fetch(), |devices| {
+            cosmic::Action::App(Message::BatteryLoaded(devices))
+        })
     }
 
     fn refresh_stats_if_visible(&mut self) {
@@ -342,9 +372,13 @@ impl cosmic::Application for DesktopWidgets {
             stats,
             cpu_prev,
             agenda: agenda::load_agenda(),
+            battery: BatteryState::Loading,
+            notes: Notes::load(),
+            note_draft: String::new(),
         };
         let weather_task = app.refresh_weather();
-        (app, weather_task)
+        let battery_task = app.refresh_battery();
+        (app, Task::batch([weather_task, battery_task]))
     }
 
     fn core(&self) -> &app::Core {
@@ -394,7 +428,17 @@ impl cosmic::Application for DesktopWidgets {
             );
         }
 
-        if self.layout.has_kind(WidgetKind::Clock) || self.layout.has_kind(WidgetKind::UpNext) || self.editing {
+        if self.layout.has_kind(WidgetKind::Battery) || self.editing {
+            subs.push(
+                cosmic::iced::time::every(Duration::from_secs(60)).map(|_| Message::BatteryTick),
+            );
+        }
+
+        if self.layout.has_kind(WidgetKind::Clock)
+            || self.layout.has_kind(WidgetKind::UpNext)
+            || self.layout.has_kind(WidgetKind::CalendarMonth)
+            || self.editing
+        {
             // Minutes only, so a few ticks a minute keep it exact.
             let interval = Duration::from_secs(5);
             subs.push(cosmic::iced::time::every(interval).map(|_| Message::ClockTick));
@@ -640,7 +684,11 @@ impl cosmic::Application for DesktopWidgets {
                             self.save_layout();
                             self.refresh_stats_if_visible();
                             self.refresh_agenda_if_visible();
-                            return Task::batch([self.sync_input_zones(), self.refresh_weather()]);
+                            return Task::batch([
+                                self.sync_surface_modes(),
+                                self.refresh_weather(),
+                                self.refresh_battery(),
+                            ]);
                         }
                     }
                     DragState::PendingGallery { kind, surface_id, .. } => {
@@ -654,7 +702,11 @@ impl cosmic::Application for DesktopWidgets {
                         self.save_layout();
                         self.refresh_stats_if_visible();
                         self.refresh_agenda_if_visible();
-                        return Task::batch([self.sync_input_zones(), self.refresh_weather()]);
+                        return Task::batch([
+                                self.sync_surface_modes(),
+                                self.refresh_weather(),
+                                self.refresh_battery(),
+                            ]);
                     }
                 }
             }
@@ -697,7 +749,11 @@ impl cosmic::Application for DesktopWidgets {
                 if editing {
                     self.refresh_stats_if_visible();
                     self.refresh_agenda_if_visible();
-                    return Task::batch([self.sync_surface_modes(), self.refresh_weather()]);
+                    return Task::batch([
+                        self.sync_surface_modes(),
+                        self.refresh_weather(),
+                        self.refresh_battery(),
+                    ]);
                 }
                 return self.sync_surface_modes();
             }
@@ -738,6 +794,33 @@ impl cosmic::Application for DesktopWidgets {
                     }
                 };
             }
+            Message::BatteryTick => {
+                return self.refresh_battery();
+            }
+            Message::BatteryLoaded(devices) => {
+                self.battery = BatteryState::Ready(devices);
+            }
+            Message::Note(action) => match action {
+                NoteAction::Input(text) => {
+                    self.note_draft = text.chars().take(crate::notes::MAX_ITEM_CHARS).collect();
+                }
+                NoteAction::Submit => {
+                    if self.notes.add(&self.note_draft) {
+                        self.note_draft.clear();
+                        self.notes.save();
+                    }
+                }
+                NoteAction::Toggle(idx) => {
+                    if self.notes.toggle(idx) {
+                        self.notes.save();
+                    }
+                }
+                NoteAction::Delete(idx) => {
+                    if self.notes.remove(idx) {
+                        self.notes.save();
+                    }
+                }
+            },
             Message::Noop => {}
         }
         Task::none()
@@ -762,6 +845,9 @@ impl cosmic::Application for DesktopWidgets {
             units: self.widget_settings.units,
             stats: &self.stats,
             agenda: &self.agenda,
+            battery: &self.battery,
+            notes: &self.notes,
+            note_draft: &self.note_draft,
         };
 
         let mut layers: Vec<Element<'_, Message>> = Vec::new();
@@ -909,12 +995,16 @@ impl cosmic::Application for DesktopWidgets {
             .spacing(12)
             .align_y(Alignment::Center);
 
-            let tiles = WidgetKind::ALL.into_iter().fold(row![].spacing(10), |r, kind| {
-                r.push(
-                    mouse_area(gallery_tile(kind, self.gallery_size))
-                        .on_press(Message::GalleryPress(id, kind)),
-                )
-            });
+            let tiles = WidgetKind::ALL
+                .chunks(4)
+                .fold(column![].spacing(10).align_x(Alignment::Center), |col, kinds| {
+                    col.push(kinds.iter().fold(row![].spacing(10), |r, &kind| {
+                        r.push(
+                            mouse_area(gallery_tile(kind, self.gallery_size))
+                                .on_press(Message::GalleryPress(id, kind)),
+                        )
+                    }))
+                });
 
             let strip = container(
                 column![
@@ -928,9 +1018,9 @@ impl cosmic::Application for DesktopWidgets {
             .padding([12, 18])
             .class(frosted_chrome_class());
 
-            let strip_w = 540.0_f32.min((out_w as f32 - 32.0).max(200.0));
+            let strip_w = 560.0_f32.min((out_w as f32 - 32.0).max(200.0));
             let strip_x = ((out_w as f32 - strip_w) / 2.0).max(16.0);
-            let strip_y = (out_h as f32 - 196.0).max(20.0);
+            let strip_y = (out_h as f32 - 296.0).max(20.0);
             layers.push(
                 pin(container(strip).width(Length::Fixed(strip_w)))
                     .x(strip_x)

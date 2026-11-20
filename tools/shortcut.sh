@@ -36,8 +36,14 @@ def drop(m):
     return m.group(0)
 text = entry_re.sub(drop, text)
 
+# Our own bindings, by bare name or full path (~/.local/bin/mac-...), are never
+# saved as "what the key did before".
+ours = re.compile(r'Spawn\("(?:[^"]*/)?mac-')
+if os.path.exists(backup) and ours.match(open(backup).read()):
+    os.remove(backup)
+
 if mode == "set":
-    if old is not None and not old.startswith("Spawn(\"mac-") and not os.path.exists(backup):
+    if old is not None and not ours.match(old) and not os.path.exists(backup):
         open(backup, "w").write(old)
     mod_lines = "".join(f"            {m},\n" for m in mods)
     entry = f'    (\n        modifiers: [\n{mod_lines}        ],\n        key: "{key}",\n    ): {action},\n'

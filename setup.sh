@@ -6,7 +6,7 @@
 #   ./setup.sh               all projects
 #   ./setup.sh files comp    only the named ones
 #
-# Projects: files edit viewer launcher comp applets libcosmic
+# Projects: files edit viewer launcher comp applets libcosmic workspaces
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
@@ -39,6 +39,7 @@ setup_files()    { fetch apps/cosmic-files    https://github.com/pop-os/cosmic-f
 setup_edit()     { fetch apps/cosmic-edit     https://github.com/pop-os/cosmic-edit     cosmic-edit; }
 setup_viewer()   { fetch apps/cosmic-viewer   https://github.com/pop-os/cosmic-viewer   cosmic-viewer; }
 setup_launcher() { fetch apps/cosmic-launcher https://github.com/pop-os/cosmic-launcher cosmic-launcher; }
+setup_workspaces() { fetch apps/cosmic-workspaces https://github.com/pop-os/cosmic-workspaces-epoch cosmic-workspaces; }
 setup_comp()     { fetch cosmic-comp          https://github.com/pop-os/cosmic-comp     cosmic-comp; }
 
 setup_applets() {
@@ -79,10 +80,10 @@ setup_libcosmic() {
 }
 
 targets=("$@")
-[ ${#targets[@]} -gt 0 ] || targets=(libcosmic files edit viewer launcher comp applets)
+[ ${#targets[@]} -gt 0 ] || targets=(libcosmic files edit viewer launcher comp applets workspaces)
 for target in "${targets[@]}"; do
   case "$target" in
-    files|edit|viewer|launcher|comp|applets|libcosmic) "setup_$target" ;;
+    files|edit|viewer|launcher|comp|applets|libcosmic|workspaces) "setup_$target" ;;
     *) echo "unknown project: $target" >&2; exit 1 ;;
   esac
 done
