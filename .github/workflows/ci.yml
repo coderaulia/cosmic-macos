@@ -20,8 +20,8 @@ jobs:
     container: archlinux:latest
     steps:
       - name: Install tools
-        run: pacman -Syu --noconfirm --needed git python rsync bash
-      - uses: actions/checkout@v4
+        run: pacman -Syu --noconfirm --needed git python rsync bash diffutils
+      - uses: actions/checkout@v5
       - name: Verify repository
         run: ./tools/verify.sh
 
@@ -40,7 +40,7 @@ jobs:
           base-devel git rust clang mold cmake nasm pkgconf patch
           libxkbcommon wayland dbus fontconfig freetype2 libsecret
           gstreamer gst-plugins-base-libs
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Mark checkout safe for git
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Fetch patched libcosmic

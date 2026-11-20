@@ -54,7 +54,7 @@ fi
 echo
 echo "==> 3. Overlay vs upstream-applets sync"
 if [ ! -d "$ROOT/upstream-applets" ]; then
-  fail "upstream-applets/ directory not found (run ./setup.sh applets)"
+  skip "upstream-applets/ not set up (fresh checkout; run ./setup.sh applets to compare)"
 else
   for overlay_dir in "$ROOT"/overlays/cosmic-applets/*/; do
     [ -d "$overlay_dir" ] || continue
