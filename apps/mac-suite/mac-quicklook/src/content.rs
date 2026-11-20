@@ -2,7 +2,7 @@
 
 //! Loading file previews (blocking; call from a worker thread).
 
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::SystemTime;
@@ -180,7 +180,9 @@ pub fn read_lines(path: &Path) -> (Vec<String>, bool) {
     let Ok(file) = std::fs::File::open(path) else {
         return (Vec::new(), false);
     };
-    let mut reader = BufReader::new(file);
+    // Bound the reader itself, so a huge file without newlines can never be
+    // read into memory whole; one extra byte tells whether the file is longer.
+    let mut reader = BufReader::new(file.take(MAX_TEXT_BYTES as u64 + 1));
     let mut lines = Vec::new();
     let mut bytes = 0;
     let mut buf = Vec::new();
@@ -189,7 +191,15 @@ pub fn read_lines(path: &Path) -> (Vec<String>, bool) {
         match reader.read_until(b'\n', &mut buf) {
             Ok(0) | Err(_) => return (lines, false),
             Ok(n) => {
-                if lines.len() >= MAX_LINES || bytes + n > MAX_TEXT_BYTES {
+                if lines.len() >= MAX_LINES {
+                    return (lines, true);
+                }
+                if bytes + n > MAX_TEXT_BYTES {
+                    // Keep what fits of the last (possibly partial) line.
+                    buf.truncate(MAX_TEXT_BYTES - bytes);
+                    if !buf.is_empty() {
+                        lines.push(String::from_utf8_lossy(&buf).replace('\t', "    "));
+                    }
                     return (lines, true);
                 }
                 bytes += n;
@@ -415,5 +425,18 @@ mod tests {
         assert!(p.len() > 1);
         assert_eq!(p.iter().map(|p| p.text.as_str()).collect::<String>(), "fn main() {}\n");
         assert!(highlight(&lines, "zzzz", true).is_none());
+    }
+
+    #[test]
+    fn huge_single_line_is_capped() {
+        let dir = std::env::temp_dir().join(format!("mac-quicklook-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("long.txt");
+        std::fs::write(&path, vec![b'x'; MAX_TEXT_BYTES * 2]).unwrap();
+        let (lines, truncated) = read_lines(&path);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(truncated);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].len(), MAX_TEXT_BYTES);
     }
 }
